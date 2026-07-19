@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "SolarWin (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "SolarWin (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

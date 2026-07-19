@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.PostsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <StackPanel Padding="24" Spacing="12">
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="帖子" />
+        <TextBlock
+            Opacity="0.75"
+            Text="动态 / 帖子流将在后续节点接入 Sphere Feed API。"
+            TextWrapping="WrapWholeWords" />
+    </StackPanel>
+</Page>

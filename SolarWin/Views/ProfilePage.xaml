@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.ProfilePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="560" Spacing="16">
+            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="我的" />
+
+            <!-- Header card -->
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Grid Width="72" Height="72">
+                    <Border
+                        Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                        CornerRadius="36"
+                        Opacity="{x:Bind ViewModel.InitialsOpacity, Mode=OneWay}">
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="28"
+                            FontWeight="SemiBold"
+                            Text="{x:Bind ViewModel.Initials, Mode=OneWay}" />
+                    </Border>
+                    <Ellipse Opacity="{x:Bind ViewModel.AvatarOpacity, Mode=OneWay}">
+                        <Ellipse.Fill>
+                            <ImageBrush
+                                ImageSource="{x:Bind ViewModel.AvatarImage, Mode=OneWay}"
+                                Stretch="UniformToFill" />
+                        </Ellipse.Fill>
+                    </Ellipse>
+                </Grid>
+
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                    <TextBlock
+                        Style="{StaticResource SubtitleTextBlockStyle}"
+                        Text="{x:Bind ViewModel.DisplayName, Mode=OneWay}" />
+                    <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.Handle, Mode=OneWay}" />
+                    <TextBlock Opacity="0.7" Text="{x:Bind ViewModel.Meta, Mode=OneWay}" />
+                </StackPanel>
+            </Grid>
+
+            <TextBlock Text="{x:Bind ViewModel.Bio, Mode=OneWay}" TextWrapping="WrapWholeWords" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新" />
+                <Button Click="EditProfile_OnClick" Content="编辑资料" />
+                <Button Click="ChangeAvatar_OnClick" Content="更换头像" />
+                <ProgressRing
+                    Width="28"
+                    Height="28"
+                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                <ProgressRing
+                    Width="24"
+                    Height="24"
+                    IsActive="{x:Bind ViewModel.IsUploadingAvatar, Mode=OneWay}" />
+            </StackPanel>
+
+            <!-- Status -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="状态" />
+            <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.StatusDetail, Mode=OneWay}"
+                TextWrapping="Wrap" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{x:Bind ViewModel.SetStatusOnlineCommand}" Content="在线" />
+                <Button Command="{x:Bind ViewModel.SetStatusIdleCommand}" Content="离开" />
+                <Button Command="{x:Bind ViewModel.SetStatusDndCommand}" Content="请勿打扰" />
+                <ProgressRing
+                    Width="24"
+                    Height="24"
+                    IsActive="{x:Bind ViewModel.IsSettingStatus, Mode=OneWay}" />
+            </StackPanel>
+
+            <!-- Check-in -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="每日签到" />
+            <TextBlock Text="{x:Bind ViewModel.CheckInSummary, Mode=OneWay}" TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.FortuneText, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button
+                    Command="{x:Bind ViewModel.CheckInCommand}"
+                    Content="签到"
+                    Style="{StaticResource AccentButtonStyle}" />
+                <ProgressRing
+                    Width="24"
+                    Height="24"
+                    IsActive="{x:Bind ViewModel.IsCheckingIn, Mode=OneWay}" />
+            </StackPanel>
+
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                Text="{x:Bind ViewModel.InfoMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <HyperlinkButton Click="OpenSettings_OnClick" Content="打开设置…" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

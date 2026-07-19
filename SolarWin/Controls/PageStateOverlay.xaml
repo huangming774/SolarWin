@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="SolarWin.Controls.PageStateOverlay"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid>
+        <!-- Loading -->
+        <StackPanel
+            x:Name="LoadingPanel"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="12"
+            Visibility="Collapsed">
+            <ProgressRing Width="48" Height="48" IsActive="True" />
+            <TextBlock
+                x:Name="LoadingText"
+                HorizontalAlignment="Center"
+                Opacity="0.75"
+                Text="加载中…" />
+        </StackPanel>
+
+        <!-- Empty -->
+        <StackPanel
+            x:Name="EmptyPanel"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="8"
+            Visibility="Collapsed">
+            <FontIcon FontSize="40" Glyph="&#xE8FD;" Opacity="0.5" />
+            <TextBlock
+                x:Name="EmptyText"
+                HorizontalAlignment="Center"
+                Opacity="0.7"
+                Text="暂无内容" />
+        </StackPanel>
+
+        <!-- Error -->
+        <StackPanel
+            x:Name="ErrorPanel"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            MaxWidth="420"
+            Spacing="8"
+            Visibility="Collapsed">
+            <FontIcon
+                FontSize="40"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Glyph="&#xE783;" />
+            <TextBlock
+                x:Name="ErrorText"
+                HorizontalAlignment="Center"
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="出错了"
+                TextAlignment="Center"
+                TextWrapping="WrapWholeWords" />
+        </StackPanel>
+    </Grid>
+</UserControl>

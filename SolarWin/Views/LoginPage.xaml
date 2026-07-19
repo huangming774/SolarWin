@@ -1,0 +1,95 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.LoginPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+        <StackPanel
+            MaxWidth="440"
+            Margin="24"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            Spacing="12">
+            <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="Solar Network" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource BodyTextBlockStyle}"
+                Text="密码登录（Padlock）或 OAuth 设备码（第三方应用）" />
+
+            <TextBox
+                x:Name="AccountBox"
+                Header="账户名"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PlaceholderText="用户名 / 邮箱 / 手机号"
+                Text="{x:Bind ViewModel.Account, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+            <PasswordBox
+                x:Name="PasswordBox"
+                Header="密码"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                KeyDown="PasswordBox_OnKeyDown"
+                PasswordChanged="PasswordBox_OnPasswordChanged"
+                PlaceholderText="密码" />
+
+            <Button
+                HorizontalAlignment="Stretch"
+                Command="{x:Bind ViewModel.LoginCommand}"
+                Content="密码登录"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Style="{StaticResource AccentButtonStyle}" />
+
+            <TextBlock
+                Margin="0,8,0,0"
+                Opacity="0.75"
+                Text="—— 或使用 OAuth 设备码 ——" />
+
+            <TextBox
+                Header="OAuth client_id"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PlaceholderText="在 Padlock 注册的公共客户端 ID"
+                Text="{x:Bind ViewModel.OAuthClientId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+            <Button
+                HorizontalAlignment="Stretch"
+                Command="{x:Bind ViewModel.LoginWithOAuthCommand}"
+                Content="OAuth 设备码登录"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+
+            <TextBlock
+                FontFamily="Consolas"
+                FontSize="20"
+                FontWeight="Bold"
+                Text="{x:Bind ViewModel.DeviceUserCode, Mode=OneWay}" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.DeviceVerificationUrl, Mode=OneWay}"
+                TextWrapping="Wrap" />
+
+            <ProgressRing
+                Width="40"
+                Height="40"
+                HorizontalAlignment="Center"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBlock
+                Opacity="0.55"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="密码登录换票使用 grant_type=authorization_code（与 solian.app 一致）。OAuth 需有效 client_id。"
+                TextWrapping="WrapWholeWords" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

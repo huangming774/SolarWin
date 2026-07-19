@@ -1,0 +1,119 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.FilesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <Grid Padding="16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="文件" />
+
+        <TextBlock
+            Grid.Row="1"
+            Opacity="0.8"
+            Text="{x:Bind ViewModel.Breadcrumb, Mode=OneWay}"
+            TextTrimming="CharacterEllipsis" />
+
+        <StackPanel
+            Grid.Row="2"
+            Orientation="Horizontal"
+            Spacing="8">
+            <Button Click="Refresh_OnClick" Content="刷新" />
+            <Button Click="GoUp_OnClick" Content="上级" />
+            <Button Click="CreateFolder_OnClick" Content="新建文件夹" />
+            <Button
+                Click="Upload_OnClick"
+                Content="上传文件"
+                Style="{StaticResource AccentButtonStyle}" />
+            <Button Click="Rename_OnClick" Content="重命名" />
+            <Button Click="Recycle_OnClick" Content="删除" />
+            <Button Click="Download_OnClick" Content="下载" />
+            <ProgressRing
+                Width="28"
+                Height="28"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+        </StackPanel>
+
+        <GridView
+            x:Name="FileGrid"
+            Grid.Row="3"
+            IsItemClickEnabled="True"
+            ItemClick="FileGrid_OnItemClick"
+            ItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}"
+            SelectionChanged="FileGrid_OnSelectionChanged"
+            SelectionMode="Single">
+            <GridView.ItemTemplate>
+                <DataTemplate x:DataType="vm:FileItemViewModel">
+                    <Border
+                        Width="140"
+                        Height="160"
+                        Padding="8"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                        <Grid RowSpacing="6">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <FontIcon
+                                    FontSize="40"
+                                    Glyph="{x:Bind IconGlyph}"
+                                    Opacity="{x:Bind IconOpacity}" />
+                            </Grid>
+
+                            <TextBlock
+                                Grid.Row="1"
+                                FontWeight="SemiBold"
+                                Text="{x:Bind Name}"
+                                TextTrimming="CharacterEllipsis"
+                                TextWrapping="NoWrap" />
+                            <TextBlock
+                                Grid.Row="2"
+                                Opacity="0.65"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind SizeText}" />
+                            <TextBlock
+                                Grid.Row="2"
+                                Margin="0,14,0,0"
+                                Opacity="0.55"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind DateText}"
+                                TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </GridView.ItemTemplate>
+        </GridView>
+
+        <StackPanel Grid.Row="4" Spacing="6">
+            <ProgressBar
+                Maximum="1"
+                Minimum="0"
+                Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                TextWrapping="Wrap" />
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="Wrap" />
+        </StackPanel>
+    </Grid>
+</Page>
