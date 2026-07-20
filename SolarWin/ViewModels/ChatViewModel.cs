@@ -230,7 +230,7 @@ public partial class ChatViewModel : ObservableObject
         }
     }
 
-    private static List<ChatRoomListItem> BuildItems(
+    private List<ChatRoomListItem> BuildItems(
         List<SnChatRoom> rooms,
         Dictionary<string, ChatSummaryResponse>? summary,
         Guid? meId)
@@ -266,7 +266,7 @@ public partial class ChatViewModel : ObservableObject
                         }]
                         : null,
                 };
-                list.Add(new ChatRoomListItem(synthetic, value, meId));
+                list.Add(new ChatRoomListItem(synthetic, value, _imageLoader, meId));
             }
 
             return list;
@@ -282,7 +282,7 @@ public partial class ChatViewModel : ObservableObject
                     string.Equals(kv.Key, room.Id.ToString("D"), StringComparison.OrdinalIgnoreCase)).Value;
             }
 
-            list.Add(new ChatRoomListItem(room, s, meId));
+            list.Add(new ChatRoomListItem(room, s, _imageLoader, meId));
         }
 
         return list;
@@ -290,20 +290,21 @@ public partial class ChatViewModel : ObservableObject
 
     private async Task LoadAvatarsAuthenticatedAsync()
     {
-        var snapshot = Rooms.Where(r => !string.IsNullOrWhiteSpace(r.AvatarUrl)).ToList();
-        foreach (var room in snapshot)
+        var pending = Rooms
+            .Where(r => !string.IsNullOrWhiteSpace(r.AvatarUrl) && r.AvatarImage is null)
+            .Select(r => (Room: r, Task: _imageLoader.LoadSafeAsync(r.AvatarUrl)))
+            .ToList();
+
+        if (pending.Count > 0)
         {
-            try
+            // Parallel download; apply in one UI turn so rows don't pop individually.
+            await Task.WhenAll(pending.Select(t => t.Task)).ConfigureAwait(true);
+            foreach (var (room, task) in pending)
             {
-                var bmp = await _imageLoader.LoadAsync(room.AvatarUrl).ConfigureAwait(true);
-                if (bmp is not null)
+                if (task.Result is { } bmp)
                 {
                     room.SetAuthenticatedAvatar(bmp);
                 }
-            }
-            catch
-            {
-                // keep initials
             }
         }
 

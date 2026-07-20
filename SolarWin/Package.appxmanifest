@@ -10,8 +10,8 @@
 
   <Identity
     Name="76CE4152-9298-4B93-9F3D-D09C9EED2037"
-    Publisher="CN=AppPublisher"
-    Version="1.0.0.0" />
+    Publisher="CN=user"
+    Version="1.0.1.0" />
 
   <mp:PhoneIdentity PhoneProductId="76CE4152-9298-4B93-9F3D-D09C9EED2037" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 

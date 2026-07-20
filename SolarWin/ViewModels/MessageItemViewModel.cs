@@ -10,7 +10,7 @@ namespace SolarWin.ViewModels;
 /// <summary>Single chat bubble bound in the detail ListView.</summary>
 public partial class MessageItemViewModel : ObservableObject
 {
-    public MessageItemViewModel(SnChatMessage message, Guid? currentAccountId)
+    public MessageItemViewModel(SnChatMessage message, Guid? currentAccountId, DysonFileImageLoader imageLoader)
     {
         Message = message;
         IsMine = IsSentByCurrentUser(message, currentAccountId);
@@ -44,9 +44,16 @@ public partial class MessageItemViewModel : ObservableObject
         AvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(message.Sender?.Account)
             ?? CloudFileUrlHelper.Resolve(message.Sender?.Account?.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        AvatarImage = HasAvatar ? AvatarImageHelper.TryCreateBitmap(AvatarUrl) : null;
-        AvatarOpacity = HasAvatar ? 1.0 : 0.0;
-        InitialsOpacity = HasAvatar ? 0.0 : 1.0;
+        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar))
+        {
+            SetAuthenticatedAvatar(cachedAvatar!);
+        }
+        else
+        {
+            // Initials until the authenticated download lands; a bare UriSource would 401 on private drive files.
+            AvatarOpacity = 0.0;
+            InitialsOpacity = 1.0;
+        }
         Initials = string.IsNullOrWhiteSpace(SenderName) ? "?" : SenderName[..1].ToUpperInvariant();
 
         // Attachments
@@ -127,11 +134,15 @@ public partial class MessageItemViewModel : ObservableObject
 
     public bool HasImages { get; }
 
+    /// <summary>True once the avatar came from the authenticated loader; skips redundant re-sets.</summary>
+    public bool AvatarAuthenticated { get; private set; }
+
     public void SetAuthenticatedAvatar(BitmapImage image)
     {
         AvatarImage = image;
         AvatarOpacity = 1.0;
         InitialsOpacity = 0.0;
+        AvatarAuthenticated = true;
     }
 
     private void TryAddFromMeta(Dictionary<string, System.Text.Json.JsonElement> meta, bool forceImage)

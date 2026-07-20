@@ -51,6 +51,19 @@ public sealed class DysonFileImageLoader
         return task;
     }
 
+    /// <summary>LoadAsync that never faults; null on any failure. Preferred for UI image binding.</summary>
+    public async Task<BitmapImage?> LoadSafeAsync(string? fileIdOrUrl, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await LoadAsync(fileIdOrUrl, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private async Task<BitmapImage?> LoadCoreAsync(string key, CancellationToken cancellationToken)
     {
         try

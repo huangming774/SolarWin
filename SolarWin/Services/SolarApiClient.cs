@@ -512,6 +512,69 @@ public sealed class SolarApiClient : ISolarApiClient
         throw new SolarApiException("Unexpected file list response shape.", response.StatusCode);
     }
 
+    public async Task<SnWallet?> GetWalletAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var json = await GetStringAsync("/wallet/wallets", cancellationToken).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return null;
+            }
+
+            return JsonSerializer.Deserialize<SnWallet>(json, JsonDefaults.Options);
+        }
+        catch (SolarApiException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
+        {
+            return null;
+        }
+    }
+
+    public async Task<List<SnWallet>> GetWalletsAsync(CancellationToken cancellationToken = default)
+    {
+        var json = await GetStringAsync("/wallet/wallets/all", cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnWallet>(json);
+    }
+
+    public async Task<List<SnWalletTransaction>> GetTransactionsAsync(Guid walletId, int offset, int take, CancellationToken cancellationToken = default)
+    {
+        take = take <= 0 ? 20 : take;
+        offset = Math.Max(0, offset);
+        var path = $"/wallet/wallets/transactions?wallet={walletId:D}&offset={offset}&take={take}";
+        var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnWalletTransaction>(json);
+    }
+
+    // —— Sphere / Feed ——
+
+    public async Task<List<SnPost>> GetPostsAsync(int offset, int take, CancellationToken cancellationToken = default)
+    {
+        take = take <= 0 ? 20 : take;
+        offset = Math.Max(0, offset);
+        var path = $"/sphere/posts?offset={offset}&take={take}";
+        var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnPost>(json);
+    }
+
+    public Task<SnPost> CreatePostAsync(CreatePostRequest request, string? pub = null, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        var path = "/sphere/posts";
+        if (!string.IsNullOrWhiteSpace(pub))
+        {
+            path += $"?pub={Uri.EscapeDataString(pub)}";
+        }
+
+        return PostAsync<CreatePostRequest, SnPost>(path, request, cancellationToken);
+    }
+
+    public async Task<List<SnPublisher>> GetAccountPublishersAsync(Guid accountId, CancellationToken cancellationToken = default)
+    {
+        var path = $"/sphere/publishers/of/{accountId:D}";
+        var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnPublisher>(json);
+    }
+
     // —— Transport ——
 
     private async Task<HttpResponseMessage> SendCoreAsync(

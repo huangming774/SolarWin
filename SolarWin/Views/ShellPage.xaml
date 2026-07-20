@@ -60,6 +60,11 @@
                             Value="{x:Bind ViewModel.UnreadNotificationCount, Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem Content="钱包" Tag="wallet">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE8D4;" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="我的" Tag="profile">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE77B;" />

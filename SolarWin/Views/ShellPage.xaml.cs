@@ -63,6 +63,7 @@ public sealed partial class ShellPage : Page
             "posts" => typeof(PostsPage),
             "files" => typeof(FilesPage),
             "notifications" => typeof(NotificationsPage),
+            "wallet" => typeof(WalletPage),
             "profile" => typeof(ProfilePage),
             _ => typeof(HomePage),
         };

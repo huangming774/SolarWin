@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
@@ -243,10 +244,11 @@ public partial class ChatDetailViewModel : ObservableObject
             IsSending = true;
             ErrorMessage = null;
 
+            var clientMessageId = Guid.NewGuid().ToString("N");
             var request = new SendMessageRequest
             {
                 Content = string.IsNullOrWhiteSpace(text) ? null : text,
-                ClientMessageId = Guid.NewGuid().ToString("N"),
+                ClientMessageId = clientMessageId,
                 Nonce = Guid.NewGuid().ToString("N")[..16],
                 AttachmentsId = string.IsNullOrWhiteSpace(imageId) ? null : [imageId!],
             };
@@ -255,9 +257,11 @@ public partial class ChatDetailViewModel : ObservableObject
             Draft = string.Empty;
             ClearPendingImage();
 
-            await SyncOnceAsync().ConfigureAwait(true);
+            // Show immediately; the sync copy replaces the echo in place (matched by client_message_id).
+            AddLocalEcho(text, imageId, clientMessageId);
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             _ = LoadMediaAsync();
+            _ = ReconcileAfterSendAsync();
         }
         catch (SolarApiException ex)
         {
@@ -266,6 +270,46 @@ public partial class ChatDetailViewModel : ObservableObject
         finally
         {
             IsSending = false;
+        }
+    }
+
+    private void AddLocalEcho(string? text, string? imageId, string clientMessageId)
+    {
+        var account = _authService.CurrentAccount;
+        var echo = new SnChatMessage
+        {
+            Id = Guid.Empty,
+            ClientMessageId = clientMessageId,
+            ChatRoomId = RoomId,
+            Type = string.IsNullOrWhiteSpace(imageId) ? "text" : "image",
+            Content = text,
+            CreatedAt = DateTimeOffset.Now,
+            SenderId = account?.Id ?? Guid.Empty,
+            Sender = account is null
+                ? null
+                : new SnChatMember
+                {
+                    AccountId = account.Id,
+                    Account = account,
+                    Nick = account.Nick,
+                },
+            Attachments = string.IsNullOrWhiteSpace(imageId)
+                ? null
+                : [new SnCloudFile { Id = imageId, MimeType = "image/jpeg" }],
+        };
+
+        AddMessageInternal(echo, append: true);
+    }
+
+    private async Task ReconcileAfterSendAsync()
+    {
+        try
+        {
+            await SyncOnceAsync().ConfigureAwait(true);
+        }
+        catch
+        {
+            // Poll loop retries; the echo stays until the server copy arrives.
         }
     }
 
@@ -427,13 +471,34 @@ public partial class ChatDetailViewModel : ObservableObject
 
     private bool AddMessageInternal(SnChatMessage message, bool append)
     {
+        var currentId = _authService.CurrentAccount?.Id;
+
+        // Reconcile optimistic echoes: the server copy carries the same client_message_id.
+        if (!string.IsNullOrEmpty(message.ClientMessageId))
+        {
+            for (var i = 0; i < Messages.Count; i++)
+            {
+                var existing = Messages[i].Message;
+                if (existing.Id == Guid.Empty
+                    && string.Equals(existing.ClientMessageId, message.ClientMessageId, StringComparison.Ordinal))
+                {
+                    if (message.Id != Guid.Empty)
+                    {
+                        _knownMessageIds.Add(message.Id);
+                    }
+
+                    Messages[i] = new MessageItemViewModel(message, currentId, _imageLoader);
+                    return true;
+                }
+            }
+        }
+
         if (message.Id != Guid.Empty && !_knownMessageIds.Add(message.Id))
         {
             return false;
         }
 
-        var currentId = _authService.CurrentAccount?.Id;
-        var item = new MessageItemViewModel(message, currentId);
+        var item = new MessageItemViewModel(message, currentId, _imageLoader);
 
         if (append)
         {
@@ -482,59 +547,75 @@ public partial class ChatDetailViewModel : ObservableObject
         }
     }
 
+    private bool _mediaLoading;
+
     private async Task LoadMediaAsync()
     {
-        // Avatars + attachment images via DysonFS /drive/files/{id}
-        foreach (var msg in Messages.ToList())
+        // Single-flight: send/poll/load-more can all trigger this concurrently.
+        if (_mediaLoading)
         {
-            if (!string.IsNullOrWhiteSpace(msg.AvatarUrl))
+            return;
+        }
+
+        _mediaLoading = true;
+        try
+        {
+            var avatarTasks = new List<(MessageItemViewModel Msg, Task<BitmapImage?> Task)>();
+            var attachmentTasks = new List<(MessageAttachmentViewModel Att, Task<BitmapImage?> Task)>();
+
+            foreach (var msg in Messages.ToList())
             {
-                try
+                if (!msg.AvatarAuthenticated && !string.IsNullOrWhiteSpace(msg.AvatarUrl))
                 {
-                    var bmp = await _imageLoader.LoadAsync(msg.AvatarUrl).ConfigureAwait(true);
-                    if (bmp is not null)
+                    avatarTasks.Add((msg, _imageLoader.LoadSafeAsync(msg.AvatarUrl)));
+                }
+
+                foreach (var att in msg.Attachments.Where(a => a.IsImage && a.Image is null))
+                {
+                    var key = att.FileId ?? att.Url;
+                    if (string.IsNullOrWhiteSpace(key))
                     {
-                        msg.SetAuthenticatedAvatar(bmp);
+                        continue;
                     }
-                }
-                catch
-                {
-                    // keep initials
-                }
-            }
 
-            foreach (var att in msg.Attachments.Where(a => a.IsImage).ToList())
-            {
-                if (att.Image is not null)
-                {
-                    continue;
-                }
-
-                var key = att.FileId ?? att.Url;
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    continue;
-                }
-
-                try
-                {
                     att.IsLoading = true;
-                    var bmp = await _imageLoader.LoadAsync(key).ConfigureAwait(true);
-                    if (bmp is not null)
-                    {
-                        att.Image = bmp;
-                        att.ImageOpacity = 1.0;
-                    }
-                }
-                catch
-                {
-                    // leave empty
-                }
-                finally
-                {
-                    att.IsLoading = false;
+                    attachmentTasks.Add((att, _imageLoader.LoadSafeAsync(key)));
                 }
             }
+
+            if (avatarTasks.Count == 0 && attachmentTasks.Count == 0)
+            {
+                return;
+            }
+
+            // Download in parallel, then apply in one UI turn: avatars popping in one by
+            // one down the list reads as flickering.
+            await Task.WhenAll(
+                avatarTasks.Select(t => t.Task)
+                    .Concat(attachmentTasks.Select(t => t.Task))).ConfigureAwait(true);
+
+            foreach (var (msg, task) in avatarTasks)
+            {
+                if (task.Result is { } bmp)
+                {
+                    msg.SetAuthenticatedAvatar(bmp);
+                }
+            }
+
+            foreach (var (att, task) in attachmentTasks)
+            {
+                if (task.Result is { } bmp)
+                {
+                    att.Image = bmp;
+                    att.ImageOpacity = 1.0;
+                }
+
+                att.IsLoading = false;
+            }
+        }
+        finally
+        {
+            _mediaLoading = false;
         }
     }
 

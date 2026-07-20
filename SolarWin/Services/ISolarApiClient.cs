@@ -103,4 +103,24 @@ public interface ISolarApiClient
 
     /// <summary>Download remote file bytes (authenticated when needed).</summary>
     Task DownloadToStreamAsync(string url, Stream destination, IProgress<double>? progress, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/wallets/all — all wallets available to the current account.</summary>
+    Task<List<SnWallet>> GetWalletsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/wallets — current default wallet.</summary>
+    Task<SnWallet?> GetWalletAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/wallets/transactions — transaction history.</summary>
+    Task<List<SnWalletTransaction>> GetTransactionsAsync(Guid walletId, int offset, int take, CancellationToken cancellationToken = default);
+
+    // —— Sphere / Feed ——
+
+    /// <summary>GET /sphere/posts — public feed, offset/take paging.</summary>
+    Task<List<SnPost>> GetPostsAsync(int offset, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /sphere/posts — create a post; pub selects the publisher (defaults to the account's own).</summary>
+    Task<SnPost> CreatePostAsync(CreatePostRequest request, string? pub = null, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /sphere/publishers/of/{accountId} — publishers owned by an account.</summary>
+    Task<List<SnPublisher>> GetAccountPublishersAsync(Guid accountId, CancellationToken cancellationToken = default);
 }

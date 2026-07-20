@@ -8,21 +8,26 @@ namespace SolarWin.ViewModels;
 /// <summary>One row in the chat room list (summary + room).</summary>
 public partial class ChatRoomListItem : ObservableObject
 {
-    public ChatRoomListItem(SnChatRoom room, ChatSummaryResponse? summary, Guid? currentAccountId = null)
+    public ChatRoomListItem(SnChatRoom room, ChatSummaryResponse? summary, DysonFileImageLoader imageLoader, Guid? currentAccountId = null)
     {
         Room = room;
         RoomId = room.Id;
         Name = ResolveName(room);
         AvatarUrl = CloudFileUrlHelper.ResolveRoomAvatar(room, currentAccountId);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        InitialsOpacity = HasAvatar ? 0.0 : 1.0;
-        AvatarOpacity = HasAvatar ? 1.0 : 0.0;
         Description = room.Description;
 
-        // Public URL first; may be replaced by authenticated load later.
-        if (HasAvatar)
+        // Cache-first; a bare UriSource would 401 on private drive files. Initials until loaded.
+        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar) && cachedAvatar is not null)
         {
-            AvatarImage = AvatarImageHelper.TryCreateBitmap(AvatarUrl);
+            AvatarImage = cachedAvatar;
+            InitialsOpacity = 0.0;
+            AvatarOpacity = 1.0;
+        }
+        else
+        {
+            InitialsOpacity = 1.0;
+            AvatarOpacity = 0.0;
         }
 
         if (summary?.LastMessage is { } last)

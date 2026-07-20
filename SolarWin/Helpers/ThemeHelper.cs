@@ -1,5 +1,4 @@
 using Microsoft.UI.Xaml;
-using Windows.Storage;
 
 namespace SolarWin.Helpers;
 
@@ -10,9 +9,8 @@ public static class ThemeHelper
 
     public static ElementTheme GetSavedTheme()
     {
-        var values = ApplicationData.Current.LocalSettings.Values;
-        if (values.TryGetValue(SettingsKey, out var raw) && raw is string s
-            && Enum.TryParse<ElementTheme>(s, ignoreCase: true, out var theme))
+        var raw = SettingsStore.GetString(SettingsKey);
+        if (raw is not null && Enum.TryParse<ElementTheme>(raw, ignoreCase: true, out var theme))
         {
             return theme;
         }
@@ -22,7 +20,7 @@ public static class ThemeHelper
 
     public static void SaveTheme(ElementTheme theme)
     {
-        ApplicationData.Current.LocalSettings.Values[SettingsKey] = theme.ToString();
+        SettingsStore.SetString(SettingsKey, theme.ToString());
     }
 
     public static void ApplyToWindow(Window? window, ElementTheme theme)

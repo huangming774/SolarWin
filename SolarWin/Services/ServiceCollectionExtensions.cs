@@ -34,6 +34,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ChatDetailViewModel>();
         services.AddTransient<FilesViewModel>();
         services.AddTransient<NotificationsViewModel>();
+        services.AddTransient<WalletViewModel>();
+        // Posts feed keeps in-memory cache across navigations (detail page returns must not reload)
+        services.AddSingleton<PostsViewModel>();
+        services.AddTransient<PostDetailViewModel>();
         services.AddTransient<ProfileViewModel>();
         services.AddTransient<SettingsViewModel>();
         services.AddTransient<MainPageViewModel>();
