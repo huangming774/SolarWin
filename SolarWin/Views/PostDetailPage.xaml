@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:media="using:Microsoft.UI.Xaml.Media.Imaging"
+    xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
     <Grid>
@@ -18,6 +19,7 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button Click="BackButton_OnClick" Content="返回" />
             <TextBlock
@@ -25,6 +27,11 @@
                 VerticalAlignment="Center"
                 Style="{StaticResource SubtitleTextBlockStyle}"
                 Text="帖子详情" />
+            <ProgressRing
+                Grid.Column="2"
+                Width="24"
+                Height="24"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
         </Grid>
 
         <ScrollViewer Grid.Row="1">
@@ -109,6 +116,115 @@
                         Opacity="0.55"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Text="{x:Bind ViewModel.StatsText, Mode=OneWay}" />
+
+                    <!-- Interactions -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            Command="{x:Bind ViewModel.ToggleLikeCommand}"
+                            Content="{x:Bind ViewModel.LikeButtonText, Mode=OneWay}" />
+                        <Button
+                            Command="{x:Bind ViewModel.ToggleBoostCommand}"
+                            Content="{x:Bind ViewModel.BoostButtonText, Mode=OneWay}" />
+                        <Button
+                            Command="{x:Bind ViewModel.ToggleBookmarkCommand}"
+                            Content="{x:Bind ViewModel.BookmarkButtonText, Mode=OneWay}" />
+                        <Button
+                            Command="{x:Bind ViewModel.LoadCommand}"
+                            Content="刷新" />
+                    </StackPanel>
+
+                    <!-- Reply composer -->
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            MaxHeight="120"
+                            MinHeight="40"
+                            AcceptsReturn="True"
+                            PlaceholderText="写下你的回复…"
+                            ScrollViewer.VerticalScrollBarVisibility="Auto"
+                            Text="{x:Bind ViewModel.ReplyContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            TextWrapping="Wrap" />
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            Command="{x:Bind ViewModel.SendReplyCommand}"
+                            Content="回复"
+                            IsEnabled="{x:Bind ViewModel.CanReply, Mode=OneWay}"
+                            Style="{StaticResource AccentButtonStyle}" />
+                    </Grid>
+
+                    <TextBlock
+                        FontWeight="SemiBold"
+                        Text="{x:Bind ViewModel.RepliesHeader, Mode=OneWay}" />
+
+                    <TextBlock
+                        Opacity="0.55"
+                        Text="暂无回复"
+                        Visibility="{x:Bind ViewModel.EmptyRepliesVisibility, Mode=OneWay}" />
+
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.Replies, Mode=OneWay}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PostItemViewModel">
+                                <Border
+                                    Padding="0,10"
+                                    BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                    BorderThickness="0,0,0,1">
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <PersonPicture
+                                            Width="36"
+                                            Height="36"
+                                            Initials="{x:Bind Initials}"
+                                            ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                        <StackPanel Grid.Column="1" Spacing="2">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                                <TextBlock
+                                                    Opacity="0.55"
+                                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                                    Text="{x:Bind AuthorHandle}" />
+                                                <TextBlock
+                                                    Opacity="0.55"
+                                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                                    Text="{x:Bind TimeText}" />
+                                            </StackPanel>
+                                            <TextBlock Text="{x:Bind ContentText}" TextWrapping="Wrap" />
+                                            <TextBlock
+                                                Opacity="0.5"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Text="{x:Bind StatsText, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <StackPanel
+                        HorizontalAlignment="Center"
+                        Orientation="Horizontal"
+                        Spacing="8"
+                        Visibility="{x:Bind ViewModel.LoadMoreRepliesVisibility, Mode=OneWay}">
+                        <Button
+                            Command="{x:Bind ViewModel.LoadMoreRepliesCommand}"
+                            Content="加载更多回复" />
+                        <ProgressRing
+                            Width="20"
+                            Height="20"
+                            IsActive="{x:Bind ViewModel.IsLoadingReplies, Mode=OneWay}" />
+                    </StackPanel>
+
+                    <TextBlock
+                        Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                        Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        Visibility="{x:Bind ViewModel.ErrorVisibility, Mode=OneWay}" />
                 </StackPanel>
             </Grid>
         </ScrollViewer>

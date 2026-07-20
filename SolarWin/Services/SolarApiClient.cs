@@ -556,6 +556,53 @@ public sealed class SolarApiClient : ISolarApiClient
         return JsonListParser.ParseList<SnPost>(json);
     }
 
+    public async Task<SnTimelinePage> GetTimelineAsync(
+        string? cursor = null,
+        int take = 20,
+        string? mode = null,
+        string? filter = null,
+        CancellationToken cancellationToken = default)
+    {
+        take = take <= 0 ? 20 : take;
+        var qs = new List<string> { $"take={take}" };
+        if (!string.IsNullOrWhiteSpace(cursor))
+        {
+            qs.Add($"cursor={Uri.EscapeDataString(cursor)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(mode))
+        {
+            qs.Add($"mode={Uri.EscapeDataString(mode)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter))
+        {
+            qs.Add($"filter={Uri.EscapeDataString(filter)}");
+        }
+
+        var path = $"/sphere/timeline?{string.Join('&', qs)}";
+        return await GetAsync<SnTimelinePage>(path, cancellationToken).ConfigureAwait(false);
+    }
+
+    public Task<SnPost> GetPostAsync(Guid postId, CancellationToken cancellationToken = default)
+        => GetAsync<SnPost>($"/sphere/posts/{postId:D}", cancellationToken);
+
+    public async Task<List<SnPost>> GetPostRepliesAsync(
+        Guid postId,
+        int offset,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        take = take <= 0 ? 20 : take;
+        offset = Math.Max(0, offset);
+        var path = $"/sphere/posts/{postId:D}/replies?offset={offset}&take={take}";
+        var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnPost>(json);
+    }
+
+    public Task<PostThreadResponse> GetPostThreadAsync(Guid postId, CancellationToken cancellationToken = default)
+        => GetAsync<PostThreadResponse>($"/sphere/posts/{postId:D}/thread?ancestors=true&take=20", cancellationToken);
+
     public Task<SnPost> CreatePostAsync(CreatePostRequest request, string? pub = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -566,6 +613,100 @@ public sealed class SolarApiClient : ISolarApiClient
         }
 
         return PostAsync<CreatePostRequest, SnPost>(path, request, cancellationToken);
+    }
+
+    public async Task<SnPostReaction?> ReactToPostAsync(
+        Guid postId,
+        PostReactionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (string.IsNullOrWhiteSpace(request.Symbol))
+        {
+            throw new ArgumentException("Reaction symbol is required.", nameof(request));
+        }
+
+        // Toggle: add returns 200 + body; remove returns 204 No Content.
+        using var response = await SendCoreAsync(
+                HttpMethod.Post,
+                $"/sphere/posts/{postId:D}/reactions",
+                JsonContent.Create(request, options: JsonDefaults.Options),
+                allowRefresh: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+
+        if (response.StatusCode is System.Net.HttpStatusCode.NoContent
+            or System.Net.HttpStatusCode.ResetContent)
+        {
+            return null;
+        }
+
+        // Some gateways may return empty 200 on remove.
+        var text = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(text) || text is "null" or "{}")
+        {
+            return null;
+        }
+
+        try
+        {
+            return System.Text.Json.JsonSerializer.Deserialize<SnPostReaction>(text, JsonDefaults.Options);
+        }
+        catch (System.Text.Json.JsonException ex)
+        {
+            throw new SolarApiException("Failed to deserialize reaction response.", response.StatusCode, text, ex);
+        }
+    }
+
+    public async Task<List<SnPostReaction>> GetPostReactionsAsync(
+        Guid postId,
+        int offset,
+        int take,
+        CancellationToken cancellationToken = default)
+    {
+        take = take <= 0 ? 20 : take;
+        offset = Math.Max(0, offset);
+        var path = $"/sphere/posts/{postId:D}/reactions?offset={offset}&take={take}";
+        var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
+        return JsonListParser.ParseList<SnPostReaction>(json);
+    }
+
+    public async Task BoostPostAsync(Guid postId, string? content = null, CancellationToken cancellationToken = default)
+    {
+        // Body is optional; avoid failing on response shape (SnBoost / Instant variance).
+        var body = new BoostRequest { Content = content };
+        using var response = await SendCoreAsync(
+                HttpMethod.Post,
+                $"/sphere/posts/{postId:D}/boost",
+                JsonContent.Create(body, options: JsonDefaults.Options),
+                allowRefresh: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+    }
+
+    public Task UnboostPostAsync(Guid postId, CancellationToken cancellationToken = default)
+        => DeleteAsync($"/sphere/posts/{postId:D}/boost", cancellationToken);
+
+    public Task<SnPostBookmark> BookmarkPostAsync(Guid postId, CancellationToken cancellationToken = default)
+        => PostAsync<SnPostBookmark>($"/sphere/posts/{postId:D}/bookmark", cancellationToken);
+
+    public Task UnbookmarkPostAsync(Guid postId, CancellationToken cancellationToken = default)
+        => DeleteAsync($"/sphere/posts/{postId:D}/bookmark", cancellationToken);
+
+    public async Task<SnPostBookmark?> GetPostBookmarkAsync(Guid postId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await GetAsync<SnPostBookmark>($"/sphere/posts/{postId:D}/bookmark", cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (SolarApiException ex) when (ex.StatusCode is System.Net.HttpStatusCode.NotFound)
+        {
+            return null;
+        }
     }
 
     public async Task<List<SnPublisher>> GetAccountPublishersAsync(Guid accountId, CancellationToken cancellationToken = default)

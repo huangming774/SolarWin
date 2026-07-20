@@ -53,6 +53,9 @@ public sealed class SnPost
     [JsonPropertyName("replies_count")]
     public int RepliesCount { get; set; }
 
+    [JsonPropertyName("thread_replies_count")]
+    public int ThreadRepliesCount { get; set; }
+
     [JsonPropertyName("views_unique")]
     public int ViewsUnique { get; set; }
 
@@ -71,8 +74,22 @@ public sealed class SnPost
     [JsonPropertyName("publisher")]
     public SnPublisher? Publisher { get; set; }
 
+    /// <summary>symbol → count (OpenAPI reactions_count additionalProperties).</summary>
+    [JsonPropertyName("reactions_count")]
+    public Dictionary<string, int>? ReactionsCount { get; set; }
+
+    /// <summary>symbol → whether current user reacted (OpenAPI reactions_made).</summary>
+    [JsonPropertyName("reactions_made")]
+    public Dictionary<string, bool>? ReactionsMade { get; set; }
+
+    [JsonPropertyName("is_bookmarked")]
+    public bool IsBookmarked { get; set; }
+
     [JsonPropertyName("replied_post_id")]
     public Guid? RepliedPostId { get; set; }
+
+    [JsonPropertyName("replied_post")]
+    public SnPost? RepliedPost { get; set; }
 
     [JsonPropertyName("forwarded_post_id")]
     public Guid? ForwardedPostId { get; set; }

@@ -19,8 +19,11 @@ public partial class PostsViewModel : ObservableObject
     private readonly IAuthService _auth;
 
     private int _offset;
+    private string? _timelineCursor;
+    private bool _usingTimeline = true;
     private string? _publisherName;
     private bool _publisherResolved;
+    private bool _allowFeedModeReload;
 
     public PostsViewModel(
         ISolarApiClient api,
@@ -66,6 +69,10 @@ public partial class PostsViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanPost))]
     public partial bool IsPosting { get; set; }
 
+    /// <summary>0 = timeline (home), 1 = public posts.</summary>
+    [ObservableProperty]
+    public partial int FeedModeIndex { get; set; }
+
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     public bool IsEmpty => !IsBusy && !HasError && Items.Count == 0;
@@ -73,6 +80,19 @@ public partial class PostsViewModel : ObservableObject
     public bool ShowContent => !IsBusy && !HasError && Items.Count > 0;
 
     public bool CanPost => !IsPosting && !string.IsNullOrWhiteSpace(NewPostContent);
+
+    partial void OnFeedModeIndexChanged(int value)
+    {
+        if (!_allowFeedModeReload || IsBusy)
+        {
+            return;
+        }
+
+        if (LoadCommand.CanExecute(null))
+        {
+            LoadCommand.Execute(null);
+        }
+    }
 
     [RelayCommand]
     private async Task LoadAsync()
@@ -83,18 +103,19 @@ public partial class PostsViewModel : ObservableObject
             ErrorMessage = null;
             Items.Clear();
             _offset = 0;
+            _timelineCursor = null;
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShowContent));
 
-            var list = await _api.GetPostsAsync(0, PageSize).ConfigureAwait(true);
+            var list = await FetchPageAsync(reset: true).ConfigureAwait(true);
             foreach (var post in list)
             {
                 Items.Add(new PostItemViewModel(post, _imageLoader));
             }
 
-            _offset = Items.Count;
-            HasMore = list.Count >= PageSize;
-            StatusText = $"共 {Items.Count} 条";
+            StatusText = _usingTimeline
+                ? $"时间线 · {Items.Count} 条"
+                : $"公共 · {Items.Count} 条";
             _ = LoadImagesAsync();
         }
         catch (SolarApiException ex)
@@ -106,6 +127,7 @@ public partial class PostsViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+            _allowFeedModeReload = true;
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShowContent));
             OnPropertyChanged(nameof(HasError));
@@ -123,15 +145,15 @@ public partial class PostsViewModel : ObservableObject
         try
         {
             IsLoadingMore = true;
-            var list = await _api.GetPostsAsync(_offset, PageSize).ConfigureAwait(true);
+            var list = await FetchPageAsync(reset: false).ConfigureAwait(true);
             foreach (var post in list)
             {
                 Items.Add(new PostItemViewModel(post, _imageLoader));
             }
 
-            _offset += list.Count;
-            HasMore = list.Count >= PageSize;
-            StatusText = $"共 {Items.Count} 条";
+            StatusText = _usingTimeline
+                ? $"时间线 · {Items.Count} 条"
+                : $"公共 · {Items.Count} 条";
             _ = LoadImagesAsync();
         }
         catch (SolarApiException ex)
@@ -169,7 +191,9 @@ public partial class PostsViewModel : ObservableObject
             var created = await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
             Items.Insert(0, new PostItemViewModel(created, _imageLoader));
             NewPostContent = string.Empty;
-            StatusText = $"共 {Items.Count} 条";
+            StatusText = _usingTimeline
+                ? $"时间线 · {Items.Count} 条"
+                : $"公共 · {Items.Count} 条";
             _ = LoadImagesAsync();
             _toast.Success("已发布");
         }
@@ -185,6 +209,59 @@ public partial class PostsViewModel : ObservableObject
             OnPropertyChanged(nameof(ShowContent));
             OnPropertyChanged(nameof(HasError));
         }
+    }
+
+    private async Task<List<SnPost>> FetchPageAsync(bool reset)
+    {
+        // Manual mode: public posts only.
+        if (FeedModeIndex == 1)
+        {
+            _usingTimeline = false;
+            var publicList = await _api.GetPostsAsync(_offset, PageSize).ConfigureAwait(true);
+            _offset += publicList.Count;
+            HasMore = publicList.Count >= PageSize;
+            return publicList;
+        }
+
+        // Default: timeline with automatic fallback to public posts.
+        try
+        {
+            var page = await _api.GetTimelineAsync(
+                cursor: reset ? null : _timelineCursor,
+                take: PageSize).ConfigureAwait(true);
+
+            var extracted = TimelinePostExtractor.ExtractPosts(page);
+            if (extracted.Count > 0 || !string.IsNullOrWhiteSpace(page.NextCursor))
+            {
+                _usingTimeline = true;
+                _timelineCursor = page.NextCursor;
+                HasMore = !string.IsNullOrWhiteSpace(page.NextCursor);
+                return extracted;
+            }
+
+            // Empty timeline page with no cursor — fall back once on first page.
+            if (reset)
+            {
+                return await LoadPublicFallbackAsync().ConfigureAwait(true);
+            }
+
+            HasMore = false;
+            return [];
+        }
+        catch (SolarApiException) when (reset)
+        {
+            return await LoadPublicFallbackAsync().ConfigureAwait(true);
+        }
+    }
+
+    private async Task<List<SnPost>> LoadPublicFallbackAsync()
+    {
+        _usingTimeline = false;
+        _timelineCursor = null;
+        var publicList = await _api.GetPostsAsync(0, PageSize).ConfigureAwait(true);
+        _offset = publicList.Count;
+        HasMore = publicList.Count >= PageSize;
+        return publicList;
     }
 
     /// <summary>

@@ -150,3 +150,14 @@ public enum MessageReactionAttitude
     Positive = 1,
     Negative = 2,
 }
+
+/// <summary>
+/// Post reaction attitude (server / Solian client).
+/// Positive=0, Neutral=1, Negative=2 — not the same as MessageReactionAttitude.
+/// </summary>
+public enum PostReactionAttitude
+{
+    Positive = 0,
+    Neutral = 1,
+    Negative = 2,
+}

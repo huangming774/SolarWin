@@ -13,6 +13,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
@@ -36,7 +37,20 @@
                 IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
         </StackPanel>
 
-        <Grid Grid.Row="1" ColumnSpacing="8">
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+            <TextBlock
+                VerticalAlignment="Center"
+                Opacity="0.7"
+                Text="信息流" />
+            <ComboBox
+                MinWidth="140"
+                SelectedIndex="{x:Bind ViewModel.FeedModeIndex, Mode=TwoWay}">
+                <ComboBoxItem Content="时间线" />
+                <ComboBoxItem Content="公共帖子" />
+            </ComboBox>
+        </StackPanel>
+
+        <Grid Grid.Row="2" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -58,7 +72,7 @@
                 Style="{StaticResource AccentButtonStyle}" />
         </Grid>
 
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="3">
             <ListView
                 IsItemClickEnabled="True"
                 ItemClick="PostList_OnItemClick"
@@ -149,7 +163,7 @@
                                     <TextBlock
                                         Opacity="0.55"
                                         Style="{StaticResource CaptionTextBlockStyle}"
-                                        Text="{x:Bind StatsText}" />
+                                        Text="{x:Bind StatsText, Mode=OneWay}" />
                                 </StackPanel>
                             </Grid>
                         </Border>

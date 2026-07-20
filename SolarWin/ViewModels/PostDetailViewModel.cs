@@ -1,22 +1,45 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
+using SolarWin.Models;
+using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
 
-/// <summary>Full single-post view: untruncated content, all images.</summary>
+/// <summary>Full single-post view: detail fetch, interactions, replies.</summary>
 public partial class PostDetailViewModel : ObservableObject
 {
-    private readonly DysonFileImageLoader _imageLoader;
+    private const int ReplyPageSize = 20;
 
-    public PostDetailViewModel(DysonFileImageLoader imageLoader)
+    private readonly ISolarApiClient _api;
+    private readonly IToastService _toast;
+    private readonly DysonFileImageLoader _imageLoader;
+    private readonly IAuthService _auth;
+
+    private Guid _postId;
+    private int _replyOffset;
+    private string? _publisherName;
+    private bool _publisherResolved;
+    private bool _busyAction;
+
+    public PostDetailViewModel(
+        ISolarApiClient api,
+        IToastService toast,
+        DysonFileImageLoader imageLoader,
+        IAuthService auth)
     {
+        _api = api;
+        _toast = toast;
         _imageLoader = imageLoader;
+        _auth = auth;
     }
 
     public ObservableCollection<BitmapImage> Images { get; } = [];
+
+    public ObservableCollection<PostItemViewModel> Replies { get; } = [];
 
     [ObservableProperty]
     public partial BitmapImage? AvatarImage { get; set; }
@@ -53,21 +76,443 @@ public partial class PostDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial Visibility ImagesVisibility { get; set; } = Visibility.Collapsed;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmptyReplies))]
+    [NotifyPropertyChangedFor(nameof(EmptyRepliesVisibility))]
+    [NotifyPropertyChangedFor(nameof(ShowReplies))]
+    public partial bool IsBusy { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasError))]
+    [NotifyPropertyChangedFor(nameof(ErrorVisibility))]
+    public partial string? ErrorMessage { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsLoadingReplies { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LoadMoreRepliesVisibility))]
+    public partial bool HasMoreReplies { get; set; }
+
+    public Visibility LoadMoreRepliesVisibility => HasMoreReplies ? Visibility.Visible : Visibility.Collapsed;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReply))]
+    public partial string ReplyContent { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanReply))]
+    public partial bool IsReplying { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsLiked { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsBoosted { get; set; }
+
+    [ObservableProperty]
+    public partial bool IsBookmarked { get; set; }
+
+    [ObservableProperty]
+    public partial int Upvotes { get; set; }
+
+    [ObservableProperty]
+    public partial int BoostCount { get; set; }
+
+    [ObservableProperty]
+    public partial int RepliesCount { get; set; }
+
+    [ObservableProperty]
+    public partial string LikeButtonText { get; set; } = "赞";
+
+    [ObservableProperty]
+    public partial string BoostButtonText { get; set; } = "转发";
+
+    [ObservableProperty]
+    public partial string BookmarkButtonText { get; set; } = "收藏";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmptyReplies))]
+    [NotifyPropertyChangedFor(nameof(EmptyRepliesVisibility))]
+    [NotifyPropertyChangedFor(nameof(ShowReplies))]
+    public partial string RepliesHeader { get; set; } = "回复";
+
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
+
+    public Visibility ErrorVisibility => HasError ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool IsEmptyReplies => !IsBusy && !IsLoadingReplies && Replies.Count == 0;
+
+    public Visibility EmptyRepliesVisibility => IsEmptyReplies ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool ShowReplies => Replies.Count > 0;
+
+    public bool CanReply => !IsReplying && !string.IsNullOrWhiteSpace(ReplyContent) && _postId != Guid.Empty;
+
+    /// <summary>
+    /// Seed from feed row then refresh full detail + replies from API.
+    /// </summary>
     public void Initialize(PostItemViewModel item)
     {
-        var post = item.Post;
+        _postId = item.Id;
+        ApplyHeader(item);
+        _ = LoadAsync();
+    }
 
+    [RelayCommand]
+    private async Task LoadAsync()
+    {
+        if (_postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            Images.Clear();
+            Replies.Clear();
+            _replyOffset = 0;
+
+            SnPost post;
+            try
+            {
+                post = await _api.GetPostAsync(_postId).ConfigureAwait(true);
+            }
+            catch (SolarApiException)
+            {
+                // Fall back to seed data already on screen.
+                await LoadRepliesInternalAsync(reset: true).ConfigureAwait(true);
+                return;
+            }
+
+            ApplyPost(post);
+            await LoadImagesFromPostAsync(post).ConfigureAwait(true);
+            await LoadRepliesInternalAsync(reset: true).ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            ErrorMessage = ex.Message;
+            _toast.Error("加载帖子失败");
+        }
+        finally
+        {
+            IsBusy = false;
+            NotifyReplyUi();
+            OnPropertyChanged(nameof(HasError));
+            OnPropertyChanged(nameof(ErrorVisibility));
+        }
+    }
+
+    [RelayCommand]
+    private async Task LoadMoreRepliesAsync()
+    {
+        if (IsLoadingReplies || !HasMoreReplies)
+        {
+            return;
+        }
+
+        try
+        {
+            IsLoadingReplies = true;
+            await LoadRepliesInternalAsync(reset: false).ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"加载回复失败:{ex.Message}");
+        }
+        finally
+        {
+            IsLoadingReplies = false;
+            NotifyReplyUi();
+        }
+    }
+
+    [RelayCommand]
+    private async Task SendReplyAsync()
+    {
+        var content = ReplyContent.Trim();
+        if (content.Length == 0 || IsReplying || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            IsReplying = true;
+            var pub = await ResolvePublisherNameAsync().ConfigureAwait(true);
+            var request = new CreatePostRequest
+            {
+                Content = content,
+                Visibility = 0,
+                Type = 0,
+                RepliedPostId = _postId,
+            };
+
+            var created = await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
+            Replies.Insert(0, new PostItemViewModel(created, _imageLoader));
+            ReplyContent = string.Empty;
+            RepliesCount++;
+            RepliesHeader = $"回复 ({RepliesCount})";
+            RefreshStats();
+            _ = LoadReplyImagesAsync();
+            _toast.Success("已回复");
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"回复失败:{ex.Message}");
+        }
+        finally
+        {
+            IsReplying = false;
+            NotifyReplyUi();
+            OnPropertyChanged(nameof(CanReply));
+        }
+    }
+
+    private void NotifyReplyUi()
+    {
+        OnPropertyChanged(nameof(IsEmptyReplies));
+        OnPropertyChanged(nameof(EmptyRepliesVisibility));
+        OnPropertyChanged(nameof(ShowReplies));
+    }
+
+    [RelayCommand]
+    private async Task ToggleLikeAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            // Same symbol POST toggles: add → 200, remove → 204.
+            var reaction = await _api.ReactToPostAsync(
+                _postId,
+                new PostReactionRequest
+                {
+                    Symbol = PostItemViewModel.DefaultLikeSymbol,
+                    Attitude = (int)PostReactionAttitude.Positive,
+                }).ConfigureAwait(true);
+
+            if (reaction is null)
+            {
+                IsLiked = false;
+                Upvotes = Math.Max(0, Upvotes - 1);
+                LikeButtonText = Upvotes > 0 ? $"赞 {Upvotes}" : "赞";
+                _toast.Success("已取消点赞");
+            }
+            else
+            {
+                IsLiked = true;
+                Upvotes++;
+                LikeButtonText = $"赞 {Upvotes}";
+                _toast.Success("已点赞");
+            }
+
+            RefreshStats();
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"点赞失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task ToggleBoostAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            if (IsBoosted)
+            {
+                await _api.UnboostPostAsync(_postId).ConfigureAwait(true);
+                IsBoosted = false;
+                BoostCount = Math.Max(0, BoostCount - 1);
+                BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
+                RefreshStats();
+                _toast.Success("已取消转发");
+            }
+            else
+            {
+                await _api.BoostPostAsync(_postId).ConfigureAwait(true);
+                IsBoosted = true;
+                BoostCount++;
+                BoostButtonText = $"转发 {BoostCount}";
+                RefreshStats();
+                _toast.Success("已转发");
+            }
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"转发失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    /// <summary>Map known Sphere error codes to short Chinese hints.</summary>
+    private static string FriendlySphereError(SolarApiException ex)
+    {
+        var body = ex.ResponseBody ?? string.Empty;
+        var code = string.Empty;
+        if (!string.IsNullOrWhiteSpace(body))
+        {
+            try
+            {
+                using var doc = System.Text.Json.JsonDocument.Parse(body);
+                if (doc.RootElement.TryGetProperty("code", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    code = c.GetString() ?? string.Empty;
+                }
+            }
+            catch (System.Text.Json.JsonException)
+            {
+                // ignore
+            }
+        }
+
+        return code switch
+        {
+            "POST_REACTION_SUBSCRIPTION_REQUIRED" => "自定义反应需要订阅；已改用默认 thumb_up",
+            "POST_BOOST_PUBLISHER_REQUIRED" => "需要先创建发布者（Publisher）才能转发",
+            "POST_BOOST_ACTOR_NOT_FOUND" => "发布者未启用联邦身份（ActivityPub Actor），无法转发",
+            "POST_ALREADY_BOOSTED" => "已经转发过这条帖子了",
+            "POST_BOOST_BLOCKED" => "无法转发：双方存在屏蔽关系",
+            "POST_REACTION_BLOCKED" => "无法点赞：双方存在屏蔽关系",
+            _ => ex.ApiMessage ?? ex.Message,
+        };
+    }
+
+    [RelayCommand]
+    private async Task ToggleBookmarkAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            if (IsBookmarked)
+            {
+                await _api.UnbookmarkPostAsync(_postId).ConfigureAwait(true);
+                IsBookmarked = false;
+                BookmarkButtonText = "收藏";
+                _toast.Success("已取消收藏");
+            }
+            else
+            {
+                await _api.BookmarkPostAsync(_postId).ConfigureAwait(true);
+                IsBookmarked = true;
+                BookmarkButtonText = "已收藏";
+                _toast.Success("已收藏");
+            }
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"收藏失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    private async Task LoadRepliesInternalAsync(bool reset)
+    {
+        if (reset)
+        {
+            Replies.Clear();
+            _replyOffset = 0;
+        }
+
+        IsLoadingReplies = true;
+        try
+        {
+            var list = await _api.GetPostRepliesAsync(_postId, _replyOffset, ReplyPageSize).ConfigureAwait(true);
+            foreach (var reply in list)
+            {
+                Replies.Add(new PostItemViewModel(reply, _imageLoader));
+            }
+
+            _replyOffset += list.Count;
+            HasMoreReplies = list.Count >= ReplyPageSize;
+            RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+            _ = LoadReplyImagesAsync();
+        }
+        finally
+        {
+            IsLoadingReplies = false;
+        }
+    }
+
+    private void ApplyHeader(PostItemViewModel item)
+    {
         AuthorName = item.AuthorName;
         OnPropertyChanged(nameof(Initials));
         AuthorHandle = item.AuthorHandle;
         AvatarImage = item.AvatarImage;
         Title = item.Title;
         TitleVisibility = item.TitleVisibility;
-        ContentText = post.Content ?? post.Description ?? string.Empty;
+        ContentText = item.Post.Content ?? item.Post.Description ?? item.ContentText;
         StatsText = item.StatsText;
+        Upvotes = item.Upvotes;
+        BoostCount = item.BoostCount;
+        RepliesCount = item.RepliesCount;
+        IsLiked = item.IsLiked;
+        IsBookmarked = item.IsBookmarked;
+        IsBoosted = item.IsBoosted;
+        LikeButtonText = Upvotes > 0 ? $"赞 {Upvotes}" : "赞";
+        BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
+        BookmarkButtonText = IsBookmarked ? "已收藏" : "收藏";
+        RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+
+        var time = item.Post.PublishedAt ?? item.Post.CreatedAt;
+        TimeText = time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? item.TimeText;
+
+        if (!string.IsNullOrWhiteSpace(item.ForwardedText))
+        {
+            ForwardedText = item.ForwardedText;
+            ForwardedVisibility = Visibility.Visible;
+        }
+        else
+        {
+            ForwardedText = string.Empty;
+            ForwardedVisibility = Visibility.Collapsed;
+        }
+
+        ImagesVisibility = item.HasImages ? Visibility.Visible : Visibility.Collapsed;
+        _ = LoadImagesFromItemAsync(item);
+    }
+
+    private void ApplyPost(SnPost post)
+    {
+        var publisher = post.Publisher;
+        AuthorName = publisher?.Nick ?? publisher?.Name ?? AuthorName;
+        OnPropertyChanged(nameof(Initials));
+        AuthorHandle = string.IsNullOrWhiteSpace(publisher?.Name) ? AuthorHandle : $"@{publisher.Name}";
+        Title = post.Title ?? string.Empty;
+        TitleVisibility = string.IsNullOrWhiteSpace(post.Title) ? Visibility.Collapsed : Visibility.Visible;
+        ContentText = post.Content ?? post.Description ?? string.Empty;
 
         var time = post.PublishedAt ?? post.CreatedAt;
-        TimeText = time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? string.Empty;
+        TimeText = time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? TimeText;
 
         if (post.ForwardedPost is { } forwarded)
         {
@@ -76,22 +521,50 @@ public partial class PostDetailViewModel : ObservableObject
             ForwardedText = $"转发自 {fwdAuthor}:{fwdContent}";
             ForwardedVisibility = Visibility.Visible;
         }
+        else
+        {
+            ForwardedText = string.Empty;
+            ForwardedVisibility = Visibility.Collapsed;
+        }
 
-        ImagesVisibility = item.HasImages ? Visibility.Visible : Visibility.Collapsed;
+        Upvotes = post.Upvotes;
+        BoostCount = post.BoostCount;
+        RepliesCount = post.RepliesCount;
+        IsBookmarked = post.IsBookmarked;
+        IsLiked = post.ReactionsMade is { Count: > 0 } && post.ReactionsMade.Any(kv => kv.Value)
+                  || post.ReactionsMade?.GetValueOrDefault(PostItemViewModel.DefaultLikeSymbol) == true;
 
-        _ = LoadImagesAsync(item);
+        LikeButtonText = Upvotes > 0 ? $"赞 {Upvotes}" : "赞";
+        BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
+        BookmarkButtonText = IsBookmarked ? "已收藏" : "收藏";
+        RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+        RefreshStats();
+
+        var imageUrls = (post.Attachments ?? [])
+            .Where(CloudFileUrlHelper.IsLikelyImage)
+            .Select(CloudFileUrlHelper.Resolve)
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Cast<string>()
+            .ToList();
+        ImagesVisibility = imageUrls.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+        var avatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture);
+        if (!string.IsNullOrWhiteSpace(avatarUrl) && AvatarImage is null)
+        {
+            _ = LoadAvatarAsync(avatarUrl);
+        }
     }
 
-    private async Task LoadImagesAsync(PostItemViewModel item)
+    private void RefreshStats()
+    {
+        StatsText = $"回复 {RepliesCount} · 转发 {BoostCount} · 赞 {Upvotes}";
+    }
+
+    private async Task LoadImagesFromItemAsync(PostItemViewModel item)
     {
         if (AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
         {
-            var bmp = await _imageLoader.LoadAsync(item.AvatarUrl).ConfigureAwait(true);
-            if (bmp is not null)
-            {
-                AvatarImage = bmp;
-                item.AvatarImage ??= bmp;
-            }
+            await LoadAvatarAsync(item.AvatarUrl).ConfigureAwait(true);
         }
 
         foreach (var url in item.ImageUrls)
@@ -102,5 +575,80 @@ public partial class PostDetailViewModel : ObservableObject
                 Images.Add(bmp);
             }
         }
+
+        ImagesVisibility = Images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task LoadImagesFromPostAsync(SnPost post)
+    {
+        Images.Clear();
+        var urls = (post.Attachments ?? [])
+            .Where(CloudFileUrlHelper.IsLikelyImage)
+            .Select(CloudFileUrlHelper.Resolve)
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Cast<string>()
+            .ToList();
+
+        foreach (var url in urls)
+        {
+            var bmp = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            if (bmp is not null)
+            {
+                Images.Add(bmp);
+            }
+        }
+
+        ImagesVisibility = Images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    private async Task LoadAvatarAsync(string url)
+    {
+        var bmp = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+        if (bmp is not null)
+        {
+            AvatarImage = bmp;
+        }
+    }
+
+    private async Task LoadReplyImagesAsync()
+    {
+        foreach (var item in Replies.ToList())
+        {
+            if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
+            {
+                var bmp = await _imageLoader.LoadSafeAsync(item.AvatarUrl).ConfigureAwait(true);
+                if (bmp is not null)
+                {
+                    item.AvatarImage = bmp;
+                }
+            }
+        }
+    }
+
+    private async Task<string?> ResolvePublisherNameAsync()
+    {
+        if (_publisherResolved)
+        {
+            return _publisherName;
+        }
+
+        _publisherResolved = true;
+        var accountId = _auth.CurrentAccount?.Id ?? Guid.Empty;
+        if (accountId == Guid.Empty)
+        {
+            return null;
+        }
+
+        try
+        {
+            var publishers = await _api.GetAccountPublishersAsync(accountId).ConfigureAwait(true);
+            _publisherName = publishers.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Name))?.Name;
+        }
+        catch (SolarApiException)
+        {
+            // best-effort
+        }
+
+        return _publisherName;
     }
 }

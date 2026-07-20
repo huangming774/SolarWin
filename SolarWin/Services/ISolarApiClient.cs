@@ -118,8 +118,54 @@ public interface ISolarApiClient
     /// <summary>GET /sphere/posts — public feed, offset/take paging.</summary>
     Task<List<SnPost>> GetPostsAsync(int offset, int take, CancellationToken cancellationToken = default);
 
-    /// <summary>POST /sphere/posts — create a post; pub selects the publisher (defaults to the account's own).</summary>
+    /// <summary>
+    /// GET /sphere/timeline — cursor-based activity feed (OpenAPI SnTimelinePage).
+    /// </summary>
+    Task<SnTimelinePage> GetTimelineAsync(
+        string? cursor = null,
+        int take = 20,
+        string? mode = null,
+        string? filter = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>GET /sphere/posts/{id} — full post detail.</summary>
+    Task<SnPost> GetPostAsync(Guid postId, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /sphere/posts/{id}/replies — flat reply list.</summary>
+    Task<List<SnPost>> GetPostRepliesAsync(Guid postId, int offset, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /sphere/posts/{id}/thread — ancestors + descendants tree.</summary>
+    Task<PostThreadResponse> GetPostThreadAsync(Guid postId, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /sphere/posts — create a post/reply; pub selects the publisher.</summary>
     Task<SnPost> CreatePostAsync(CreatePostRequest request, string? pub = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// POST /sphere/posts/{id}/reactions.
+    /// Returns the reaction when added; <c>null</c> when removed (HTTP 204).
+    /// </summary>
+    Task<SnPostReaction?> ReactToPostAsync(Guid postId, PostReactionRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /sphere/posts/{id}/reactions</summary>
+    Task<List<SnPostReaction>> GetPostReactionsAsync(Guid postId, int offset, int take, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /sphere/posts/{id}/boost (ActivityPub boost; requires publisher + fediverse actor).</summary>
+    Task BoostPostAsync(Guid postId, string? content = null, CancellationToken cancellationToken = default);
+
+    /// <summary>DELETE /sphere/posts/{id}/boost</summary>
+    Task UnboostPostAsync(Guid postId, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /sphere/posts/{id}/bookmark</summary>
+    Task<SnPostBookmark> BookmarkPostAsync(Guid postId, CancellationToken cancellationToken = default);
+
+    /// <summary>DELETE /sphere/posts/{id}/bookmark</summary>
+    Task UnbookmarkPostAsync(Guid postId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// GET /sphere/posts/{id}/bookmark — current bookmark if any.
+    /// Returns null when not bookmarked (404).
+    /// </summary>
+    Task<SnPostBookmark?> GetPostBookmarkAsync(Guid postId, CancellationToken cancellationToken = default);
 
     /// <summary>GET /sphere/publishers/of/{accountId} — publishers owned by an account.</summary>
     Task<List<SnPublisher>> GetAccountPublishersAsync(Guid accountId, CancellationToken cancellationToken = default);
