@@ -8,17 +8,28 @@
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="16,16,16,8" RowSpacing="12">
+    <Grid Padding="16,16,16,8" ColumnSpacing="12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="280" />
+        </Grid.ColumnDefinitions>
         <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="聊天" />
-
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <TextBlock
+                VerticalAlignment="Center"
+                Style="{StaticResource TitleTextBlockStyle}"
+                Text="聊天" />
             <Button Command="{x:Bind ViewModel.ForceRefreshCommand}" Content="刷新" />
+            <Button Command="{x:Bind ViewModel.MarkAllReadCommand}" Content="全部已读" />
+            <Button Command="{x:Bind ViewModel.ReconnectWsCommand}" Content="重连WS" />
+            <Button Command="{x:Bind ViewModel.RunGlobalMessageSyncCommand}" Content="全局Sync" />
             <ProgressRing
                 Width="28"
                 Height="28"
@@ -27,16 +38,189 @@
                 Width="20"
                 Height="20"
                 IsActive="{x:Bind ViewModel.IsRefreshing, Mode=OneWay}" />
-            <TextBlock VerticalAlignment="Center" Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+            <TextBlock
+                VerticalAlignment="Center"
+                Opacity="0.85"
+                Text="{x:Bind ViewModel.WsStatusText, Mode=OneWay}" />
+            <TextBlock
+                VerticalAlignment="Center"
+                Opacity="0.7"
+                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
         </StackPanel>
 
-        <Grid Grid.Row="2">
+        <Grid Grid.Row="1" ColumnSpacing="8" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="1.2*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                PlaceholderText="新建群聊名称…"
+                Text="{x:Bind ViewModel.NewGroupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Column="1"
+                Command="{x:Bind ViewModel.CreateGroupRoomCommand}"
+                Content="建群" />
+            <TextBox
+                x:Name="UserSearchBox"
+                Grid.Column="2"
+                PlaceholderText="高级搜索用户（输入即联想用户名/昵称）…"
+                KeyDown="UserSearchBox_OnKeyDown"
+                Text="{x:Bind ViewModel.UserSearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Column="3"
+                Command="{x:Bind ViewModel.SearchUsersCommand}"
+                Content="搜索" />
+            <ProgressRing
+                Grid.Column="4"
+                Width="22"
+                Height="22"
+                IsActive="{x:Bind ViewModel.IsSearchingUsers, Mode=OneWay}" />
+        </Grid>
+
+        <!-- User search results → one-tap DM (live autocomplete) -->
+        <Border
+            Grid.Row="2"
+            MaxHeight="200"
+            Margin="0,8,0,0"
+            Padding="8"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="{x:Bind ViewModel.UserSearchPanelVisibility, Mode=OneWay}">
+            <ListView
+                IsItemClickEnabled="True"
+                ItemClick="UserSearch_OnItemClick"
+                ItemsSource="{x:Bind ViewModel.UserSearchResults, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.Header>
+                    <StackPanel Margin="0,0,0,6" Spacing="2">
+                        <TextBlock FontWeight="SemiBold" Text="用户搜索 · 点选一键私聊" />
+                        <TextBlock
+                            Opacity="0.7"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.UserSearchHintText, Mode=OneWay}" />
+                    </StackPanel>
+                </ListView.Header>
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:UserSearchResultItem">
+                        <Grid Padding="4,6" ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Grid Width="36" Height="36">
+                                <Border
+                                    Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                    CornerRadius="18">
+                                    <TextBlock
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Text="{x:Bind Initials}" />
+                                </Border>
+                                <Ellipse>
+                                    <Ellipse.Fill>
+                                        <ImageBrush
+                                            ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
+                                            Stretch="UniformToFill" />
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                            </Grid>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Nick}" />
+                                <TextBlock
+                                    Opacity="0.65"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind Subtitle}" />
+                            </StackPanel>
+                            <Button
+                                Grid.Column="2"
+                                Click="StartDm_OnClick"
+                                Content="私聊"
+                                Tag="{x:Bind}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </Border>
+
+        <Grid Grid.Row="3" ColumnSpacing="8" Margin="0,8,0,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox
+                PlaceholderText="Realm slug（加载该 Realm 聊天）"
+                Text="{x:Bind ViewModel.RealmSlugText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Column="1"
+                Command="{x:Bind ViewModel.LoadRealmChatsCommand}"
+                Content="Realm 聊天" />
+            <TextBox
+                Grid.Column="2"
+                PlaceholderText="高级：对方 UUID（可选）"
+                Text="{x:Bind ViewModel.DirectUserIdText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button
+                Grid.Column="3"
+                Command="{x:Bind ViewModel.StartDirectChatCommand}"
+                Content="UUID私聊" />
+        </Grid>
+
+        <Grid Grid.Row="4" Margin="0,8,0,0">
             <ListView
                 x:Name="RoomList"
                 IsItemClickEnabled="True"
                 ItemClick="RoomList_OnItemClick"
                 ItemsSource="{x:Bind ViewModel.Rooms, Mode=OneWay}"
                 SelectionMode="None">
+                <ListView.Header>
+                    <StackPanel Spacing="4" Margin="0,0,0,8">
+                        <TextBlock
+                            Opacity="0.7"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.SyncStatusText, Mode=OneWay}" />
+                        <ListView
+                            x:Name="InviteList"
+                            MaxHeight="100"
+                            IsItemClickEnabled="False"
+                            ItemsSource="{x:Bind ViewModel.PendingInvites, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.Header>
+                                <TextBlock FontWeight="SemiBold" Text="待处理邀请" />
+                            </ListView.Header>
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:ChatRoomListItem">
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock VerticalAlignment="Center" Text="{x:Bind Name}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            Click="AcceptInvite_OnClick"
+                                            Content="接受"
+                                            Tag="{x:Bind}" />
+                                        <Button
+                                            Grid.Column="2"
+                                            Click="DeclineInvite_OnClick"
+                                            Content="拒绝"
+                                            Tag="{x:Bind}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ListView.Header>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="vm:ChatRoomListItem">
                         <Grid Padding="4,8" ColumnSpacing="12">
@@ -45,8 +229,6 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-
-                            <!-- Avatar: image over initials -->
                             <Grid Width="48" Height="48">
                                 <Border
                                     Background="{ThemeResource AccentFillColorSecondaryBrush}"
@@ -66,7 +248,6 @@
                                     </Ellipse.Fill>
                                 </Ellipse>
                             </Grid>
-
                             <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
                                 <TextBlock
                                     FontWeight="SemiBold"
@@ -79,7 +260,6 @@
                                     Text="{x:Bind LastMessagePreview}"
                                     TextTrimming="CharacterEllipsis" />
                             </StackPanel>
-
                             <StackPanel
                                 Grid.Column="2"
                                 HorizontalAlignment="Right"
@@ -115,5 +295,61 @@
                 Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                 TextWrapping="Wrap" />
         </Grid>
+
+        <!-- Right rail: groups -->
+        <Border
+            Grid.Row="0"
+            Grid.RowSpan="5"
+            Grid.Column="1"
+            Padding="12"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8">
+            <StackPanel Spacing="8">
+                <TextBlock FontWeight="SemiBold" Text="房间分组" />
+                <TextBox
+                    PlaceholderText="分组 UUID"
+                    Text="{x:Bind ViewModel.SelectedGroupIdText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <TextBox
+                    PlaceholderText="会话 Room UUID（移动用）"
+                    Text="{x:Bind ViewModel.MoveRoomIdText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.RenameSelectedGroupCommand}"
+                    Content="改名分组（用上方群名框）" />
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.MoveRoomToSelectedGroupCommand}"
+                    Content="将会话移入分组" />
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.DeleteSelectedGroupCommand}"
+                    Content="删除分组" />
+                <ListView
+                    Height="360"
+                    IsItemClickEnabled="True"
+                    ItemClick="GroupList_OnItemClick"
+                    ItemsSource="{x:Bind ViewModel.Groups, Mode=OneWay}"
+                    SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChatGroupItemViewModel">
+                            <StackPanel Padding="4" Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Name}" />
+                                <TextBlock
+                                    Opacity="0.65"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind Subtitle}" />
+                                <TextBlock
+                                    Opacity="0.45"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind Id}"
+                                    IsTextSelectionEnabled="True" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </StackPanel>
+        </Border>
     </Grid>
 </Page>

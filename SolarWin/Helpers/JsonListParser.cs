@@ -20,12 +20,17 @@ public static class JsonListParser
 
         if (root.ValueKind == JsonValueKind.Array)
         {
-            return root.Deserialize<List<T>>(JsonDefaults.Options) ?? [];
+            // Lenient: one bad item must not drop the whole sticker/pack list.
+            return DeserializeArrayLenient<T>(root);
         }
 
         if (root.ValueKind == JsonValueKind.Object)
         {
-            foreach (var prop in new[] { "data", "items", "rooms", "results", "content", "files", "messages", "notifications" })
+            foreach (var prop in new[]
+                     {
+                         "data", "items", "rooms", "results", "content", "files", "messages",
+                         "notifications", "posts", "events",
+                     })
             {
                 if (root.TryGetProperty(prop, out var arr) && arr.ValueKind == JsonValueKind.Array)
                 {
@@ -75,6 +80,10 @@ public static class JsonListParser
             catch (JsonException)
             {
                 // skip broken element
+            }
+            catch (NotSupportedException)
+            {
+                // converter / cycle issues — skip rather than empty the whole feed
             }
         }
 

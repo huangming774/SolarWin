@@ -1,0 +1,603 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.WeatherPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:SolarWin.Models"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d"
+    ActualThemeChanged="Page_OnActualThemeChanged">
+
+    <Page.Resources>
+        <!-- Soft white glass border (~12% opacity) -->
+        <SolidColorBrush x:Key="GlassBorderBrush" Color="#1FFFFFFF" />
+        <SolidColorBrush x:Key="GlassDividerBrush" Color="#18FFFFFF" />
+        <SolidColorBrush x:Key="GlassTextPrimary" Color="#F5FFFFFF" />
+        <SolidColorBrush x:Key="GlassTextSecondary" Color="#B8FFFFFF" />
+        <SolidColorBrush x:Key="GlassTextTertiary" Color="#80FFFFFF" />
+        <SolidColorBrush x:Key="GlassAccent" Color="#FFE8C46A" />
+        <SolidColorBrush x:Key="GlassBlueTint" Color="#663A7BD6" />
+        <CornerRadius x:Key="GlassRadius">24</CornerRadius>
+        <CornerRadius x:Key="GlassRadiusSmall">18</CornerRadius>
+    </Page.Resources>
+
+    <Grid x:Name="RootGrid">
+        <!-- Navy → blue cinematic gradient -->
+        <Rectangle x:Name="WeatherGradientHost" />
+
+        <!-- Soft golden solar halo (diffused behind glass) -->
+        <Ellipse
+            x:Name="SunHaloOuter"
+            Width="720"
+            Height="720"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,-120,-180,0"
+            Opacity="0.55"
+            IsHitTestVisible="False" />
+        <Ellipse
+            x:Name="SunCore"
+            Width="280"
+            Height="280"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Margin="0,40,40,0"
+            Opacity="0.85"
+            IsHitTestVisible="False" />
+        <!-- Warm bloom strip -->
+        <Rectangle
+            x:Name="SunBloom"
+            Height="320"
+            VerticalAlignment="Top"
+            Opacity="0.35"
+            IsHitTestVisible="False" />
+
+        <ScrollViewer
+            Padding="28,24,28,32"
+            VerticalScrollBarVisibility="Auto"
+            HorizontalScrollBarVisibility="Disabled">
+            <StackPanel MaxWidth="1120" Spacing="18">
+
+                <!-- Glass search bar -->
+                <Border
+                    x:Name="SearchCard"
+                    Padding="10,8"
+                    BorderBrush="{StaticResource GlassBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="24">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <AutoSuggestBox
+                            x:Name="CitySearchBox"
+                            MinHeight="44"
+                            PlaceholderText="搜索城市…"
+                            QueryIcon="Find"
+                            QuerySubmitted="CitySearchBox_OnQuerySubmitted"
+                            SuggestionChosen="CitySearchBox_OnSuggestionChosen"
+                            TextChanged="CitySearchBox_OnTextChanged"
+                            Text="{x:Bind ViewModel.SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}">
+                            <AutoSuggestBox.ItemTemplate>
+                                <DataTemplate x:DataType="models:GeoResult">
+                                    <TextBlock Text="{x:Bind DisplayName}" />
+                                </DataTemplate>
+                            </AutoSuggestBox.ItemTemplate>
+                        </AutoSuggestBox>
+
+                        <Button
+                            Grid.Column="1"
+                            MinWidth="88"
+                            MinHeight="40"
+                            Command="{x:Bind ViewModel.RefreshCommand}"
+                            CornerRadius="16"
+                            ToolTipService.ToolTip="刷新当前城市天气">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE72C;" Foreground="{StaticResource GlassTextPrimary}" />
+                                <TextBlock Text="刷新" Foreground="{StaticResource GlassTextPrimary}" />
+                            </StackPanel>
+                        </Button>
+
+                        <Button
+                            Grid.Column="2"
+                            MinWidth="88"
+                            MinHeight="40"
+                            Command="{x:Bind ViewModel.LoadCommand}"
+                            CornerRadius="16"
+                            ToolTipService.ToolTip="按网络 IP 重新定位">
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <FontIcon FontSize="14" Glyph="&#xE707;" Foreground="{StaticResource GlassTextPrimary}" />
+                                <TextBlock Text="定位" Foreground="{StaticResource GlassTextPrimary}" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+                </Border>
+
+                <InfoBar
+                    IsClosable="True"
+                    IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                    Severity="Error"
+                    Title="天气加载失败">
+                    <InfoBar.ActionButton>
+                        <Button Command="{x:Bind ViewModel.RefreshCommand}" Content="重试" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
+                <ProgressRing
+                    Width="44"
+                    Height="44"
+                    HorizontalAlignment="Center"
+                    IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" />
+
+                <Grid
+                    ColumnSpacing="16"
+                    RowSpacing="16"
+                    Visibility="{x:Bind ViewModel.ContentVisibility, Mode=OneWay}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.35*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Hero: city + temperature (left) -->
+                    <Border
+                        x:Name="MainCard"
+                        Grid.Row="0"
+                        Grid.Column="0"
+                        MinHeight="280"
+                        Padding="32,28"
+                        BorderBrush="{StaticResource GlassBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="24">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <StackPanel Spacing="4">
+                                <TextBlock
+                                    FontSize="15"
+                                    FontWeight="SemiBold"
+                                    CharacterSpacing="40"
+                                    Foreground="{StaticResource GlassTextTertiary}"
+                                    Text="当前位置" />
+                                <TextBlock
+                                    FontSize="34"
+                                    FontWeight="SemiBold"
+                                    Foreground="{StaticResource GlassTextPrimary}"
+                                    Text="{x:Bind ViewModel.LocationTitle, Mode=OneWay}"
+                                    TextTrimming="CharacterEllipsis" />
+                                <TextBlock
+                                    FontSize="14"
+                                    Foreground="{StaticResource GlassTextSecondary}"
+                                    Text="{x:Bind ViewModel.LocationSubtitle, Mode=OneWay}"
+                                    TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <Grid Grid.Row="1" Margin="0,18,0,8" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock
+                                        FontSize="92"
+                                        FontWeight="Light"
+                                        LineHeight="96"
+                                        Foreground="{StaticResource GlassTextPrimary}"
+                                        Text="{x:Bind ViewModel.TemperatureText, Mode=OneWay}" />
+                                    <TextBlock
+                                        Margin="4,0,0,0"
+                                        FontSize="22"
+                                        FontWeight="SemiBold"
+                                        Foreground="{StaticResource GlassTextPrimary}"
+                                        Text="{x:Bind ViewModel.WeatherDescription, Mode=OneWay}" />
+                                    <TextBlock
+                                        Margin="4,6,0,0"
+                                        FontSize="14"
+                                        Foreground="{StaticResource GlassTextSecondary}"
+                                        Text="{x:Bind ViewModel.HighLowText, Mode=OneWay}" />
+                                </StackPanel>
+                                <TextBlock
+                                    Grid.Column="1"
+                                    Margin="12,0,0,0"
+                                    VerticalAlignment="Top"
+                                    FontSize="64"
+                                    Text="{x:Bind ViewModel.WeatherEmoji, Mode=OneWay}" />
+                            </Grid>
+
+                            <Border
+                                Grid.Row="2"
+                                Height="1"
+                                Margin="0,8,0,14"
+                                Background="{StaticResource GlassDividerBrush}" />
+
+                            <StackPanel
+                                Grid.Row="3"
+                                Orientation="Horizontal"
+                                Spacing="28">
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{StaticResource GlassTextTertiary}" Text="体感" />
+                                    <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource GlassTextPrimary}" Text="{x:Bind ViewModel.FeelsLikeText, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{StaticResource GlassTextTertiary}" Text="湿度" />
+                                    <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource GlassTextPrimary}" Text="{x:Bind ViewModel.HumidityText, Mode=OneWay}" />
+                                </StackPanel>
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="12" Foreground="{StaticResource GlassTextTertiary}" Text="风速" />
+                                    <TextBlock FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource GlassTextPrimary}" Text="{x:Bind ViewModel.WindText, Mode=OneWay}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <!-- Right column: metric glass cards 2×2 -->
+                    <Grid
+                        Grid.Row="0"
+                        Grid.Column="1"
+                        ColumnSpacing="12"
+                        RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <!-- Air Quality -->
+                        <Border
+                            x:Name="AqiCard"
+                            Grid.Row="0"
+                            Grid.Column="0"
+                            Padding="18"
+                            BorderBrush="{StaticResource GlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="24">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE9D9;" Foreground="{StaticResource GlassAccent}" />
+                                    <TextBlock
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        CharacterSpacing="20"
+                                        Foreground="{StaticResource GlassTextTertiary}"
+                                        Text="空气质量" />
+                                </StackPanel>
+                                <TextBlock
+                                    FontSize="36"
+                                    FontWeight="Light"
+                                    Foreground="{StaticResource GlassTextPrimary}"
+                                    Text="{x:Bind ViewModel.AirQualityValue, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="15"
+                                    FontWeight="SemiBold"
+                                    Foreground="{StaticResource GlassAccent}"
+                                    Text="{x:Bind ViewModel.AirQualityLevel, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{StaticResource GlassTextSecondary}"
+                                    Text="{x:Bind ViewModel.AirQualityDetail, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Precipitation -->
+                        <Border
+                            x:Name="PrecipCard"
+                            Grid.Row="0"
+                            Grid.Column="1"
+                            Padding="18"
+                            BorderBrush="{StaticResource GlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="24">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE71A;" Foreground="{StaticResource GlassAccent}" />
+                                    <TextBlock
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        CharacterSpacing="20"
+                                        Foreground="{StaticResource GlassTextTertiary}"
+                                        Text="降水" />
+                                </StackPanel>
+                                <TextBlock
+                                    FontSize="36"
+                                    FontWeight="Light"
+                                    Foreground="{StaticResource GlassTextPrimary}"
+                                    Text="{x:Bind ViewModel.PrecipitationValue, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="15"
+                                    FontWeight="SemiBold"
+                                    Foreground="{StaticResource GlassAccent}"
+                                    Text="{x:Bind ViewModel.PrecipitationLevel, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{StaticResource GlassTextSecondary}"
+                                    Text="{x:Bind ViewModel.PrecipitationDetail, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- UV Index -->
+                        <Border
+                            x:Name="UvCard"
+                            Grid.Row="1"
+                            Grid.Column="0"
+                            Padding="18"
+                            BorderBrush="{StaticResource GlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="24">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE706;" Foreground="{StaticResource GlassAccent}" />
+                                    <TextBlock
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        CharacterSpacing="20"
+                                        Foreground="{StaticResource GlassTextTertiary}"
+                                        Text="紫外线" />
+                                </StackPanel>
+                                <TextBlock
+                                    FontSize="36"
+                                    FontWeight="Light"
+                                    Foreground="{StaticResource GlassTextPrimary}"
+                                    Text="{x:Bind ViewModel.UvIndexValue, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="15"
+                                    FontWeight="SemiBold"
+                                    Foreground="{StaticResource GlassAccent}"
+                                    Text="{x:Bind ViewModel.UvIndexLevel, Mode=OneWay}" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Foreground="{StaticResource GlassTextSecondary}"
+                                    Text="{x:Bind ViewModel.UvIndexDetail, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Sunset -->
+                        <Border
+                            x:Name="SunsetCard"
+                            Grid.Row="1"
+                            Grid.Column="1"
+                            Padding="18"
+                            BorderBrush="{StaticResource GlassBorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="24">
+                            <StackPanel Spacing="8">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <FontIcon FontSize="14" Glyph="&#xE708;" Foreground="{StaticResource GlassAccent}" />
+                                    <TextBlock
+                                        FontSize="13"
+                                        FontWeight="SemiBold"
+                                        CharacterSpacing="20"
+                                        Foreground="{StaticResource GlassTextTertiary}"
+                                        Text="日出日落" />
+                                </StackPanel>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2">
+                                        <TextBlock FontSize="11" Foreground="{StaticResource GlassTextTertiary}" Text="日出" />
+                                        <TextBlock
+                                            FontSize="26"
+                                            FontWeight="Light"
+                                            Foreground="{StaticResource GlassTextPrimary}"
+                                            Text="{x:Bind ViewModel.SunriseText, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="2">
+                                        <TextBlock FontSize="11" Foreground="{StaticResource GlassTextTertiary}" Text="日落" />
+                                        <TextBlock
+                                            FontSize="26"
+                                            FontWeight="Light"
+                                            Foreground="{StaticResource GlassTextPrimary}"
+                                            Text="{x:Bind ViewModel.SunsetText, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock
+                                    Margin="0,4,0,0"
+                                    FontSize="12"
+                                    Foreground="{StaticResource GlassTextSecondary}"
+                                    Text="{x:Bind ViewModel.SunDetail, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+
+                    <!-- 24-hour timeline -->
+                    <Border
+                        x:Name="HourlyCard"
+                        Grid.Row="1"
+                        Grid.ColumnSpan="2"
+                        Padding="20,16"
+                        BorderBrush="{StaticResource GlassBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="24">
+                        <StackPanel Spacing="12">
+                            <TextBlock
+                                FontSize="13"
+                                FontWeight="SemiBold"
+                                CharacterSpacing="40"
+                                Foreground="{StaticResource GlassTextTertiary}"
+                                Text="24 小时预报" />
+                            <ListView
+                                Height="132"
+                                IsItemClickEnabled="False"
+                                ItemsSource="{x:Bind ViewModel.HourlyForecast, Mode=OneWay}"
+                                SelectionMode="None"
+                                ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                ScrollViewer.HorizontalScrollMode="Enabled"
+                                ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                                ScrollViewer.VerticalScrollMode="Disabled">
+                                <ListView.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <ItemsStackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ListView.ItemsPanel>
+                                <ListView.ItemContainerStyle>
+                                    <Style TargetType="ListViewItem">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="Margin" Value="0,0,4,0" />
+                                        <Setter Property="MinWidth" Value="72" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListViewItem">
+                                                    <ContentPresenter
+                                                        Content="{TemplateBinding Content}"
+                                                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                        HorizontalAlignment="Stretch"
+                                                        VerticalAlignment="Stretch" />
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListView.ItemContainerStyle>
+                                <ListView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:HourlyForecastItem">
+                                        <StackPanel
+                                            Width="72"
+                                            Padding="6,4"
+                                            HorizontalAlignment="Center"
+                                            Spacing="6">
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                FontSize="12"
+                                                Foreground="{StaticResource GlassTextSecondary}"
+                                                Text="{x:Bind TimeLabel}" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                FontSize="24"
+                                                Text="{x:Bind Emoji}" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                FontSize="16"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource GlassTextPrimary}"
+                                                Text="{x:Bind TemperatureText}" />
+                                            <TextBlock
+                                                HorizontalAlignment="Center"
+                                                FontSize="11"
+                                                Foreground="{StaticResource GlassAccent}"
+                                                Text="{x:Bind PrecipitationChanceText}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListView.ItemTemplate>
+                            </ListView>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 10-day forecast -->
+                    <Border
+                        x:Name="DailyCard"
+                        Grid.Row="2"
+                        Grid.ColumnSpan="2"
+                        Padding="20,16"
+                        BorderBrush="{StaticResource GlassBorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="24">
+                        <StackPanel Spacing="4">
+                            <TextBlock
+                                Margin="0,0,0,8"
+                                FontSize="13"
+                                FontWeight="SemiBold"
+                                CharacterSpacing="40"
+                                Foreground="{StaticResource GlassTextTertiary}"
+                                Text="10 天预报" />
+                            <ItemsControl ItemsSource="{x:Bind ViewModel.DailyForecast, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:DailyForecastItem">
+                                        <Grid
+                                            MinHeight="46"
+                                            Padding="4,8"
+                                            ColumnSpacing="12"
+                                            BorderBrush="{StaticResource GlassDividerBrush}"
+                                            BorderThickness="0,0,0,1">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="120" />
+                                                <ColumnDefinition Width="36" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="48" />
+                                                <ColumnDefinition Width="56" />
+                                                <ColumnDefinition Width="56" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock
+                                                VerticalAlignment="Center"
+                                                FontSize="15"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource GlassTextPrimary}"
+                                                Text="{x:Bind DateLabel}" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Center"
+                                                FontSize="20"
+                                                Text="{x:Bind Emoji}" />
+                                            <TextBlock
+                                                Grid.Column="2"
+                                                VerticalAlignment="Center"
+                                                FontSize="13"
+                                                Foreground="{StaticResource GlassTextSecondary}"
+                                                Text="{x:Bind Description}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Grid.Column="3"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Center"
+                                                FontSize="12"
+                                                Foreground="{StaticResource GlassAccent}"
+                                                Text="{x:Bind PrecipitationChanceText}" />
+                                            <TextBlock
+                                                Grid.Column="4"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
+                                                FontSize="15"
+                                                FontWeight="SemiBold"
+                                                Foreground="{StaticResource GlassTextPrimary}"
+                                                Text="{x:Bind HighText}" />
+                                            <TextBlock
+                                                Grid.Column="5"
+                                                VerticalAlignment="Center"
+                                                HorizontalAlignment="Right"
+                                                FontSize="15"
+                                                Foreground="{StaticResource GlassTextTertiary}"
+                                                Text="{x:Bind LowText}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock
+                        Grid.Row="3"
+                        Grid.ColumnSpan="2"
+                        Margin="4,4,0,0"
+                        FontSize="11"
+                        Foreground="{StaticResource GlassTextTertiary}"
+                        Text="数据来源：Open-Meteo · 空气质量：Open-Meteo Air Quality · 定位：网络 IP（ipwho.is）" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

@@ -1,37 +1,1003 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <Page
     x:Class="SolarWin.Views.HomePage"
+    x:Name="RootPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="24" RowSpacing="16">
+    <Page.Resources>
+        <DataTemplate x:Key="SocialRowTemplate" x:DataType="vm:SocialListItemViewModel">
+            <Grid Padding="4,8" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="2">
+                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" TextWrapping="WrapWholeWords" />
+                    <TextBlock
+                        Opacity="0.75"
+                        Text="{x:Bind Subtitle}"
+                        TextWrapping="WrapWholeWords" />
+                </StackPanel>
+                <TextBlock
+                    Grid.Column="1"
+                    VerticalAlignment="Top"
+                    Opacity="0.55"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind Meta}" />
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+        <!-- Header -->
+        <Grid ColumnSpacing="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                <TextBlock
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Text="{x:Bind ViewModel.WelcomeText, Mode=OneWay}" />
+                <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.OverviewMeta, Mode=OneWay}" TextWrapping="Wrap" />
+            </StackPanel>
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Top">
+                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新全部" />
+                <ProgressRing
+                    Width="28"
+                    Height="28"
+                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            </StackPanel>
+        </Grid>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
-            <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新" />
-            <ProgressRing
-                Width="28"
-                Height="28"
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="2" Spacing="8">
-            <TextBlock
-                Text="{x:Bind ViewModel.Summary, Mode=OneWay}"
-                TextWrapping="WrapWholeWords" />
+        <StackPanel Grid.Row="1" Spacing="4">
             <TextBlock
                 Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                 Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                 TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="{x:Bind ViewModel.InfoMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
         </StackPanel>
+
+        <!-- Sections -->
+        <Pivot Grid.Row="2" SelectedIndex="{x:Bind ViewModel.SelectedSectionIndex, Mode=TwoWay}">
+            <!-- 概览 -->
+            <PivotItem Header="概览">
+                <ScrollViewer Padding="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel
+                        MaxWidth="880"
+                        HorizontalAlignment="Center"
+                        Spacing="14">
+                        <Border
+                            Padding="20"
+                            HorizontalAlignment="Stretch"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="8" HorizontalAlignment="Center">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    Style="{StaticResource SubtitleTextBlockStyle}"
+                                    Text="成长概览" />
+                                <TextBlock HorizontalAlignment="Center" Text="{x:Bind ViewModel.LevelText, Mode=OneWay}" />
+                                <TextBlock HorizontalAlignment="Center" Text="{x:Bind ViewModel.CreditsText, Mode=OneWay}" />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    Opacity="0.8"
+                                    Text="{x:Bind ViewModel.ProgressText, Mode=OneWay}" />
+                                <ProgressBar
+                                    Width="320"
+                                    Height="8"
+                                    HorizontalAlignment="Center"
+                                    Maximum="1"
+                                    Value="{x:Bind ViewModel.LevelProgress, Mode=OneWay}" />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    Text="{x:Bind ViewModel.AchievementStatsText, Mode=OneWay}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Fun extras grid: 运势 / IP / 回顾（纪念日与咒语在「趣味」页） -->
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="趣味与工具" />
+                        <Grid
+                            HorizontalAlignment="Stretch"
+                            ColumnSpacing="12"
+                            RowSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <!-- 运势 -->
+                            <Border
+                                Grid.Row="0"
+                                Grid.Column="0"
+                                Padding="16"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                MinHeight="140">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon FontSize="16" Glyph="&#xE790;" />
+                                        <TextBlock FontWeight="SemiBold" Text="今日运势" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        FontSize="15"
+                                        Text="{x:Bind ViewModel.FortuneText, Mode=OneWay}"
+                                        TextWrapping="WrapWholeWords" />
+                                    <TextBlock
+                                        Opacity="0.6"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind ViewModel.FortuneSourceText, Mode=OneWay}" />
+                                    <Button
+                                        HorizontalAlignment="Left"
+                                        Command="{x:Bind ViewModel.DrawFortuneCommand}"
+                                        Content="抽签"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- IP -->
+                            <Border
+                                Grid.Row="0"
+                                Grid.Column="1"
+                                Padding="16"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12"
+                                MinHeight="140">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon FontSize="16" Glyph="&#xE968;" />
+                                        <TextBlock FontWeight="SemiBold" Text="IP 检测" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        FontWeight="SemiBold"
+                                        Text="{x:Bind ViewModel.IpCheckText, Mode=OneWay}"
+                                        TextWrapping="WrapWholeWords" />
+                                    <TextBlock
+                                        Opacity="0.75"
+                                        Text="{x:Bind ViewModel.IpGeoText, Mode=OneWay}"
+                                        TextWrapping="WrapWholeWords" />
+                                    <Button
+                                        HorizontalAlignment="Left"
+                                        Command="{x:Bind ViewModel.RefreshIpCheckCommand}"
+                                        Content="刷新 IP" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- 回顾 -->
+                            <Border
+                                Grid.Row="1"
+                                Grid.Column="0"
+                                Grid.ColumnSpan="2"
+                                Padding="16"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="12">
+                                <StackPanel Spacing="8">
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <FontIcon FontSize="16" Glyph="&#xE81C;" />
+                                        <TextBlock FontWeight="SemiBold" Text="年度回顾" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        Text="{x:Bind ViewModel.RewindSummary, Mode=OneWay}"
+                                        TextWrapping="WrapWholeWords" />
+                                    <TextBlock
+                                        Opacity="0.7"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind ViewModel.RewindCodeText, Mode=OneWay}"
+                                        TextWrapping="WrapWholeWords" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <NumberBox
+                                            Width="100"
+                                            Header="年份"
+                                            Maximum="2100"
+                                            Minimum="2000"
+                                            SpinButtonPlacementMode="Compact"
+                                            Value="{x:Bind ViewModel.RewindYear, Mode=TwoWay}" />
+                                        <Button
+                                            VerticalAlignment="Bottom"
+                                            Command="{x:Bind ViewModel.PublishRewindPublicCommand}"
+                                            Content="生成公开" />
+                                        <Button
+                                            VerticalAlignment="Bottom"
+                                            Command="{x:Bind ViewModel.PublishRewindPrivateCommand}"
+                                            Content="生成私密" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Opacity="0.65"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap">
+                            运势、IP、回顾见上方；纪念日与咒语请到「趣味」标签；好友 / Realm / 成就 / 日历见其他标签。
+                        </TextBlock>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 找人 -->
+            <PivotItem Header="找人">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="220"
+                                PlaceholderText="搜索用户名 / 昵称"
+                                Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.SearchPeopleCommand}" Content="搜索" />
+                            <TextBox
+                                Width="160"
+                                PlaceholderText="精确用户名"
+                                Text="{x:Bind ViewModel.ProfileLookupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button
+                                Command="{x:Bind ViewModel.LoadPersonProfileCommand}"
+                                Content="预览" />
+                            <Button
+                                Command="{x:Bind ViewModel.OpenViewedProfilePageCommand}"
+                                Content="打开资料页"
+                                Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+
+                        <ListView
+                            MaxHeight="160"
+                            ItemsSource="{x:Bind ViewModel.SearchResults, Mode=OneWay}"
+                            SelectionMode="Single"
+                            IsItemClickEnabled="True"
+                            ItemClick="SearchResult_OnItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:UserSearchResultItem">
+                                    <StackPanel Orientation="Horizontal" Spacing="10" Padding="4">
+                                        <Grid Width="36" Height="36">
+                                            <Border Background="{ThemeResource AccentFillColorSecondaryBrush}" CornerRadius="18">
+                                                <TextBlock
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Text="{x:Bind Initials}" />
+                                            </Border>
+                                        </Grid>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Nick}" />
+                                            <TextBlock Opacity="0.7" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <Border
+                            Padding="16"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="8">
+                            <StackPanel Spacing="8">
+                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind ViewModel.ViewedProfileTitle, Mode=OneWay}" />
+                                <TextBlock Text="{x:Bind ViewModel.ViewedProfileBody, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.ViewedProfileMeta, Mode=OneWay}" TextWrapping="Wrap" />
+                                <TextBlock Opacity="0.85" Text="{x:Bind ViewModel.RelationshipActionHint, Mode=OneWay}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button
+                                        Command="{x:Bind ViewModel.OpenViewedProfilePageCommand}"
+                                        Content="资料页" />
+                                    <Button
+                                        Command="{x:Bind ViewModel.StartDirectChatWithViewedCommand}"
+                                        Content="私聊"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                    <Button Command="{x:Bind ViewModel.SendFriendRequestCommand}" Content="加好友" />
+                                    <Button Command="{x:Bind ViewModel.BlockViewedCommand}" Content="拉黑" />
+                                    <Button Command="{x:Bind ViewModel.UnblockViewedCommand}" Content="取消拉黑" />
+                                    <Button Command="{x:Bind ViewModel.MuteViewedCommand}" Content="静音" />
+                                    <Button Command="{x:Bind ViewModel.UnmuteViewedCommand}" Content="取消静音" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="徽章" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.ViewedBadges, Mode=OneWay}"
+                            SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="主页组件 Board" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.ViewedBoard, Mode=OneWay}"
+                            SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="公开连接" />
+                        <ListView
+                            MaxHeight="120"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.ViewedConnections, Mode=OneWay}"
+                            SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 好友 -->
+            <PivotItem Header="好友">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{x:Bind ViewModel.FriendsSummary, Mode=OneWay}" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="好友请求" />
+                        <ListView
+                            MaxHeight="200"
+                            ItemsSource="{x:Bind ViewModel.FriendRequests, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.AcceptFriendCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="接受" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.DeclineFriendCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="拒绝" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="好友" />
+                        <ListView
+                            MaxHeight="280"
+                            ItemsSource="{x:Bind ViewModel.Friends, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.StartDirectChatWithFriendCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="私聊"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenFriendProfileCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="资料" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.SetCloseFriendCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="密友" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.RemoveFriendCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="移除" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="密友" />
+                        <ListView
+                            MaxHeight="160"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.CloseFriends, Mode=OneWay}"
+                            SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Realm -->
+            <PivotItem Header="Realm">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{x:Bind ViewModel.RealmQuotaText, Mode=OneWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="120"
+                                PlaceholderText="slug"
+                                Text="{x:Bind ViewModel.NewRealmSlug, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox
+                                Width="160"
+                                PlaceholderText="名称"
+                                Text="{x:Bind ViewModel.NewRealmName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.CreateRealmCommand}" Content="创建" />
+                        </StackPanel>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的 Realm" />
+                        <ListView
+                            MaxHeight="180"
+                            ItemsSource="{x:Bind ViewModel.MyRealms, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenRealmDetailCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="详情"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.LeaveRealmCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="退出" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="公开 Realm" />
+                        <ListView
+                            MaxHeight="180"
+                            ItemsSource="{x:Bind ViewModel.PublicRealms, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenRealmDetailCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="详情"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.JoinRealmCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="加入" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="邀请" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemsSource="{x:Bind ViewModel.RealmInvites, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.AcceptRealmInviteCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="接受" />
+                                            <Button
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.DeclineRealmInviteCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Content="拒绝" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="{x:Bind ViewModel.SelectedRealmSlug, Mode=OneWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="280"
+                                PlaceholderText="邀请用户 GUID"
+                                Text="{x:Bind ViewModel.InviteUserId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.InviteToSelectedRealmCommand}" Content="邀请加入" />
+                        </StackPanel>
+                        <TextBlock Opacity="0.7" Text="成员" />
+                        <ListView
+                            MaxHeight="160"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.SelectedRealmMembers, Mode=OneWay}"
+                            SelectionMode="None" />
+                        <TextBlock Opacity="0.7" Text="角色权限" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.SelectedRealmPermissions, Mode=OneWay}"
+                            SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 成长 -->
+            <PivotItem Header="成长">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="徽章墙" />
+                        <ListView
+                            MaxHeight="160"
+                            ItemsSource="{x:Bind ViewModel.Badges, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding ElementName=RootPage, Path=ViewModel.ActivateBadgeCommand}"
+                                            CommandParameter="{x:Bind}"
+                                            Content="设为展示" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Board" />
+                        <ListView MaxHeight="120" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.BoardItems, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="经验流水" />
+                        <ListView MaxHeight="160" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.LevelingRecords, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="积分流水" />
+                        <ListView MaxHeight="160" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.CreditRecords, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="成就" />
+                        <ListView MaxHeight="180" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.Achievements, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="任务" />
+                        <ListView MaxHeight="160" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.Quests, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="奖励发放" />
+                        <ListView MaxHeight="120" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.Grants, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="动作日志" />
+                        <ListView MaxHeight="140" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.ActionLogs, Mode=OneWay}" SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 日历 -->
+            <PivotItem Header="日历">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{x:Bind ViewModel.CalendarDayText, Mode=OneWay}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="240"
+                                PlaceholderText="新日程标题"
+                                Text="{x:Bind ViewModel.NewEventTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.CreateEventCommand}" Content="添加" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="日程" />
+                        <ListView
+                            MaxHeight="220"
+                            ItemsSource="{x:Bind ViewModel.CalendarEvents, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding ElementName=RootPage, Path=ViewModel.DeleteEventCommand}"
+                                            CommandParameter="{x:Bind}"
+                                            Content="删除" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="倒计时" />
+                        <ListView MaxHeight="160" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.CountdownItems, Mode=OneWay}" SelectionMode="None" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="纪念日" />
+                        <ListView MaxHeight="120" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.NotableDays, Mode=OneWay}" SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 工单 -->
+            <PivotItem Header="工单">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="{x:Bind ViewModel.TicketCountText, Mode=OneWay}" />
+                        <TextBox
+                            PlaceholderText="标题"
+                            Text="{x:Bind ViewModel.NewTicketTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBox
+                            MinHeight="80"
+                            AcceptsReturn="True"
+                            PlaceholderText="描述"
+                            Text="{x:Bind ViewModel.NewTicketContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            TextWrapping="Wrap" />
+                        <Button Command="{x:Bind ViewModel.CreateTicketCommand}" Content="提交工单" Style="{StaticResource AccentButtonStyle}" />
+                        <ListView
+                            MaxHeight="360"
+                            ItemTemplate="{StaticResource SocialRowTemplate}"
+                            ItemsSource="{x:Bind ViewModel.Tickets, Mode=OneWay}"
+                            SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 附近 -->
+            <PivotItem Header="附近">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="180"
+                                PlaceholderText="Pin 名称"
+                                Text="{x:Bind ViewModel.NewPinName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.CreatePinCommand}" Content="创建 Pin" />
+                            <TextBox
+                                Width="180"
+                                PlaceholderText="聚会备注"
+                                Text="{x:Bind ViewModel.NewMeetNotes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.CreateMeetCommand}" Content="创建聚会" />
+                        </StackPanel>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的 Pin" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemsSource="{x:Bind ViewModel.MyPins, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding ElementName=RootPage, Path=ViewModel.DeletePinCommand}"
+                                            CommandParameter="{x:Bind}"
+                                            Content="删除" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="附近 Pin" />
+                        <ListView MaxHeight="120" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.NearbyPins, Mode=OneWay}" SelectionMode="None" />
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的聚会" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemsSource="{x:Bind ViewModel.MyMeets, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding ElementName=RootPage, Path=ViewModel.CompleteMeetCommand}"
+                                            CommandParameter="{x:Bind}"
+                                            Content="结束" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="附近聚会" />
+                        <ListView
+                            MaxHeight="140"
+                            ItemsSource="{x:Bind ViewModel.NearbyMeets, Mode=OneWay}"
+                            SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                        <Button
+                                            Grid.Column="1"
+                                            Command="{Binding ElementName=RootPage, Path=ViewModel.JoinMeetCommand}"
+                                            CommandParameter="{x:Bind}"
+                                            Content="加入" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="NFC" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="220"
+                                PlaceholderText="UID / 查询"
+                                Text="{x:Bind ViewModel.NfcLookupQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.LookupNfcCommand}" Content="查询" />
+                        </StackPanel>
+                        <TextBlock Text="{x:Bind ViewModel.NfcLookupResult, Mode=OneWay}" TextWrapping="Wrap" />
+                        <ListView MaxHeight="120" ItemTemplate="{StaticResource SocialRowTemplate}" ItemsSource="{x:Bind ViewModel.NfcTags, Mode=OneWay}" SelectionMode="None" />
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- 趣味：fortune / IP / notable-days / rewind / spells -->
+            <PivotItem Header="趣味">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel MaxWidth="900" Spacing="14">
+                        <TextBlock
+                            Opacity="0.7"
+                            Text="运势 · IP 检测 · 纪念日 · 年度回顾 · 咒语（Passport API）"
+                            TextWrapping="Wrap" />
+
+                        <!-- 运势 -->
+                        <Border
+                            Padding="18"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="10">
+                                <Grid>
+                                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="运势 / Fortune" />
+                                    <Button
+                                        HorizontalAlignment="Right"
+                                        Command="{x:Bind ViewModel.DrawFortuneCommand}"
+                                        Content="再抽一次"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                </Grid>
+                                <TextBlock
+                                    FontSize="18"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind ViewModel.FortuneText, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                                <TextBlock
+                                    Opacity="0.65"
+                                    Text="{x:Bind ViewModel.FortuneSourceText, Mode=OneWay}" />
+                                <ListView
+                                    MaxHeight="160"
+                                    ItemTemplate="{StaticResource SocialRowTemplate}"
+                                    ItemsSource="{x:Bind ViewModel.FortuneItems, Mode=OneWay}"
+                                    SelectionMode="None" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- IP -->
+                        <Border
+                            Padding="18"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="8">
+                                <Grid>
+                                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="IP 检测" />
+                                    <Button
+                                        HorizontalAlignment="Right"
+                                        Command="{x:Bind ViewModel.RefreshIpCheckCommand}"
+                                        Content="刷新" />
+                                </Grid>
+                                <TextBlock
+                                    FontSize="16"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind ViewModel.IpCheckText, Mode=OneWay}" />
+                                <TextBlock
+                                    Opacity="0.8"
+                                    Text="{x:Bind ViewModel.IpGeoText, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 纪念日 -->
+                        <Border
+                            Padding="18"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="纪念日 / Notable days" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBox
+                                        Width="160"
+                                        PlaceholderText="名称"
+                                        Text="{x:Bind ViewModel.NewNotableName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <TextBox
+                                        Width="220"
+                                        PlaceholderText="描述（可选）"
+                                        Text="{x:Bind ViewModel.NewNotableDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button
+                                        Command="{x:Bind ViewModel.CreateNotableDayCommand}"
+                                        Content="添加今天"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                </StackPanel>
+                                <ListView
+                                    MaxHeight="240"
+                                    ItemsSource="{x:Bind ViewModel.UserNotableDays, Mode=OneWay}"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                            <Grid Padding="4,8" ColumnSpacing="8">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel>
+                                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                                    <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                                    <TextBlock
+                                                        Opacity="0.5"
+                                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                                        Text="{x:Bind Meta}" />
+                                                </StackPanel>
+                                                <Button
+                                                    Grid.Column="1"
+                                                    Command="{Binding ElementName=RootPage, Path=ViewModel.DeleteUserNotableDayCommand}"
+                                                    CommandParameter="{x:Bind}"
+                                                    Content="删除" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 回顾 -->
+                        <Border
+                            Padding="18"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="年度回顾 / Rewind" />
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.RewindSummary, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                                <TextBlock
+                                    Opacity="0.7"
+                                    Text="{x:Bind ViewModel.RewindCodeText, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <NumberBox
+                                        Width="110"
+                                        Header="年份"
+                                        Maximum="2100"
+                                        Minimum="2000"
+                                        SpinButtonPlacementMode="Compact"
+                                        Value="{x:Bind ViewModel.RewindYear, Mode=TwoWay}" />
+                                    <Button
+                                        VerticalAlignment="Bottom"
+                                        Command="{x:Bind ViewModel.PublishRewindPublicCommand}"
+                                        Content="生成公开回顾" />
+                                    <Button
+                                        VerticalAlignment="Bottom"
+                                        Command="{x:Bind ViewModel.PublishRewindPrivateCommand}"
+                                        Content="生成私密回顾" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBox
+                                        Width="240"
+                                        PlaceholderText="输入分享码查看回顾"
+                                        Text="{x:Bind ViewModel.RewindLookupCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button Command="{x:Bind ViewModel.LookupRewindCodeCommand}" Content="查询分享码" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 咒语 -->
+                        <Border
+                            Padding="18"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="12">
+                            <StackPanel Spacing="10">
+                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="咒语 / Magic spells" />
+                                <TextBox
+                                    PlaceholderText="咒语词 spellWord"
+                                    Text="{x:Bind ViewModel.SpellWord, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox
+                                    PlaceholderText="新密码（重置类咒语可选，明文输入仅本地使用）"
+                                    Text="{x:Bind ViewModel.SpellPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Command="{x:Bind ViewModel.LookupSpellCommand}" Content="查询咒语" />
+                                    <Button
+                                        Command="{x:Bind ViewModel.ApplySpellCommand}"
+                                        Content="应用咒语"
+                                        Style="{StaticResource AccentButtonStyle}" />
+                                    <Button Command="{x:Bind ViewModel.ResendSpellActivationCommand}" Content="重发激活咒语" />
+                                </StackPanel>
+                                <TextBlock
+                                    Text="{x:Bind ViewModel.SpellResultText, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+        </Pivot>
     </Grid>
 </Page>

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.RecoverPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <ScrollViewer>
+        <StackPanel
+            MaxWidth="440"
+            Margin="24"
+            HorizontalAlignment="Center"
+            Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Click="Back_OnClick" Content="返回登录" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="恢复码登录" />
+            </StackPanel>
+
+            <TextBlock
+                Opacity="0.75"
+                Text="使用账户恢复码（Recovery code）登录。需要人机验证。登录成功后请尽快在「账号安全」中检查认证因素。"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBox
+                Header="账户名 / 邮箱"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Text="{x:Bind ViewModel.Account, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBox
+                Header="恢复码"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PlaceholderText="xxxx-xxxx-…"
+                Text="{x:Bind ViewModel.RecoveryCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+            <Button
+                Command="{x:Bind ViewModel.SolveCaptchaCommand}"
+                Content="完成人机验证"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+
+            <Button
+                HorizontalAlignment="Stretch"
+                Command="{x:Bind ViewModel.RecoverCommand}"
+                Content="使用恢复码登录"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Style="{StaticResource AccentButtonStyle}" />
+
+            <ProgressRing
+                Width="36"
+                Height="36"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

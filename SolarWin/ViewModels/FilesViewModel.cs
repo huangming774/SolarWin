@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Xaml;
 using SolarWin.Models;
 using SolarWin.Services;
 
@@ -8,6 +9,9 @@ namespace SolarWin.ViewModels;
 
 public partial class FilesViewModel : ObservableObject
 {
+    /// <summary>Files at or above this size use chunked upload (create → chunks → complete).</summary>
+    private const long ChunkedUploadThresholdBytes = 5 * 1024 * 1024;
+
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly Stack<(string? Id, string Name)> _navStack = new();
@@ -18,9 +22,13 @@ public partial class FilesViewModel : ObservableObject
         _toast = toast;
         _navStack.Push((null, "我的文件"));
         Breadcrumb = "我的文件";
+        UpdateModeVisibility();
     }
 
     public ObservableCollection<FileItemViewModel> Files { get; } = [];
+
+    /// <summary>Folders available as move targets in the current listing (excludes selection).</summary>
+    public ObservableCollection<FileItemViewModel> FolderTargets { get; } = [];
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -43,9 +51,25 @@ public partial class FilesViewModel : ObservableObject
     [ObservableProperty]
     public partial FileItemViewModel? SelectedFile { get; set; }
 
-    public bool CanGoUp => _navStack.Count > 1;
+    [ObservableProperty]
+    public partial bool IsRecycleBinMode { get; set; }
 
-    public string? CurrentParentId => _navStack.Peek().Id;
+    [ObservableProperty]
+    public partial Visibility NormalModeVisibility { get; set; } = Visibility.Visible;
+
+    [ObservableProperty]
+    public partial Visibility RecycleBinModeVisibility { get; set; } = Visibility.Collapsed;
+
+    public bool CanGoUp => !IsRecycleBinMode && _navStack.Count > 1;
+
+    public string? CurrentParentId => IsRecycleBinMode ? null : _navStack.Peek().Id;
+
+    partial void OnIsRecycleBinModeChanged(bool value)
+    {
+        UpdateModeVisibility();
+        OnPropertyChanged(nameof(CanGoUp));
+        OnPropertyChanged(nameof(CurrentParentId));
+    }
 
     [RelayCommand]
     private async Task LoadAsync()
@@ -55,9 +79,12 @@ public partial class FilesViewModel : ObservableObject
             IsBusy = true;
             ErrorMessage = null;
             Files.Clear();
+            FolderTargets.Clear();
 
             var parentId = CurrentParentId;
-            var list = await _api.GetMyFilesAsync(parentId, offset: 0, take: 100).ConfigureAwait(true);
+            var list = await _api
+                .GetMyFilesAsync(parentId, offset: 0, take: 100, recycled: IsRecycleBinMode)
+                .ConfigureAwait(true);
 
             foreach (var file in list
                          .OrderByDescending(f => f.IsFolder)
@@ -67,7 +94,10 @@ public partial class FilesViewModel : ObservableObject
                 Files.Add(new FileItemViewModel(file));
             }
 
-            StatusMessage = $"共 {Files.Count} 项";
+            RebuildFolderTargets();
+            StatusMessage = IsRecycleBinMode
+                ? $"回收站 · 共 {Files.Count} 项"
+                : $"共 {Files.Count} 项";
             OnPropertyChanged(nameof(CanGoUp));
         }
         catch (SolarApiException ex)
@@ -83,10 +113,33 @@ public partial class FilesViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private async Task ToggleRecycleBinAsync()
+    {
+        IsRecycleBinMode = !IsRecycleBinMode;
+        SelectedFile = null;
+
+        if (IsRecycleBinMode)
+        {
+            Breadcrumb = "回收站";
+        }
+        else
+        {
+            RebuildBreadcrumb();
+        }
+
+        await LoadAsync().ConfigureAwait(true);
+    }
+
+    [RelayCommand]
     private async Task OpenItemAsync(FileItemViewModel? item)
     {
-        if (item is null)
+        if (item is null || IsRecycleBinMode)
         {
+            if (item is not null)
+            {
+                SelectedFile = item;
+            }
+
             return;
         }
 
@@ -110,7 +163,7 @@ public partial class FilesViewModel : ObservableObject
     [RelayCommand]
     private async Task GoUpAsync()
     {
-        if (_navStack.Count <= 1)
+        if (IsRecycleBinMode || _navStack.Count <= 1)
         {
             return;
         }
@@ -123,6 +176,11 @@ public partial class FilesViewModel : ObservableObject
     [RelayCommand]
     private async Task CreateFolderAsync(string? name)
     {
+        if (IsRecycleBinMode)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(name))
         {
             ErrorMessage = "请输入文件夹名称。";
@@ -151,30 +209,53 @@ public partial class FilesViewModel : ObservableObject
 
     public async Task UploadAsync(Stream stream, string fileName, string contentType, long size)
     {
+        if (IsRecycleBinMode)
+        {
+            ErrorMessage = "回收站中无法上传文件。";
+            return;
+        }
+
         try
         {
             IsUploading = true;
             UploadProgress = 0;
             ErrorMessage = null;
-            StatusMessage = $"正在上传 {fileName}…";
 
-            var progress = new Progress<double>(p =>
+            var progress = new Progress<double>(p => UploadProgress = p);
+            var useChunked = size >= ChunkedUploadThresholdBytes;
+            StatusMessage = useChunked
+                ? $"正在分块上传 {fileName}…"
+                : $"正在上传 {fileName}…";
+
+            if (useChunked)
             {
-                UploadProgress = p;
-            });
-
-            await _api.UploadFileDirectAsync(
-                    stream,
-                    fileName,
-                    contentType,
-                    size,
-                    CurrentParentId,
-                    progress,
-                    CancellationToken.None)
-                .ConfigureAwait(true);
+                await _api.UploadFileChunkedAsync(
+                        stream,
+                        fileName,
+                        contentType,
+                        size,
+                        CurrentParentId,
+                        progress,
+                        CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
+            else
+            {
+                await _api.UploadFileDirectAsync(
+                        stream,
+                        fileName,
+                        contentType,
+                        size,
+                        CurrentParentId,
+                        progress,
+                        CancellationToken.None)
+                    .ConfigureAwait(true);
+            }
 
             UploadProgress = 1;
-            StatusMessage = $"已上传 {fileName}";
+            StatusMessage = useChunked
+                ? $"已分块上传 {fileName}"
+                : $"已上传 {fileName}";
             _toast.Success(StatusMessage);
             await LoadAsync().ConfigureAwait(true);
         }
@@ -193,6 +274,11 @@ public partial class FilesViewModel : ObservableObject
     [RelayCommand]
     private async Task RenameAsync(string? newName)
     {
+        if (IsRecycleBinMode)
+        {
+            return;
+        }
+
         var item = SelectedFile;
         if (item is null || string.IsNullOrWhiteSpace(item.Id))
         {
@@ -229,6 +315,11 @@ public partial class FilesViewModel : ObservableObject
     [RelayCommand]
     private async Task RecycleSelectedAsync()
     {
+        if (IsRecycleBinMode)
+        {
+            return;
+        }
+
         var item = SelectedFile;
         if (item is null || string.IsNullOrWhiteSpace(item.Id))
         {
@@ -257,6 +348,129 @@ public partial class FilesViewModel : ObservableObject
         }
     }
 
+    [RelayCommand]
+    private async Task RestoreSelectedAsync()
+    {
+        if (!IsRecycleBinMode)
+        {
+            return;
+        }
+
+        var item = SelectedFile;
+        if (item is null || string.IsNullOrWhiteSpace(item.Id))
+        {
+            ErrorMessage = "请先选择要恢复的文件。";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            await _api.RestoreFilesAsync([item.Id]).ConfigureAwait(true);
+            StatusMessage = $"已恢复：{item.Name}";
+            _toast.Success(StatusMessage);
+            SelectedFile = null;
+            await LoadAsync().ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            ErrorMessage = ex.Message;
+            _toast.Error("恢复失败");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeletePermanentlyAsync()
+    {
+        if (!IsRecycleBinMode)
+        {
+            return;
+        }
+
+        var item = SelectedFile;
+        if (item is null || string.IsNullOrWhiteSpace(item.Id))
+        {
+            ErrorMessage = "请先选择要永久删除的文件。";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            await _api.DeleteFilesPermanentlyAsync([item.Id]).ConfigureAwait(true);
+            StatusMessage = $"已永久删除：{item.Name}";
+            _toast.Success(StatusMessage);
+            SelectedFile = null;
+            await LoadAsync().ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            ErrorMessage = ex.Message;
+            _toast.Error("永久删除失败");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
+    /// <summary>
+    /// Move selected item. <paramref name="targetParentId"/> null = root.
+    /// Pass empty string to mean "stay / cancel" is not used — caller resolves target.
+    /// </summary>
+    public async Task MoveSelectedAsync(string? targetParentId)
+    {
+        if (IsRecycleBinMode)
+        {
+            ErrorMessage = "回收站中无法移动文件。";
+            return;
+        }
+
+        var item = SelectedFile;
+        if (item is null || string.IsNullOrWhiteSpace(item.Id))
+        {
+            ErrorMessage = "请先选择要移动的文件。";
+            return;
+        }
+
+        // Prevent moving a folder into itself.
+        if (item.IsFolder
+            && !string.IsNullOrWhiteSpace(targetParentId)
+            && string.Equals(item.Id, targetParentId, StringComparison.Ordinal))
+        {
+            ErrorMessage = "不能将文件夹移动到自身。";
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            await _api.MoveFilesAsync([item.Id], targetParentId).ConfigureAwait(true);
+            StatusMessage = string.IsNullOrWhiteSpace(targetParentId)
+                ? $"已移动到根目录：{item.Name}"
+                : $"已移动：{item.Name}";
+            _toast.Success(StatusMessage);
+            SelectedFile = null;
+            await LoadAsync().ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            ErrorMessage = ex.Message;
+            _toast.Error("移动失败");
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     public async Task DownloadAsync(Stream destination, FileItemViewModel item, IProgress<double>? progress)
     {
         if (string.IsNullOrWhiteSpace(item.DownloadUrl))
@@ -270,8 +484,30 @@ public partial class FilesViewModel : ObservableObject
 
     private void RebuildBreadcrumb()
     {
+        if (IsRecycleBinMode)
+        {
+            Breadcrumb = "回收站";
+            OnPropertyChanged(nameof(CanGoUp));
+            return;
+        }
+
         var parts = _navStack.Reverse().Select(x => x.Name);
         Breadcrumb = string.Join(" / ", parts);
         OnPropertyChanged(nameof(CanGoUp));
+    }
+
+    private void RebuildFolderTargets()
+    {
+        FolderTargets.Clear();
+        foreach (var f in Files.Where(x => x.IsFolder && !string.IsNullOrWhiteSpace(x.Id)))
+        {
+            FolderTargets.Add(f);
+        }
+    }
+
+    private void UpdateModeVisibility()
+    {
+        NormalModeVisibility = IsRecycleBinMode ? Visibility.Collapsed : Visibility.Visible;
+        RecycleBinModeVisibility = IsRecycleBinMode ? Visibility.Visible : Visibility.Collapsed;
     }
 }

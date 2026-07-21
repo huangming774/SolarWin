@@ -161,3 +161,85 @@ public enum PostReactionAttitude
     Neutral = 1,
     Negative = 2,
 }
+
+/// <summary>Support ticket type (OpenAPI TicketType).</summary>
+public enum TicketType
+{
+    General = 0,
+    Bug = 1,
+    Feature = 2,
+    Account = 3,
+    Other = 4,
+}
+
+/// <summary>Support ticket status (OpenAPI TicketStatus).</summary>
+public enum TicketStatus
+{
+    Open = 0,
+    InProgress = 1,
+    Waiting = 2,
+    Resolved = 3,
+    Closed = 4,
+    Cancelled = 5,
+}
+
+/// <summary>Support ticket priority (OpenAPI TicketPriority).</summary>
+public enum TicketPriority
+{
+    Low = 0,
+    Normal = 1,
+    High = 2,
+    Urgent = 3,
+}
+
+/// <summary>Location visibility for pins / meets (OpenAPI LocationVisibility).</summary>
+public enum LocationVisibility
+{
+    Private = 0,
+    Friends = 1,
+    Public = 2,
+}
+
+/// <summary>Meet lifecycle (OpenAPI MeetStatus).</summary>
+public enum MeetStatus
+{
+    Active = 0,
+    Completed = 1,
+    Expired = 2,
+    Cancelled = 3,
+}
+
+/// <summary>Location pin status (OpenAPI LocationPinStatus).</summary>
+public enum LocationPinStatus
+{
+    Active = 0,
+    Expired = 1,
+    Disconnected = 2,
+}
+
+/// <summary>Social credit record status (OpenAPI SocialCreditRecordStatus).</summary>
+public enum SocialCreditRecordStatus
+{
+    Active = 0,
+    Expired = 1,
+    Revoked = 2,
+}
+
+/// <summary>Publisher kind (OpenAPI PublisherType). 0=Individual, 1=Organization.</summary>
+public enum PublisherType
+{
+    Individual = 0,
+    Organization = 1,
+}
+
+/// <summary>
+/// Publisher team role (OpenAPI PublisherMemberRole).
+/// Values: 25 / 50 / 75 / 100.
+/// </summary>
+public enum PublisherMemberRole
+{
+    Member = 25,
+    Editor = 50,
+    Admin = 75,
+    Owner = 100,
+}

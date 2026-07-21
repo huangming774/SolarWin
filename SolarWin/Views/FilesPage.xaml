@@ -30,15 +30,45 @@
             Orientation="Horizontal"
             Spacing="8">
             <Button Click="Refresh_OnClick" Content="刷新" />
-            <Button Click="GoUp_OnClick" Content="上级" />
-            <Button Click="CreateFolder_OnClick" Content="新建文件夹" />
+            <Button
+                Click="GoUp_OnClick"
+                Content="上级"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="CreateFolder_OnClick"
+                Content="新建文件夹"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
             <Button
                 Click="Upload_OnClick"
                 Content="上传文件"
-                Style="{StaticResource AccentButtonStyle}" />
-            <Button Click="Rename_OnClick" Content="重命名" />
-            <Button Click="Recycle_OnClick" Content="删除" />
-            <Button Click="Download_OnClick" Content="下载" />
+                Style="{StaticResource AccentButtonStyle}"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="Rename_OnClick"
+                Content="重命名"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="Move_OnClick"
+                Content="移动"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="Recycle_OnClick"
+                Content="删除"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="Download_OnClick"
+                Content="下载"
+                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="Restore_OnClick"
+                Content="恢复"
+                Style="{StaticResource AccentButtonStyle}"
+                Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}" />
+            <Button
+                Click="DeletePermanent_OnClick"
+                Content="永久删除"
+                Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}" />
+            <Button Click="ToggleRecycleBin_OnClick" Content="{x:Bind RecycleBinButtonText, Mode=OneWay}" />
             <ProgressRing
                 Width="28"
                 Height="28"

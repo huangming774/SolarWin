@@ -12,23 +12,41 @@
         <MicaBackdrop />
     </Window.SystemBackdrop>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <Grid x:Name="RootHost" ActualThemeChanged="RootHost_OnActualThemeChanged">
+        <!-- Custom wallpaper (behind everything) -->
+        <Image
+            x:Name="WallpaperImage"
+            Stretch="UniformToFill"
+            Visibility="Collapsed" />
+        <!-- Soft wash driven by blur slider -->
+        <Border
+            x:Name="WallpaperBlurWash"
+            IsHitTestVisible="False"
+            Visibility="Collapsed" />
+        <!-- Glass / frosted acrylic overlay -->
+        <Border
+            x:Name="WallpaperEffectOverlay"
+            IsHitTestVisible="False"
+            Visibility="Collapsed" />
 
-        <TitleBar x:Name="AppTitleBar" Title="Solar Network">
-            <TitleBar.IconSource>
-                <ImageIconSource ImageSource="Assets/icon.ico" />
-            </TitleBar.IconSource>
-        </TitleBar>
+        <Grid x:Name="ChromeRoot">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-        <!--
-            The Frame hosts pages for your application content. Add your UI to
-            MainPage.xaml rather than here so you can use Page features such as
-            navigation events and the Loaded lifecycle.
-        -->
-        <Frame x:Name="RootFrame" Grid.Row="1" />
+            <TitleBar x:Name="AppTitleBar" Title="Solar Network">
+                <TitleBar.IconSource>
+                    <ImageIconSource ImageSource="Assets/icon.ico" />
+                </TitleBar.IconSource>
+            </TitleBar>
+
+            <!--
+                The Frame hosts pages for your application content. Add your UI to
+                MainPage.xaml rather than here so you can use Page features such as
+                navigation events and the Loaded lifecycle.
+            -->
+            <Frame x:Name="RootFrame" Grid.Row="1" />
+        </Grid>
     </Grid>
 </Window>

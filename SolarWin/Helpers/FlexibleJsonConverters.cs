@@ -129,6 +129,85 @@ public sealed class FlexibleDateTimeOffsetConverter : JsonConverter<DateTimeOffs
     }
 }
 
+/// <summary>
+/// API often sends <c>null</c> for optional bools (e.g. publisher.gatekept_follows).
+/// STJ rejects null → non-nullable bool and drops the entire parent object.
+/// </summary>
+public sealed class FlexibleBoolConverter : JsonConverter<bool>
+{
+    public override bool Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return false;
+            case JsonTokenType.True:
+                return true;
+            case JsonTokenType.False:
+                return false;
+            case JsonTokenType.String:
+            {
+                var s = reader.GetString();
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return false;
+                }
+
+                if (bool.TryParse(s, out var b))
+                {
+                    return b;
+                }
+
+                if (s is "1" or "yes" or "YES" or "on" or "ON")
+                {
+                    return true;
+                }
+
+                return false;
+            }
+            case JsonTokenType.Number:
+                return reader.TryGetInt64(out var n) && n != 0;
+            default:
+                reader.Skip();
+                return false;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, bool value, JsonSerializerOptions options)
+        => writer.WriteBooleanValue(value);
+}
+
+/// <summary>Null / empty numeric strings → 0 for non-nullable ints.</summary>
+public sealed class FlexibleInt32Converter : JsonConverter<int>
+{
+    public override int Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        switch (reader.TokenType)
+        {
+            case JsonTokenType.Null:
+                return 0;
+            case JsonTokenType.Number:
+                return reader.TryGetInt32(out var n) ? n : (int)reader.GetDouble();
+            case JsonTokenType.String:
+            {
+                var s = reader.GetString();
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    return 0;
+                }
+
+                return int.TryParse(s, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+            }
+            default:
+                reader.Skip();
+                return 0;
+        }
+    }
+
+    public override void Write(Utf8JsonWriter writer, int value, JsonSerializerOptions options)
+        => writer.WriteNumberValue(value);
+}
+
 /// <summary>Accept Guid as string; empty / invalid → Guid.Empty.</summary>
 public sealed class FlexibleGuidConverter : JsonConverter<Guid>
 {
@@ -249,7 +328,10 @@ public sealed class FlexibleByteArrayConverter : JsonConverter<byte[]?>
     }
 }
 
-/// <summary>Unknown enum integers still map; invalid strings → default.</summary>
+/// <summary>
+/// Unknown enum integers still map; invalid strings → default.
+/// Creates a separate converter for <c>T</c> vs <c>T?</c> (STJ requires exact type match).
+/// </summary>
 public sealed class FlexibleEnumConverterFactory : JsonConverterFactory
 {
     public override bool CanConvert(Type typeToConvert)
@@ -258,44 +340,88 @@ public sealed class FlexibleEnumConverterFactory : JsonConverterFactory
 
     public override JsonConverter CreateConverter(Type typeToConvert, JsonSerializerOptions options)
     {
-        var enumType = Nullable.GetUnderlyingType(typeToConvert) ?? typeToConvert;
-        var converterType = typeof(FlexibleEnumConverter<>).MakeGenericType(enumType);
+        var underlying = Nullable.GetUnderlyingType(typeToConvert);
+        if (underlying is { IsEnum: true })
+        {
+            // Must return JsonConverter<T?> — not JsonConverter<T>.
+            var nullableConverterType = typeof(FlexibleNullableEnumConverter<>).MakeGenericType(underlying);
+            return (JsonConverter)Activator.CreateInstance(nullableConverterType)!;
+        }
+
+        if (!typeToConvert.IsEnum)
+        {
+            throw new NotSupportedException($"Type {typeToConvert} is not an enum.");
+        }
+
+        var converterType = typeof(FlexibleEnumConverter<>).MakeGenericType(typeToConvert);
         return (JsonConverter)Activator.CreateInstance(converterType)!;
     }
 
     private sealed class FlexibleEnumConverter<T> : JsonConverter<T> where T : struct, Enum
     {
         public override T Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+            => ReadEnum<T>(ref reader);
+
+        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
+            => writer.WriteNumberValue(Convert.ToInt32(value));
+    }
+
+    private sealed class FlexibleNullableEnumConverter<T> : JsonConverter<T?> where T : struct, Enum
+    {
+        public override T? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
         {
-            if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var n))
-            {
-                return (T)Enum.ToObject(typeof(T), n);
-            }
-
-            if (reader.TokenType == JsonTokenType.String)
-            {
-                var s = reader.GetString();
-                if (Enum.TryParse<T>(s, ignoreCase: true, out var byName))
-                {
-                    return byName;
-                }
-
-                if (int.TryParse(s, out var ni))
-                {
-                    return (T)Enum.ToObject(typeof(T), ni);
-                }
-            }
-
             if (reader.TokenType is JsonTokenType.Null)
+            {
+                return null;
+            }
+
+            return ReadEnum<T>(ref reader);
+        }
+
+        public override void Write(Utf8JsonWriter writer, T? value, JsonSerializerOptions options)
+        {
+            if (value is null)
+            {
+                writer.WriteNullValue();
+                return;
+            }
+
+            writer.WriteNumberValue(Convert.ToInt32(value.Value));
+        }
+    }
+
+    private static T ReadEnum<T>(ref Utf8JsonReader reader) where T : struct, Enum
+    {
+        if (reader.TokenType == JsonTokenType.Number && reader.TryGetInt32(out var n))
+        {
+            return (T)Enum.ToObject(typeof(T), n);
+        }
+
+        if (reader.TokenType == JsonTokenType.String)
+        {
+            var s = reader.GetString();
+            if (string.IsNullOrWhiteSpace(s))
             {
                 return default;
             }
 
-            reader.Skip();
+            if (Enum.TryParse<T>(s, ignoreCase: true, out var byName))
+            {
+                return byName;
+            }
+
+            if (int.TryParse(s, out var ni))
+            {
+                return (T)Enum.ToObject(typeof(T), ni);
+            }
+        }
+
+        if (reader.TokenType is JsonTokenType.Null)
+        {
             return default;
         }
 
-        public override void Write(Utf8JsonWriter writer, T value, JsonSerializerOptions options)
-            => writer.WriteNumberValue(Convert.ToInt32(value));
+        reader.Skip();
+        return default;
     }
 }

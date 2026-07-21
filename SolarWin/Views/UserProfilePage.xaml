@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.UserProfilePage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <DataTemplate x:Key="SocialRowTemplate" x:DataType="vm:SocialListItemViewModel">
+            <Grid Padding="4,8">
+                <StackPanel Spacing="2">
+                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" TextWrapping="WrapWholeWords" />
+                    <TextBlock Opacity="0.75" Text="{x:Bind Subtitle}" TextWrapping="WrapWholeWords" />
+                    <TextBlock Opacity="0.55" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid Padding="12,8" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Click="BackButton_OnClick" Content="返回" />
+            <TextBlock
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                Style="{StaticResource SubtitleTextBlockStyle}"
+                Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+            <ProgressRing
+                Grid.Column="2"
+                Width="24"
+                Height="24"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+        </Grid>
+
+        <ScrollViewer Grid.Row="1" Padding="24,8,24,24">
+            <StackPanel MaxWidth="640" Spacing="16">
+                <!-- Cover + header -->
+                <Grid MinHeight="120">
+                    <Border
+                        Height="120"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        CornerRadius="8" />
+                    <Border
+                        Height="120"
+                        CornerRadius="8"
+                        Opacity="0.85">
+                        <Border.Background>
+                            <ImageBrush
+                                ImageSource="{x:Bind ViewModel.BackgroundImage, Mode=OneWay}"
+                                Stretch="UniformToFill" />
+                        </Border.Background>
+                    </Border>
+                </Grid>
+
+                <Grid Margin="0,-40,0,0" ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid Width="80" Height="80">
+                        <Border
+                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                            CornerRadius="40"
+                            Opacity="{x:Bind ViewModel.InitialsOpacity, Mode=OneWay}">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="28"
+                                FontWeight="SemiBold"
+                                Text="{x:Bind ViewModel.Initials, Mode=OneWay}" />
+                        </Border>
+                        <Ellipse Opacity="{x:Bind ViewModel.AvatarOpacity, Mode=OneWay}">
+                            <Ellipse.Fill>
+                                <ImageBrush
+                                    ImageSource="{x:Bind ViewModel.AvatarImage, Mode=OneWay}"
+                                    Stretch="UniformToFill" />
+                            </Ellipse.Fill>
+                        </Ellipse>
+                    </Grid>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="4">
+                        <TextBlock
+                            Style="{StaticResource SubtitleTextBlockStyle}"
+                            Text="{x:Bind ViewModel.DisplayName, Mode=OneWay}" />
+                        <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.Handle, Mode=OneWay}" />
+                        <TextBlock Opacity="0.7" Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+
+                <TextBlock Text="{x:Bind ViewModel.Bio, Mode=OneWay}" TextWrapping="WrapWholeWords" />
+                <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.Meta, Mode=OneWay}" TextWrapping="Wrap" />
+                <TextBlock Opacity="0.85" Text="{x:Bind ViewModel.RelationshipText, Mode=OneWay}" />
+
+                <TextBlock
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                    TextWrapping="Wrap" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button
+                        Command="{x:Bind ViewModel.StartDirectChatCommand}"
+                        Content="私聊"
+                        Style="{StaticResource AccentButtonStyle}"
+                        IsEnabled="{x:Bind ViewModel.CanMessage, Mode=OneWay}" />
+                    <Button Command="{x:Bind ViewModel.SendFriendRequestCommand}" Content="加好友" />
+                    <Button Command="{x:Bind ViewModel.SetCloseFriendCommand}" Content="密友" />
+                    <Button Command="{x:Bind ViewModel.BlockCommand}" Content="拉黑" />
+                    <Button Command="{x:Bind ViewModel.UnblockCommand}" Content="取消拉黑" />
+                    <Button Command="{x:Bind ViewModel.MuteCommand}" Content="静音" />
+                    <Button Command="{x:Bind ViewModel.UnmuteCommand}" Content="取消静音" />
+                    <Button Command="{x:Bind ViewModel.RefreshCommand}" Content="刷新" />
+                    <ProgressRing
+                        Width="24"
+                        Height="24"
+                        IsActive="{x:Bind ViewModel.IsMessaging, Mode=OneWay}" />
+                </StackPanel>
+
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="徽章" />
+                <ListView
+                    MaxHeight="180"
+                    ItemTemplate="{StaticResource SocialRowTemplate}"
+                    ItemsSource="{x:Bind ViewModel.Badges, Mode=OneWay}"
+                    SelectionMode="None" />
+
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="Board" />
+                <ListView
+                    MaxHeight="160"
+                    ItemTemplate="{StaticResource SocialRowTemplate}"
+                    ItemsSource="{x:Bind ViewModel.BoardItems, Mode=OneWay}"
+                    SelectionMode="None" />
+
+                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="公开连接" />
+                <ListView
+                    MaxHeight="140"
+                    ItemTemplate="{StaticResource SocialRowTemplate}"
+                    ItemsSource="{x:Bind ViewModel.Connections, Mode=OneWay}"
+                    SelectionMode="None" />
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

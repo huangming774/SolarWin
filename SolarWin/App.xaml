@@ -9,6 +9,20 @@
             <ResourceDictionary.MergedDictionaries>
                 <XamlControlsResources xmlns="using:Microsoft.UI.Xaml.Controls" />
             </ResourceDictionary.MergedDictionaries>
+
+            <!-- Solid fallback; live AcrylicBrush is applied in WeatherPage code (XAML compiler quirk). -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="WeatherAcrylicBrush" Color="#CCFFFFFF" />
+                    <Color x:Key="WeatherAcrylicTint">#CCFFFFFF</Color>
+                    <Color x:Key="WeatherAcrylicFallback">#E6FFFFFF</Color>
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="WeatherAcrylicBrush" Color="#CC1A1A1A" />
+                    <Color x:Key="WeatherAcrylicTint">#CC1A1A1A</Color>
+                    <Color x:Key="WeatherAcrylicFallback">#E61A1A1A</Color>
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

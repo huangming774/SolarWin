@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.SecurityPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <ScrollViewer Padding="24">
+        <StackPanel MaxWidth="720" Spacing="18">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Click="Back_OnClick" Content="返回" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="账号安全" />
+                <Button
+                    VerticalAlignment="Center"
+                    Command="{x:Bind ViewModel.LoadCommand}"
+                    Content="刷新"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+            </StackPanel>
+
+            <ProgressRing
+                Width="36"
+                Height="36"
+                HorizontalAlignment="Left"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <!-- Pending challenges (approve remote login / MFA InApp) -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="待批准登录" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="其他设备请求登录或需要应用内确认时，可在此批准 / 拒绝。"
+                TextWrapping="WrapWholeWords" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.PendingChallenges, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:PendingChallengeRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock
+                                    Opacity="0.7"
+                                    Text="{x:Bind Subtitle}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Button
+                                    Click="ApproveChallenge_OnClick"
+                                    Content="批准"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeclineChallenge_OnClick"
+                                    Content="拒绝"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Devices -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="登录设备" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox
+                    Width="220"
+                    Header="当前设备标签"
+                    PlaceholderText="例如：家里的 PC"
+                    Text="{x:Bind ViewModel.DeviceLabelDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.SaveCurrentDeviceLabelCommand}"
+                    Content="保存" />
+            </StackPanel>
+            <ListView
+                x:Name="DevicesList"
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.Devices, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:DeviceRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title, Mode=OneWay}" />
+                                <TextBlock
+                                    Opacity="0.7"
+                                    Text="{x:Bind Subtitle, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                                <TextBox
+                                    Width="200"
+                                    Header="标签"
+                                    Text="{x:Bind LabelDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Vertical"
+                                Spacing="6">
+                                <Button
+                                    Click="SaveDeviceLabel_OnClick"
+                                    Content="改标签"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeleteDevice_OnClick"
+                                    Content="移除"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Sessions -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="会话" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.Sessions, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SessionRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock
+                                    Opacity="0.7"
+                                    Text="{x:Bind Subtitle}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                            <Button
+                                Grid.Column="1"
+                                Click="RevokeSession_OnClick"
+                                Content="撤销"
+                                Tag="{x:Bind}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Factors -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="认证因素（MFA）" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="可启用/禁用已有因素。Passkey 通过 WebView2 + solian.app 域名完成 Windows Hello / 安全密钥注册。"
+                TextWrapping="WrapWholeWords" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox
+                    Width="180"
+                    Header="Passkey 标签"
+                    Text="{x:Bind ViewModel.PasskeyLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.RegisterPasskeyCommand}"
+                    Content="注册 Passkey"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+            </StackPanel>
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.Factors, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FactorRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Button
+                                    Click="EnableFactor_OnClick"
+                                    Content="启用"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DisableFactor_OnClick"
+                                    Content="禁用"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeleteFactor_OnClick"
+                                    Content="删除"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Contacts -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="联系方式" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <ComboBox
+                    Width="120"
+                    Header="类型"
+                    SelectedIndex="{x:Bind ViewModel.NewContactTypeIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="邮箱" />
+                    <ComboBoxItem Content="手机" />
+                    <ComboBoxItem Content="IM" />
+                </ComboBox>
+                <TextBox
+                    Width="240"
+                    Header="内容"
+                    PlaceholderText="email 或手机号"
+                    Text="{x:Bind ViewModel.NewContactContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.CreateContactCommand}"
+                    Content="添加" />
+            </StackPanel>
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.Contacts, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ContactRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="4">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                <TextBox
+                                    Width="200"
+                                    Header="验证码"
+                                    PlaceholderText="邮件/短信收到的代码"
+                                    Text="{x:Bind VerifyCodeDraft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Vertical"
+                                Spacing="6">
+                                <Button
+                                    Click="RequestContactVerify_OnClick"
+                                    Content="发送验证码"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="VerifyContact_OnClick"
+                                    Content="提交验证"
+                                    Style="{StaticResource AccentButtonStyle}"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="SetPrimaryContact_OnClick"
+                                    Content="设主要"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeleteContact_OnClick"
+                                    Content="删除"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Authorized apps -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="已授权应用" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.AuthorizedApps, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AppRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock
+                                    Opacity="0.7"
+                                    Text="{x:Bind Subtitle}"
+                                    TextWrapping="WrapWholeWords" />
+                            </StackPanel>
+                            <Button
+                                Grid.Column="1"
+                                Click="RevokeApp_OnClick"
+                                Content="撤销"
+                                Tag="{x:Bind}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- API keys -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="API 密钥" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <TextBox
+                    Width="220"
+                    Header="标签"
+                    PlaceholderText="SolarWin"
+                    Text="{x:Bind ViewModel.NewApiKeyLabel, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    VerticalAlignment="Bottom"
+                    Command="{x:Bind ViewModel.CreateApiKeyCommand}"
+                    Content="创建" />
+            </StackPanel>
+            <TextBlock
+                FontFamily="Consolas"
+                IsTextSelectionEnabled="True"
+                Text="{x:Bind ViewModel.LastCreatedApiKeySecret, Mode=OneWay}"
+                TextWrapping="Wrap" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.ApiKeys, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ApiKeyRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Button
+                                    Click="RotateApiKey_OnClick"
+                                    Content="轮换"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeleteApiKey_OnClick"
+                                    Content="删除"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+
+            <!-- Connections -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="第三方连接" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.Connections, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ConnectionRowViewModel">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Button
+                                    Click="ToggleConnection_OnClick"
+                                    Content="切换公开"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="DeleteConnection_OnClick"
+                                    Content="断开"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

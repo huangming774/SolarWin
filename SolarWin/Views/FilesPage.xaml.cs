@@ -3,9 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using SolarWin.ViewModels;
-using Windows.Storage;
 using Windows.Storage.Pickers;
-using Windows.Storage.Streams;
 using WinRT.Interop;
 
 namespace SolarWin.Views;
@@ -14,10 +12,19 @@ public sealed partial class FilesPage : Page
 {
     public FilesViewModel ViewModel { get; }
 
+    public string RecycleBinButtonText => ViewModel.IsRecycleBinMode ? "退出回收站" : "回收站";
+
     public FilesPage()
     {
         ViewModel = App.Services.GetRequiredService<FilesViewModel>();
         InitializeComponent();
+        ViewModel.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(FilesViewModel.IsRecycleBinMode))
+            {
+                Bindings.Update();
+            }
+        };
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -42,6 +49,14 @@ public sealed partial class FilesPage : Page
         if (ViewModel.GoUpCommand.CanExecute(null))
         {
             ViewModel.GoUpCommand.Execute(null);
+        }
+    }
+
+    private async void ToggleRecycleBin_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.ToggleRecycleBinCommand.CanExecute(null))
+        {
+            await ViewModel.ToggleRecycleBinCommand.ExecuteAsync(null);
         }
     }
 
@@ -135,6 +150,82 @@ public sealed partial class FilesPage : Page
         }
     }
 
+    private async void Move_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedFile is null)
+        {
+            ViewModel.ErrorMessage = "请先选择要移动的文件或文件夹。";
+            return;
+        }
+
+        var selected = ViewModel.SelectedFile;
+        var targets = new List<MoveTarget>
+        {
+            new() { Label = "根目录", ParentId = null },
+        };
+
+        foreach (var folder in ViewModel.FolderTargets)
+        {
+            if (selected.IsFolder
+                && string.Equals(folder.Id, selected.Id, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            targets.Add(new MoveTarget { Label = $"📁 {folder.Name}", ParentId = folder.Id });
+        }
+
+        var list = new ListView
+        {
+            ItemsSource = targets,
+            SelectionMode = ListViewSelectionMode.Single,
+            Height = 260,
+            DisplayMemberPath = nameof(MoveTarget.Label),
+        };
+        if (targets.Count > 0)
+        {
+            list.SelectedIndex = 0;
+        }
+
+        var panel = new StackPanel { Spacing = 8 };
+        panel.Children.Add(new TextBlock
+        {
+            Text = $"将「{selected.Name}」移动到：",
+            TextWrapping = TextWrapping.Wrap,
+        });
+        panel.Children.Add(list);
+        panel.Children.Add(new TextBlock
+        {
+            Opacity = 0.65,
+            Text = "可选：当前目录下的子文件夹，或根目录。进入目标文件夹后再点移动可移入更深路径。",
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 12,
+        });
+
+        var dialog = new ContentDialog
+        {
+            Title = "移动到…",
+            Content = panel,
+            PrimaryButtonText = "移动",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (list.SelectedItem is not MoveTarget target)
+        {
+            ViewModel.ErrorMessage = "请选择目标位置。";
+            return;
+        }
+
+        await ViewModel.MoveSelectedAsync(target.ParentId);
+    }
+
     private async void Recycle_OnClick(object sender, RoutedEventArgs e)
     {
         if (ViewModel.SelectedFile is null)
@@ -161,6 +252,49 @@ public sealed partial class FilesPage : Page
         if (ViewModel.RecycleSelectedCommand.CanExecute(null))
         {
             await ViewModel.RecycleSelectedCommand.ExecuteAsync(null);
+        }
+    }
+
+    private async void Restore_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedFile is null)
+        {
+            ViewModel.ErrorMessage = "请先选择要恢复的文件。";
+            return;
+        }
+
+        if (ViewModel.RestoreSelectedCommand.CanExecute(null))
+        {
+            await ViewModel.RestoreSelectedCommand.ExecuteAsync(null);
+        }
+    }
+
+    private async void DeletePermanent_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel.SelectedFile is null)
+        {
+            ViewModel.ErrorMessage = "请先选择要永久删除的文件。";
+            return;
+        }
+
+        var dialog = new ContentDialog
+        {
+            Title = "永久删除",
+            Content = $"确定永久删除「{ViewModel.SelectedFile.Name}」？此操作不可恢复。",
+            PrimaryButtonText = "永久删除",
+            CloseButtonText = "取消",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = XamlRoot,
+        };
+
+        if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        if (ViewModel.DeletePermanentlyCommand.CanExecute(null))
+        {
+            await ViewModel.DeletePermanentlyCommand.ExecuteAsync(null);
         }
     }
 
@@ -205,7 +339,6 @@ public sealed partial class FilesPage : Page
 
             var progress = new Progress<double>(p => ViewModel.UploadProgress = p);
             await using var stream = await target.OpenStreamForWriteAsync();
-            // Truncate existing file.
             stream.SetLength(0);
             await ViewModel.DownloadAsync(stream, item, progress);
             ViewModel.StatusMessage = $"已保存：{target.Path}";
@@ -246,5 +379,12 @@ public sealed partial class FilesPage : Page
     {
         var hwnd = WindowNative.GetWindowHandle(App.Window);
         InitializeWithWindow.Initialize(picker, hwnd);
+    }
+
+    private sealed class MoveTarget
+    {
+        public required string Label { get; init; }
+
+        public string? ParentId { get; init; }
     }
 }

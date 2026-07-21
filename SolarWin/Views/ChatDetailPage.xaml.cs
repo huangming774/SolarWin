@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using SolarWin.Helpers;
+using SolarWin.Services;
 using SolarWin.ViewModels;
 using Windows.Storage.Pickers;
 using Windows.System;
@@ -14,6 +15,7 @@ namespace SolarWin.Views;
 
 public sealed partial class ChatDetailPage : Page
 {
+    private readonly IToastService _toast;
     private ScrollViewer? _messageScrollViewer;
     private bool _scrollHooked;
 
@@ -22,6 +24,7 @@ public sealed partial class ChatDetailPage : Page
     public ChatDetailPage()
     {
         ViewModel = App.Services.GetRequiredService<ChatDetailViewModel>();
+        _toast = App.Services.GetRequiredService<IToastService>();
         InitializeComponent();
         ViewModel.ScrollToBottomRequested += OnScrollToBottomRequested;
         ViewModel.OpenImageRequested += OnOpenImageRequested;
@@ -87,8 +90,77 @@ public sealed partial class ChatDetailPage : Page
         }
     }
 
+    private void SenderAvatar_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MessageItemViewModel item })
+        {
+            return;
+        }
+
+        var args = item.TryCreateSenderProfileArgs();
+        if (args is null)
+        {
+            _toast.Warning("无法打开主页：缺少用户名");
+            return;
+        }
+
+        Frame?.Navigate(typeof(UserProfilePage), args);
+    }
+
     private void DraftBox_OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
+        // Autocomplete keyboard navigation
+        if (ViewModel.HasSuggestions)
+        {
+            if (e.Key == VirtualKey.Up)
+            {
+                if (ViewModel.MoveSuggestionSelection(-1))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+            else if (e.Key == VirtualKey.Down)
+            {
+                if (ViewModel.MoveSuggestionSelection(1))
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+            else if (e.Key is VirtualKey.Tab)
+            {
+                if (ViewModel.TryApplySelectedSuggestion())
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+            else if (e.Key == VirtualKey.Escape)
+            {
+                if (ViewModel.DismissSuggestions())
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+            else if (e.Key == VirtualKey.Enter)
+            {
+                // Enter applies suggestion when popup is open (send with Ctrl+Enter / empty selection)
+                if (ViewModel.TryApplySelectedSuggestion())
+                {
+                    e.Handled = true;
+                    return;
+                }
+            }
+        }
+        else if (e.Key == VirtualKey.Escape && ViewModel.IsBotPanelOpen)
+        {
+            ViewModel.DismissSuggestions();
+            e.Handled = true;
+            return;
+        }
+
         if (e.Key == VirtualKey.Enter)
         {
             if (ViewModel.SendCommand.CanExecute(null))
@@ -97,6 +169,16 @@ public sealed partial class ChatDetailPage : Page
             }
 
             e.Handled = true;
+        }
+    }
+
+    private void BotCommand_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ChatBotCommandItem item
+            && ViewModel.ApplyBotCommandCommand.CanExecute(item))
+        {
+            ViewModel.ApplyBotCommandCommand.Execute(item);
+            DraftBox.Focus(FocusState.Programmatic);
         }
     }
 
@@ -141,6 +223,135 @@ public sealed partial class ChatDetailPage : Page
         {
             ViewModel.RequestOpenImage(att);
             e.Handled = true;
+        }
+    }
+
+    private void StickerGrid_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is StickerPickItem item
+            && ViewModel.SendStickerCommand.CanExecute(item))
+        {
+            ViewModel.SendStickerCommand.Execute(item);
+        }
+    }
+
+    private void ReplyMessage_OnClick(object sender, RoutedEventArgs e)
+    {
+        MessageItemViewModel? item = null;
+        if (sender is FrameworkElement { Tag: MessageItemViewModel tagged })
+        {
+            item = tagged;
+        }
+        else if (sender is MenuFlyoutItem { Tag: MessageItemViewModel menuItem })
+        {
+            item = menuItem;
+        }
+
+        if (item is not null && ViewModel.ReplyToMessageCommand.CanExecute(item))
+        {
+            ViewModel.ReplyToMessageCommand.Execute(item);
+            // Focus composer for typing the reply
+            DraftBox?.Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void ReactMessage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MessageItemViewModel item }
+            && ViewModel.ReactToMessageCommand.CanExecute(item))
+        {
+            ViewModel.ReactToMessageCommand.Execute(item);
+        }
+    }
+
+    private void PinMessage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MessageItemViewModel item }
+            && ViewModel.PinMessageCommand.CanExecute(item))
+        {
+            ViewModel.PinMessageCommand.Execute(item);
+        }
+    }
+
+    private void EditMessage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MessageItemViewModel item }
+            && ViewModel.EditMessageCommand.CanExecute(item))
+        {
+            ViewModel.EditMessageCommand.Execute(item);
+        }
+    }
+
+    private void DeleteMessage_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MessageItemViewModel item }
+            && ViewModel.DeleteMessageCommand.CanExecute(item))
+        {
+            ViewModel.DeleteMessageCommand.Execute(item);
+        }
+    }
+
+    private void Suggestion_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ChatSuggestionItem item
+            && ViewModel.ApplySuggestionCommand.CanExecute(item))
+        {
+            ViewModel.ApplySuggestionCommand.Execute(item);
+            DraftBox.Focus(FocusState.Programmatic);
+        }
+    }
+
+    private void KickMember_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChatMemberItemViewModel item }
+            && ViewModel.KickMemberCommand.CanExecute(item))
+        {
+            ViewModel.KickMemberCommand.Execute(item);
+        }
+    }
+
+    private void TimeoutMember_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChatMemberItemViewModel item }
+            && ViewModel.TimeoutMemberCommand.CanExecute(item))
+        {
+            ViewModel.TimeoutMemberCommand.Execute(item);
+        }
+    }
+
+    private void ClearTimeout_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChatMemberItemViewModel item }
+            && ViewModel.ClearTimeoutMemberCommand.CanExecute(item))
+        {
+            ViewModel.ClearTimeoutMemberCommand.Execute(item);
+        }
+    }
+
+    private void MuteCall_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: CallParticipantItemViewModel item }
+            && ViewModel.MuteInCallCommand.CanExecute(item))
+        {
+            ViewModel.MuteInCallCommand.Execute(item);
+        }
+    }
+
+    private void UnmuteCall_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: CallParticipantItemViewModel item }
+            && ViewModel.UnmuteInCallCommand.CanExecute(item))
+        {
+            ViewModel.UnmuteInCallCommand.Execute(item);
+        }
+    }
+
+    private void KickCall_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: CallParticipantItemViewModel item }
+            && ViewModel.KickFromCallCommand.CanExecute(item))
+        {
+            ViewModel.KickFromCallCommand.Execute(item);
         }
     }
 

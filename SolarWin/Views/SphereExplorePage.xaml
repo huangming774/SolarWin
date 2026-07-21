@@ -1,0 +1,554 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.SphereExplorePage"
+    x:Name="RootPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <Grid Padding="20" RowSpacing="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="探索 · Sphere" />
+                <TextBlock Opacity="0.7" Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新全部" />
+                <ProgressRing Width="28" Height="28" IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            </StackPanel>
+        </Grid>
+
+        <StackPanel Grid.Row="1" Spacing="2">
+            <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" TextWrapping="Wrap" />
+            <TextBlock Opacity="0.65" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ViewModel.InfoMessage, Mode=OneWay}" TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Pivot Grid.Row="2">
+            <!-- Publishers -->
+            <PivotItem Header="发布者">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="140" PlaceholderText="name" Text="{x:Bind ViewModel.NewPublisherName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Width="140" PlaceholderText="显示名" Text="{x:Bind ViewModel.NewPublisherNick, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.CreatePublisherCommand}" Content="创建个人发布者" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="220" PlaceholderText="搜索发布者" Text="{x:Bind ViewModel.PublisherSearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.SearchPublishersCommand}" Content="搜索" />
+                        </StackPanel>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的发布者" />
+                        <ListView MaxHeight="200" ItemsSource="{x:Bind ViewModel.MyPublishers, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="管理"
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenPublisherCommand}"
+                                                CommandParameter="{x:Bind}"
+                                                Style="{StaticResource AccentButtonStyle}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="搜索结果" />
+                        <ListView MaxHeight="180" ItemsSource="{x:Bind ViewModel.SearchPublishers, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                        </StackPanel>
+                                        <Button Grid.Column="1" Content="打开"
+                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenPublisherCommand}"
+                                                CommandParameter="{x:Bind}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="邀请" />
+                        <ListView MaxHeight="140" ItemsSource="{x:Bind ViewModel.PublisherInvites, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Content="接受" Command="{Binding ElementName=RootPage, Path=ViewModel.AcceptPublisherInviteCommand}" CommandParameter="{x:Bind}" />
+                                            <Button Content="拒绝" Command="{Binding ElementName=RootPage, Path=ViewModel.DeclinePublisherInviteCommand}" CommandParameter="{x:Bind}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Subscriptions -->
+            <PivotItem Header="订阅">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="发布者订阅" />
+                        <ListView MaxHeight="280" ItemsSource="{x:Bind ViewModel.PublisherSubscriptions, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Content="打开" Command="{Binding ElementName=RootPage, Path=ViewModel.OpenPublisherCommand}" CommandParameter="{x:Bind}" />
+                                            <Button Content="退订" Command="{Binding ElementName=RootPage, Path=ViewModel.UnsubscribePublisherCommand}" CommandParameter="{x:Bind}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="帖子订阅" />
+                        <ListView MaxHeight="200" ItemsSource="{x:Bind ViewModel.PostSubscriptions, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <StackPanel Padding="4,8">
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                        <TextBlock Opacity="0.6" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Bookmarks -->
+            <PivotItem Header="书签">
+                <ListView Padding="0,8,0,0" ItemsSource="{x:Bind ViewModel.Bookmarks, Mode=OneWay}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Bookmark_OnItemClick">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PostItemViewModel">
+                            <Grid Padding="4,10" ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                    <TextBlock Opacity="0.85" Text="{x:Bind ContentText}" TextWrapping="WrapWholeWords" MaxLines="3" />
+                                </StackPanel>
+                                <Button Grid.Column="1" Content="取消书签"
+                                        Command="{Binding ElementName=RootPage, Path=ViewModel.UnbookmarkPostCommand}"
+                                        CommandParameter="{x:Bind}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </PivotItem>
+
+            <!-- Drafts / Featured -->
+            <PivotItem Header="草稿/精选">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="草稿" />
+                        <ListView MaxHeight="240" ItemsSource="{x:Bind ViewModel.Drafts, Mode=OneWay}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Draft_OnItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PostItemViewModel">
+                                    <StackPanel Padding="4,8" Spacing="2">
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                        <TextBlock Opacity="0.85" Text="{x:Bind ContentText}" TextWrapping="Wrap" MaxLines="3" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="精选" />
+                        <ListView MaxHeight="240" ItemsSource="{x:Bind ViewModel.Featured, Mode=OneWay}" SelectionMode="None" IsItemClickEnabled="True" ItemClick="Featured_OnItemClick">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:PostItemViewModel">
+                                    <StackPanel Padding="4,8" Spacing="2">
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                        <TextBlock Opacity="0.85" Text="{x:Bind ContentText}" TextWrapping="Wrap" MaxLines="3" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Tags / Categories / Collections -->
+            <PivotItem Header="标签/分类">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="标签" />
+                        <ListView MaxHeight="200" ItemsSource="{x:Bind ViewModel.Tags, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.6" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Content="看帖" Command="{Binding ElementName=RootPage, Path=ViewModel.OpenTagFeedCommand}" CommandParameter="{x:Bind}" Style="{StaticResource AccentButtonStyle}" />
+                                            <Button Content="订阅" Command="{Binding ElementName=RootPage, Path=ViewModel.SubscribeTagCommand}" CommandParameter="{x:Bind}" />
+                                            <Button Content="退订" Command="{Binding ElementName=RootPage, Path=ViewModel.UnsubscribeTagCommand}" CommandParameter="{x:Bind}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="分类" />
+                        <ListView MaxHeight="180" ItemsSource="{x:Bind ViewModel.Categories, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Content="看帖" Command="{Binding ElementName=RootPage, Path=ViewModel.OpenCategoryFeedCommand}" CommandParameter="{x:Bind}" Style="{StaticResource AccentButtonStyle}" />
+                                            <Button Content="订阅" Command="{Binding ElementName=RootPage, Path=ViewModel.SubscribeCategoryCommand}" CommandParameter="{x:Bind}" />
+                                            <Button Content="退订" Command="{Binding ElementName=RootPage, Path=ViewModel.UnsubscribeCategoryCommand}" CommandParameter="{x:Bind}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="合集" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="200" PlaceholderText="发布者 name" Text="{x:Bind ViewModel.CollectionPublisherName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.LoadCollectionsCommand}" Content="加载合集" />
+                        </StackPanel>
+                        <ListView MaxHeight="180" ItemsSource="{x:Bind ViewModel.Collections, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <Grid Padding="4,8" ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.7" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
+                                            <Button Content="看帖"
+                                                    Command="{Binding ElementName=RootPage, Path=ViewModel.OpenCollectionFeedCommand}"
+                                                    CommandParameter="{x:Bind}"
+                                                    Style="{StaticResource AccentButtonStyle}" />
+                                            <Button Content="订阅合集"
+                                                    Command="{Binding ElementName=RootPage, Path=ViewModel.SubscribeCollectionCommand}"
+                                                    CommandParameter="{x:Bind}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Stickers -->
+            <PivotItem Header="贴纸">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12">
+                        <TextBlock
+                            Opacity="0.75"
+                            Text="点选贴纸包可加载内容图片；封面与贴纸经 DysonFS 鉴权加载。"
+                            TextWrapping="WrapWholeWords" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的贴纸包" />
+                        <GridView
+                            MaxHeight="200"
+                            IsItemClickEnabled="True"
+                            ItemClick="MyStickerPack_OnItemClick"
+                            ItemsSource="{x:Bind ViewModel.StickerPacks, Mode=OneWay}"
+                            SelectionMode="None">
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StickerPackItemViewModel">
+                                    <Border
+                                        Width="100"
+                                        Margin="4"
+                                        Padding="6"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10">
+                                        <StackPanel Spacing="4">
+                                            <Grid Height="72" Width="88">
+                                                <Border
+                                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                    CornerRadius="8" />
+                                                <ProgressRing
+                                                    Width="24"
+                                                    Height="24"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    IsActive="{x:Bind IsLoadingIcon, Mode=OneWay}" />
+                                                <Image
+                                                    Height="72"
+                                                    Stretch="Uniform"
+                                                    Source="{x:Bind IconImage, Mode=OneWay}" />
+                                            </Grid>
+                                            <TextBlock
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind Title}"
+                                                TextTrimming="CharacterEllipsis"
+                                                MaxLines="2"
+                                                TextWrapping="WrapWholeWords" />
+                                            <TextBlock
+                                                FontSize="11"
+                                                Opacity="0.65"
+                                                Text="{x:Bind Subtitle}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
+                        </GridView>
+
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox
+                                Width="220"
+                                PlaceholderText="搜索贴纸包 / 贴纸"
+                                Text="{x:Bind ViewModel.StickerSearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.SearchStickersCommand}" Content="搜索" />
+                        </StackPanel>
+                        <TextBlock
+                            FontSize="12"
+                            Opacity="0.7"
+                            Text="匹配的贴纸包（点选查看内容 / 添加）" />
+                        <GridView
+                            MaxHeight="220"
+                            IsItemClickEnabled="True"
+                            ItemClick="SearchStickerPack_OnItemClick"
+                            ItemsSource="{x:Bind ViewModel.StickerSearch, Mode=OneWay}"
+                            SelectionMode="None">
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StickerPackItemViewModel">
+                                    <Border
+                                        Width="120"
+                                        Margin="4"
+                                        Padding="6"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="10">
+                                        <StackPanel Spacing="4">
+                                            <Grid Height="72">
+                                                <Border
+                                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                    CornerRadius="8" />
+                                                <ProgressRing
+                                                    Width="24"
+                                                    Height="24"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    IsActive="{x:Bind IsLoadingIcon, Mode=OneWay}" />
+                                                <Image
+                                                    Height="72"
+                                                    Stretch="Uniform"
+                                                    Source="{x:Bind IconImage, Mode=OneWay}" />
+                                            </Grid>
+                                            <TextBlock
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind Title}"
+                                                TextTrimming="CharacterEllipsis"
+                                                MaxLines="2" />
+                                            <Button
+                                                HorizontalAlignment="Stretch"
+                                                Click="OwnSticker_OnClick"
+                                                Content="添加"
+                                                Style="{StaticResource AccentButtonStyle}"
+                                                Tag="{x:Bind}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
+                        </GridView>
+
+                        <TextBlock
+                            FontSize="12"
+                            Opacity="0.7"
+                            Text="匹配的贴纸图片（点选打开所属贴纸包）" />
+                        <GridView
+                            MaxHeight="240"
+                            IsItemClickEnabled="True"
+                            ItemClick="SearchStickerHit_OnItemClick"
+                            ItemsSource="{x:Bind ViewModel.StickerSearchHits, Mode=OneWay}"
+                            SelectionMode="None">
+                            <GridView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:StickerItemViewModel">
+                                    <Border
+                                        Width="88"
+                                        Margin="4"
+                                        Padding="4"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="8">
+                                        <StackPanel Spacing="2">
+                                            <Grid Height="72" Width="80">
+                                                <Border
+                                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                    CornerRadius="6" />
+                                                <ProgressRing
+                                                    Width="22"
+                                                    Height="22"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    IsActive="{x:Bind IsLoading, Mode=OneWay}" />
+                                                <Image
+                                                    Height="72"
+                                                    Stretch="Uniform"
+                                                    Source="{x:Bind Image, Mode=OneWay}" />
+                                            </Grid>
+                                            <TextBlock
+                                                FontSize="11"
+                                                Text="{x:Bind Title}"
+                                                TextAlignment="Center"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </GridView.ItemTemplate>
+                        </GridView>
+
+                        <!-- Open pack stickers grid -->
+                        <StackPanel Spacing="8" Visibility="{x:Bind ViewModel.OpenPackVisibility, Mode=OneWay}">
+                            <Grid ColumnSpacing="8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock
+                                    Style="{StaticResource SubtitleTextBlockStyle}"
+                                    Text="{x:Bind ViewModel.OpenPackTitle, Mode=OneWay}"
+                                    TextWrapping="WrapWholeWords" />
+                                <Button
+                                    Grid.Column="1"
+                                    Command="{x:Bind ViewModel.CloseOpenPackCommand}"
+                                    Content="关闭" />
+                            </Grid>
+                            <GridView
+                                MaxHeight="360"
+                                ItemsSource="{x:Bind ViewModel.OpenPackStickers, Mode=OneWay}"
+                                SelectionMode="None">
+                                <GridView.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:StickerItemViewModel">
+                                        <Border
+                                            Width="88"
+                                            Margin="4"
+                                            Padding="4"
+                                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="1"
+                                            CornerRadius="8">
+                                            <StackPanel Spacing="2">
+                                                <Grid Height="72" Width="80">
+                                                    <Border
+                                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                        CornerRadius="6" />
+                                                    <ProgressRing
+                                                        Width="22"
+                                                        Height="22"
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        IsActive="{x:Bind IsLoading, Mode=OneWay}" />
+                                                    <Image
+                                                        Height="72"
+                                                        Stretch="Uniform"
+                                                        Source="{x:Bind Image, Mode=OneWay}" />
+                                                </Grid>
+                                                <TextBlock
+                                                    FontSize="11"
+                                                    Text="{x:Bind Title}"
+                                                    TextAlignment="Center"
+                                                    TextTrimming="CharacterEllipsis" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </GridView.ItemTemplate>
+                            </GridView>
+                        </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+
+            <!-- Awards / Sponsor -->
+            <PivotItem Header="打赏/赞助">
+                <ScrollViewer Padding="0,8,0,0">
+                    <StackPanel Spacing="12" MaxWidth="520">
+                        <TextBox PlaceholderText="帖子 GUID" Text="{x:Bind ViewModel.AwardPostIdText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="100" PlaceholderText="打赏金额" Text="{x:Bind ViewModel.AwardAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBox Width="200" PlaceholderText="留言" Text="{x:Bind ViewModel.AwardMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.AwardPostCommand}" Content="打赏" Style="{StaticResource AccentButtonStyle}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <TextBox Width="100" PlaceholderText="赞助金额" Text="{x:Bind ViewModel.SponsorAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <Button Command="{x:Bind ViewModel.SponsorPostCommand}" Content="赞助" />
+                            <Button Command="{x:Bind ViewModel.LoadAwardsCommand}" Content="查看奖项" />
+                        </StackPanel>
+                        <ListView MaxHeight="320" ItemsSource="{x:Bind ViewModel.Awards, Mode=OneWay}" SelectionMode="None">
+                            <ListView.ItemTemplate>
+                                <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                    <StackPanel Padding="4,8">
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                        <TextBlock Opacity="0.75" Text="{x:Bind Subtitle}" />
+                                        <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListView.ItemTemplate>
+                        </ListView>
+                    </StackPanel>
+                </ScrollViewer>
+            </PivotItem>
+        </Pivot>
+    </Grid>
+</Page>

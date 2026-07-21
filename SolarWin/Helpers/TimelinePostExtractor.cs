@@ -60,7 +60,8 @@ public static class TimelinePostExtractor
         }
 
         // Common wrappers: { post: {...} }, { data: {...} }, bare SnPost
-        foreach (var key in new[] { "post", "data", "resource", "content" })
+        // Live gateway posts.new events put the full SnPost in "data".
+        foreach (var key in new[] { "post", "data", "resource", "content", "payload" })
         {
             if (evt.Data.TryGetProperty(key, out var wrapped) && wrapped.ValueKind == JsonValueKind.Object)
             {
@@ -73,6 +74,7 @@ public static class TimelinePostExtractor
             }
         }
 
+        // Event itself may be the post when type is posts.*
         var direct = TryDeserializePost(evt.Data);
         if (direct is not null)
         {
@@ -88,18 +90,32 @@ public static class TimelinePostExtractor
         }
 
         // Heuristic: must look like a post (id + content-ish / publisher).
-        var hasId = el.TryGetProperty("id", out _);
-        var looksLikePost =
-            hasId &&
-            (el.TryGetProperty("content", out _) ||
-             el.TryGetProperty("publisher", out _) ||
-             el.TryGetProperty("publisher_id", out _) ||
-             el.TryGetProperty("replies_count", out _) ||
-             el.TryGetProperty("visibility", out _));
-
-        if (!looksLikePost)
+        // Timeline events use type "posts.new" with nested post in data — caller unwraps first.
+        var hasId = el.TryGetProperty("id", out var idEl)
+                    && idEl.ValueKind is JsonValueKind.String or JsonValueKind.Number;
+        if (!hasId)
         {
             return null;
+        }
+
+        var looksLikePost =
+            el.TryGetProperty("content", out _) ||
+            el.TryGetProperty("publisher", out _) ||
+            el.TryGetProperty("publisher_id", out _) ||
+            el.TryGetProperty("replies_count", out _) ||
+            el.TryGetProperty("visibility", out _) ||
+            el.TryGetProperty("published_at", out _) ||
+            el.TryGetProperty("attachments", out _) ||
+            el.TryGetProperty("body", out _);
+
+        // Still try deserialize if id is uuid-shaped even without extra fields
+        if (!looksLikePost)
+        {
+            var idStr = idEl.ValueKind == JsonValueKind.String ? idEl.GetString() : null;
+            if (idStr is null || !Guid.TryParse(idStr, out _))
+            {
+                return null;
+            }
         }
 
         try

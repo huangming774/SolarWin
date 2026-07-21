@@ -50,7 +50,22 @@ public partial class PostDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial string AuthorHandle { get; set; } = string.Empty;
 
+    [ObservableProperty]
+    public partial string? AuthorAccountName { get; set; }
+
+    [ObservableProperty]
+    public partial Guid? AuthorAccountId { get; set; }
+
+    [ObservableProperty]
+    public partial string? PublisherName { get; set; }
+
     public string Initials => AuthorName.Length > 0 ? AuthorName[..1].ToUpperInvariant() : "?";
+
+    public bool CanOpenAuthorProfile =>
+        !string.IsNullOrWhiteSpace(AuthorAccountName) || !string.IsNullOrWhiteSpace(PublisherName);
+
+    /// <summary>Page navigates to UserProfilePage.</summary>
+    public event EventHandler<UserProfileNavArgs>? NavigateToUserProfile;
 
     [ObservableProperty]
     public partial string TimeText { get; set; } = string.Empty;
@@ -132,6 +147,32 @@ public partial class PostDetailViewModel : ObservableObject
     public partial string BookmarkButtonText { get; set; } = "收藏";
 
     [ObservableProperty]
+    public partial bool IsPostSubscribed { get; set; }
+
+    [ObservableProperty]
+    public partial string SubscribeButtonText { get; set; } = "订阅帖";
+
+    [ObservableProperty]
+    public partial string AwardAmountText { get; set; } = "1";
+
+    [ObservableProperty]
+    public partial string AwardMessage { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string SponsorAmountText { get; set; } = "1";
+
+    [ObservableProperty]
+    public partial string AwardsSummary { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string MonetizeStatus { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string PostIdText { get; set; } = string.Empty;
+
+    public ObservableCollection<SocialListItemViewModel> AwardItems { get; } = [];
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmptyReplies))]
     [NotifyPropertyChangedFor(nameof(EmptyRepliesVisibility))]
     [NotifyPropertyChangedFor(nameof(ShowReplies))]
@@ -189,6 +230,8 @@ public partial class PostDetailViewModel : ObservableObject
 
             ApplyPost(post);
             await LoadImagesFromPostAsync(post).ConfigureAwait(true);
+            await LoadSubscriptionStateAsync().ConfigureAwait(true);
+            await LoadAwardsPreviewAsync().ConfigureAwait(true);
             await LoadRepliesInternalAsync(reset: true).ConfigureAwait(true);
         }
         catch (SolarApiException ex)
@@ -202,6 +245,176 @@ public partial class PostDetailViewModel : ObservableObject
             NotifyReplyUi();
             OnPropertyChanged(nameof(HasError));
             OnPropertyChanged(nameof(ErrorVisibility));
+        }
+    }
+
+    [RelayCommand]
+    private void OpenAuthorProfile()
+    {
+        var name = AuthorAccountName;
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            name = PublisherName;
+        }
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            _toast.Warning("无法打开资料：缺少用户名");
+            return;
+        }
+
+        NavigateToUserProfile?.Invoke(
+            this,
+            new UserProfileNavArgs(name.TrimStart('@'), AuthorAccountId, AuthorName));
+    }
+
+    [RelayCommand]
+    private async Task TogglePostSubscribeAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            if (IsPostSubscribed)
+            {
+                await _api.UnsubscribePostAsync(_postId).ConfigureAwait(true);
+                IsPostSubscribed = false;
+                SubscribeButtonText = "订阅帖";
+                _toast.Success("已取消帖子订阅");
+            }
+            else
+            {
+                await _api.SubscribePostAsync(_postId).ConfigureAwait(true);
+                IsPostSubscribed = true;
+                SubscribeButtonText = "已订阅帖";
+                _toast.Success("已订阅本帖更新");
+            }
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"订阅失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task AwardPostAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (!double.TryParse(AwardAmountText.Trim(), out var amount) || amount <= 0)
+        {
+            _toast.Warning("请填写有效打赏金额");
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            MonetizeStatus = "打赏中…";
+            await _api.AwardPostAsync(_postId, new PostAwardRequest
+            {
+                Amount = amount,
+                Attitude = 0,
+                Message = string.IsNullOrWhiteSpace(AwardMessage) ? null : AwardMessage.Trim(),
+            }).ConfigureAwait(true);
+            MonetizeStatus = $"已打赏 {amount:0.##}";
+            _toast.Success("打赏成功");
+            AwardMessage = string.Empty;
+            await LoadAwardsPreviewAsync().ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            MonetizeStatus = FriendlySphereError(ex);
+            _toast.Error($"打赏失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task SponsorPostAsync()
+    {
+        if (_busyAction || _postId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (!double.TryParse(SponsorAmountText.Trim(), out var amount) || amount <= 0)
+        {
+            _toast.Warning("请填写有效赞助金额");
+            return;
+        }
+
+        try
+        {
+            _busyAction = true;
+            MonetizeStatus = "赞助中…";
+            await _api.SponsorPostAsync(_postId, new PostSponsorRequest { Amount = amount }).ConfigureAwait(true);
+            MonetizeStatus = $"已赞助 {amount:0.##}";
+            _toast.Success("赞助成功");
+        }
+        catch (SolarApiException ex)
+        {
+            MonetizeStatus = FriendlySphereError(ex);
+            _toast.Error($"赞助失败:{FriendlySphereError(ex)}");
+        }
+        finally
+        {
+            _busyAction = false;
+        }
+    }
+
+    private async Task LoadSubscriptionStateAsync()
+    {
+        try
+        {
+            var sub = await _api.GetPostSubscriptionAsync(_postId).ConfigureAwait(true);
+            IsPostSubscribed = sub is not null;
+            SubscribeButtonText = IsPostSubscribed ? "已订阅帖" : "订阅帖";
+        }
+        catch (SolarApiException)
+        {
+            IsPostSubscribed = false;
+            SubscribeButtonText = "订阅帖";
+        }
+    }
+
+    private async Task LoadAwardsPreviewAsync()
+    {
+        AwardItems.Clear();
+        try
+        {
+            var list = await _api.GetPostAwardsAsync(_postId, take: 10).ConfigureAwait(true);
+            foreach (var a in list)
+            {
+                AwardItems.Add(new SocialListItemViewModel(
+                    a.Id.ToString("D"),
+                    $"金额 {a.Amount:0.##}",
+                    a.Message ?? "",
+                    a.CreatedAt?.ToLocalTime().ToString("g") ?? "",
+                    a));
+            }
+
+            AwardsSummary = list.Count == 0
+                ? "暂无打赏记录"
+                : $"最近打赏 {list.Count} 条";
+        }
+        catch (SolarApiException)
+        {
+            AwardsSummary = "打赏记录未加载";
         }
     }
 
@@ -325,8 +538,12 @@ public partial class PostDetailViewModel : ObservableObject
         }
     }
 
+    /// <summary>
+    /// Quote-forward: POST /sphere/posts with <c>forwarded_post_id</c>
+    /// (same as Solian "forward", not ActivityPub boost).
+    /// </summary>
     [RelayCommand]
-    private async Task ToggleBoostAsync()
+    private async Task ForwardAsync()
     {
         if (_busyAction || _postId == Guid.Empty)
         {
@@ -336,33 +553,71 @@ public partial class PostDetailViewModel : ObservableObject
         try
         {
             _busyAction = true;
-            if (IsBoosted)
+
+            var pub = await ResolvePublisherNameAsync().ConfigureAwait(true);
+            var request = new CreatePostRequest
             {
-                await _api.UnboostPostAsync(_postId).ConfigureAwait(true);
-                IsBoosted = false;
-                BoostCount = Math.Max(0, BoostCount - 1);
-                BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
-                RefreshStats();
-                _toast.Success("已取消转发");
-            }
-            else
-            {
-                await _api.BoostPostAsync(_postId).ConfigureAwait(true);
-                IsBoosted = true;
-                BoostCount++;
-                BoostButtonText = $"转发 {BoostCount}";
-                RefreshStats();
-                _toast.Success("已转发");
-            }
+                // Empty body is allowed when Attachments is omitted (server only rejects empty+[]).
+                Content = null,
+                Visibility = 0,
+                Type = 0,
+                ForwardedPostId = _postId,
+            };
+
+            await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
+
+            IsBoosted = true;
+            BoostCount++;
+            BoostButtonText = "已转发";
+            RefreshStats();
+            _toast.Success("已发布引用帖");
         }
         catch (SolarApiException ex)
         {
+            // Some deployments require non-empty content even with a forward target.
+            if (IsContentRequiredError(ex))
+            {
+                try
+                {
+                    var pub = await ResolvePublisherNameAsync().ConfigureAwait(true);
+                    await _api.CreatePostAsync(
+                        new CreatePostRequest
+                        {
+                            Content = "转发",
+                            Visibility = 0,
+                            Type = 0,
+                            ForwardedPostId = _postId,
+                        },
+                        pub).ConfigureAwait(true);
+
+                    IsBoosted = true;
+                    BoostCount++;
+                    BoostButtonText = "已转发";
+                    RefreshStats();
+                    _toast.Success("已发布引用帖");
+                    return;
+                }
+                catch (SolarApiException retryEx)
+                {
+                    _toast.Error($"转发失败:{FriendlySphereError(retryEx)}");
+                    return;
+                }
+            }
+
             _toast.Error($"转发失败:{FriendlySphereError(ex)}");
         }
         finally
         {
             _busyAction = false;
         }
+    }
+
+    private static bool IsContentRequiredError(SolarApiException ex)
+    {
+        var body = ex.ResponseBody ?? string.Empty;
+        var msg = ex.ApiMessage ?? ex.Message ?? string.Empty;
+        return body.Contains("POST_CONTENT_REQUIRED", StringComparison.OrdinalIgnoreCase)
+               || msg.Contains("Content is required", StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>Map known Sphere error codes to short Chinese hints.</summary>
@@ -389,10 +644,10 @@ public partial class PostDetailViewModel : ObservableObject
         return code switch
         {
             "POST_REACTION_SUBSCRIPTION_REQUIRED" => "自定义反应需要订阅；已改用默认 thumb_up",
-            "POST_BOOST_PUBLISHER_REQUIRED" => "需要先创建发布者（Publisher）才能转发",
-            "POST_BOOST_ACTOR_NOT_FOUND" => "发布者未启用联邦身份（ActivityPub Actor），无法转发",
-            "POST_ALREADY_BOOSTED" => "已经转发过这条帖子了",
-            "POST_BOOST_BLOCKED" => "无法转发：双方存在屏蔽关系",
+            "POST_CONTENT_REQUIRED" => "内容不能为空",
+            "POST_FORWARD_TARGET_NOT_FOUND" => "被转发的帖子不存在",
+            "POST_FORWARD_BLOCKED" => "无法转发：双方存在屏蔽关系",
+            "PUBLISHER_NOT_FOUND" => "需要先创建发布者（Publisher）才能转发",
             "POST_REACTION_BLOCKED" => "无法点赞：双方存在屏蔽关系",
             _ => ex.ApiMessage ?? ex.Message,
         };
@@ -467,6 +722,10 @@ public partial class PostDetailViewModel : ObservableObject
         AuthorName = item.AuthorName;
         OnPropertyChanged(nameof(Initials));
         AuthorHandle = item.AuthorHandle;
+        AuthorAccountName = item.AuthorAccountName;
+        AuthorAccountId = item.AuthorAccountId;
+        PublisherName = item.PublisherName;
+        OnPropertyChanged(nameof(CanOpenAuthorProfile));
         AvatarImage = item.AvatarImage;
         Title = item.Title;
         TitleVisibility = item.TitleVisibility;
@@ -482,6 +741,7 @@ public partial class PostDetailViewModel : ObservableObject
         BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
         BookmarkButtonText = IsBookmarked ? "已收藏" : "收藏";
         RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+        PostIdText = item.Id.ToString("D");
 
         var time = item.Post.PublishedAt ?? item.Post.CreatedAt;
         TimeText = time?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? item.TimeText;
@@ -507,6 +767,10 @@ public partial class PostDetailViewModel : ObservableObject
         AuthorName = publisher?.Nick ?? publisher?.Name ?? AuthorName;
         OnPropertyChanged(nameof(Initials));
         AuthorHandle = string.IsNullOrWhiteSpace(publisher?.Name) ? AuthorHandle : $"@{publisher.Name}";
+        PublisherName = publisher?.Name ?? PublisherName;
+        AuthorAccountName = publisher?.Account?.Name ?? AuthorAccountName;
+        AuthorAccountId = publisher?.AccountId ?? publisher?.Account?.Id ?? AuthorAccountId;
+        OnPropertyChanged(nameof(CanOpenAuthorProfile));
         Title = post.Title ?? string.Empty;
         TitleVisibility = string.IsNullOrWhiteSpace(post.Title) ? Visibility.Collapsed : Visibility.Visible;
         ContentText = post.Content ?? post.Description ?? string.Empty;
@@ -538,6 +802,7 @@ public partial class PostDetailViewModel : ObservableObject
         BoostButtonText = BoostCount > 0 ? $"转发 {BoostCount}" : "转发";
         BookmarkButtonText = IsBookmarked ? "已收藏" : "收藏";
         RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+        PostIdText = post.Id.ToString("D");
         RefreshStats();
 
         var imageUrls = (post.Attachments ?? [])

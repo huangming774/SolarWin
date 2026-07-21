@@ -50,27 +50,109 @@
             </ComboBox>
         </StackPanel>
 
-        <Grid Grid.Row="2" ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox
-                MaxHeight="140"
-                MinHeight="44"
-                AcceptsReturn="True"
-                PlaceholderText="分享此刻的想法…"
-                ScrollViewer.VerticalScrollBarVisibility="Auto"
-                Text="{x:Bind ViewModel.NewPostContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                TextWrapping="Wrap" />
-            <Button
-                Grid.Column="1"
-                VerticalAlignment="Bottom"
-                Command="{x:Bind ViewModel.CreatePostCommand}"
-                Content="发布"
-                IsEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
-                Style="{StaticResource AccentButtonStyle}" />
-        </Grid>
+        <Border
+            Grid.Row="2"
+            Padding="10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="12">
+            <StackPanel Spacing="8">
+                <TextBox
+                    MaxHeight="140"
+                    MinHeight="44"
+                    AcceptsReturn="True"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    PlaceholderText="分享此刻的想法… 可添加照片"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    Text="{x:Bind ViewModel.NewPostContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    TextWrapping="Wrap" />
+
+                <!-- Pending photos -->
+                <ItemsControl ItemsSource="{x:Bind ViewModel.PendingAttachments, Mode=OneWay}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <ItemsStackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PendingPostAttachment">
+                            <Border
+                                Width="96"
+                                Height="96"
+                                Margin="0,0,8,0"
+                                CornerRadius="10"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                                <Grid>
+                                    <Image
+                                        Stretch="UniformToFill"
+                                        Source="{x:Bind Preview}" />
+                                    <Border
+                                        VerticalAlignment="Bottom"
+                                        Background="#99000000"
+                                        Padding="4,2">
+                                        <TextBlock
+                                            FontSize="10"
+                                            Foreground="White"
+                                            Text="{x:Bind FileName}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </Border>
+                                    <Button
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Top"
+                                        Margin="4"
+                                        Padding="6,2"
+                                        Background="#CC000000"
+                                        Foreground="White"
+                                        Content="×"
+                                        Tag="{x:Bind}"
+                                        Click="RemovePending_OnClick" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <ProgressBar
+                    Maximum="1"
+                    Minimum="0"
+                    Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.UploadProgressVisibility, Mode=OneWay}" />
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        Click="PickImage_OnClick"
+                        Content="添加照片"
+                        IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                        ToolTipService.ToolTip="从本地选择图片并上传" />
+                    <TextBlock
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Opacity="0.55"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="支持 jpg / png / gif / webp，可多张" />
+                    <Button
+                        Grid.Column="2"
+                        Command="{x:Bind ViewModel.ClearPendingAttachmentsCommand}"
+                        Content="清空图片"
+                        Visibility="{x:Bind ViewModel.PendingAttachmentsVisibility, Mode=OneWay}" />
+                    <Button
+                        Grid.Column="3"
+                        MinWidth="88"
+                        Command="{x:Bind ViewModel.CreatePostCommand}"
+                        Content="发布"
+                        IsEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
+                        Style="{StaticResource AccentButtonStyle}" />
+                </Grid>
+            </StackPanel>
+        </Border>
 
         <Grid Grid.Row="3">
             <ListView
@@ -96,15 +178,29 @@
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
 
-                                <PersonPicture
-                                    Width="40"
-                                    Height="40"
-                                    Initials="{x:Bind Initials}"
-                                    ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                <Button
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="AuthorAvatar_OnClick"
+                                    Tag="{x:Bind}"
+                                    ToolTipService.ToolTip="查看主页">
+                                    <PersonPicture
+                                        Width="40"
+                                        Height="40"
+                                        Initials="{x:Bind Initials}"
+                                        ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                </Button>
 
                                 <StackPanel Grid.Column="1" Spacing="4">
                                     <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                        <HyperlinkButton
+                                            Padding="0"
+                                            Click="AuthorName_OnClick"
+                                            Content="{x:Bind AuthorName}"
+                                            FontWeight="SemiBold"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="查看主页" />
                                         <TextBlock
                                             VerticalAlignment="Bottom"
                                             Opacity="0.55"

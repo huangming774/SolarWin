@@ -68,6 +68,6 @@ public static class DeviceInfoHelper
     {
         var arch = RuntimeInformation.OSArchitecture.ToString();
         var os = Environment.OSVersion.VersionString;
-        return $"SolarWin/1.0 (Windows; {os}; {arch})";
+        return $"SolarWin/1.1 (Windows; {os}; {arch})";
     }
 }

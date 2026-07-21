@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <!-- Pure logic tests; link helper sources to avoid full WinUI host -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <!-- Link pure helper sources (no WinUI / Windows Runtime package identity) -->
+  <ItemGroup>
+    <Compile Include="..\SolarWin\Helpers\ApiErrorParser.cs" Link="Helpers\ApiErrorParser.cs" />
+    <Compile Include="..\SolarWin\Helpers\DeepLinkParser.cs" Link="Helpers\DeepLinkParser.cs" />
+    <Compile Include="..\SolarWin\Helpers\JsonListParser.cs" Link="Helpers\JsonListParser.cs" />
+    <Compile Include="..\SolarWin\Helpers\JsonDefaults.cs" Link="Helpers\JsonDefaults.cs" />
+    <Compile Include="..\SolarWin\Helpers\FlexibleJsonConverters.cs" Link="Helpers\FlexibleJsonConverters.cs" />
+    <Compile Include="..\SolarWin\Helpers\OfflineCache.cs" Link="Helpers\OfflineCache.cs" />
+    <Compile Include="..\SolarWin\Helpers\AppPaths.cs" Link="Helpers\AppPaths.cs" />
+  </ItemGroup>
+
+</Project>

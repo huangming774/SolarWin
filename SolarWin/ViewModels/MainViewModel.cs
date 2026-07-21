@@ -83,8 +83,34 @@ public partial class MainViewModel : ObservableObject
     [RelayCommand]
     private async Task LogoutAsync()
     {
-        await _authService.LogoutAsync().ConfigureAwait(true);
-        LoggedOut?.Invoke(this, EventArgs.Empty);
+        try
+        {
+            await _authService.LogoutAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // still leave locally
+        }
+
+        void FinishOnUi()
+        {
+            if (App.Window is MainWindow mainWindow)
+            {
+                mainWindow.NavigateToLogin();
+            }
+
+            LoggedOut?.Invoke(this, EventArgs.Empty);
+        }
+
+        var dq = App.DispatcherQueue;
+        if (dq is null || dq.HasThreadAccess)
+        {
+            FinishOnUi();
+        }
+        else
+        {
+            dq.TryEnqueue(FinishOnUi);
+        }
     }
 
     [RelayCommand]

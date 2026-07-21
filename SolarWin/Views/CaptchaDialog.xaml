@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentDialog
+    x:Class="SolarWin.Views.CaptchaDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:Microsoft.UI.Xaml.Controls"
+    Title="完成人机验证"
+    PrimaryButtonText="取消"
+    DefaultButton="Primary"
+    CloseButtonText="">
+
+    <StackPanel MinWidth="360" Spacing="10">
+        <TextBlock
+            Opacity="0.8"
+            Text="注册 / 找回密码需要 hCaptcha 验证。若小部件未显示，可手动粘贴 token。"
+            TextWrapping="WrapWholeWords" />
+        <Border
+            Height="420"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8">
+            <controls:WebView2 x:Name="WebView" />
+        </Border>
+        <TextBox
+            x:Name="ManualTokenBox"
+            Header="或粘贴 captcha token"
+            PlaceholderText="hCaptcha response token" />
+        <Button
+            x:Name="UseManualButton"
+            HorizontalAlignment="Stretch"
+            Click="UseManual_OnClick"
+            Content="使用手动 token" />
+        <TextBlock
+            x:Name="StatusText"
+            Opacity="0.75"
+            Text="正在加载验证码…"
+            TextWrapping="WrapWholeWords" />
+    </StackPanel>
+</ContentDialog>

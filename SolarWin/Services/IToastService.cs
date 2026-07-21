@@ -15,6 +15,9 @@ public interface IToastService
 
     void Show(string message, ToastKind kind = ToastKind.Info);
 
+    /// <summary>In-app banner only — never also fire OS Action Center toast.</summary>
+    void ShowInAppOnly(string message, ToastKind kind = ToastKind.Info);
+
     void Success(string message) => Show(message, ToastKind.Success);
 
     void Error(string message) => Show(message, ToastKind.Error);

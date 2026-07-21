@@ -206,7 +206,7 @@ public sealed partial class ProfilePage : Page
     {
         if (App.Window is MainWindow mainWindow)
         {
-            mainWindow.NavigateToStart(typeof(LoginPage));
+            mainWindow.NavigateToLogin();
         }
     }
 }

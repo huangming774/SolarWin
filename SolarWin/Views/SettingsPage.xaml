@@ -5,10 +5,11 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:models="using:SolarWin.Models"
     mc:Ignorable="d">
 
     <ScrollViewer Padding="24">
-        <StackPanel MaxWidth="520" Spacing="16">
+        <StackPanel MaxWidth="560" Spacing="16">
             <StackPanel Orientation="Horizontal" Spacing="12">
                 <Button Click="Back_OnClick" Content="返回" />
                 <TextBlock
@@ -37,7 +38,173 @@
             </ComboBox>
             <Button Command="{x:Bind ViewModel.ApplyThemeCommand}" Content="应用主题" />
 
-            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="账户" />
+            <!-- Wallpaper -->
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="壁纸" />
+            <TextBlock
+                Opacity="0.75"
+                Text="自定义应用背景图，可调节透明度与模糊强度，并选择玻璃或磨砂质感。"
+                TextWrapping="WrapWholeWords" />
+            <Border
+                Height="120"
+                CornerRadius="12"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <Grid>
+                    <Image
+                        Stretch="UniformToFill"
+                        Source="{x:Bind ViewModel.WallpaperPreview, Mode=OneWay}" />
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Opacity="0.55"
+                        Text="{x:Bind ViewModel.WallpaperPathText, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                </Grid>
+            </Border>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button
+                    Command="{x:Bind ViewModel.PickWallpaperCommand}"
+                    Content="选择图片"
+                    Style="{StaticResource AccentButtonStyle}" />
+                <Button Command="{x:Bind ViewModel.ClearWallpaperCommand}" Content="清除壁纸" />
+            </StackPanel>
+            <ToggleSwitch
+                Header="启用壁纸"
+                IsOn="{x:Bind ViewModel.WallpaperEnabled, Mode=TwoWay}" />
+            <Slider
+                Header="透明度"
+                Maximum="100"
+                Minimum="10"
+                StepFrequency="1"
+                TickFrequency="10"
+                Value="{x:Bind ViewModel.WallpaperOpacity, Mode=TwoWay}" />
+            <Slider
+                Header="模糊 / 朦胧强度"
+                Maximum="100"
+                Minimum="0"
+                StepFrequency="1"
+                TickFrequency="10"
+                Value="{x:Bind ViewModel.WallpaperBlur, Mode=TwoWay}" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="质感（可勾选其一；再点一次取消）" />
+            <StackPanel Orientation="Horizontal" Spacing="10">
+                <ToggleButton
+                    MinWidth="100"
+                    Content="玻璃"
+                    IsChecked="{x:Bind ViewModel.IsGlassEffect, Mode=TwoWay}"
+                    ToolTipService.ToolTip="半透明亚克力，壁纸更通透（再点取消）" />
+                <ToggleButton
+                    MinWidth="100"
+                    Content="磨砂"
+                    IsChecked="{x:Bind ViewModel.IsFrostedEffect, Mode=TwoWay}"
+                    ToolTipService.ToolTip="更浓的磨砂蒙层，柔和遮罩（再点取消）" />
+            </StackPanel>
+            <TextBlock
+                Opacity="0.75"
+                Text="{x:Bind ViewModel.WallpaperStatusText, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="桌面与托盘" />
+            <TextBlock
+                Opacity="0.75"
+                Text="关闭或最小化后，任务栏右下角会显示应用图标（.ico）；右键可「显示 / 退出」。若看不见，请点任务栏 ^ 展开隐藏图标。"
+                TextWrapping="WrapWholeWords" />
+            <ToggleSwitch
+                Header="关闭窗口时最小化到托盘（默认开）"
+                IsOn="{x:Bind ViewModel.CloseToTray, Mode=TwoWay}" />
+            <ToggleSwitch
+                Header="最小化时隐藏到托盘（默认开）"
+                IsOn="{x:Bind ViewModel.MinimizeToTray, Mode=TwoWay}" />
+            <ToggleSwitch
+                Header="使用 Windows 系统通知"
+                IsOn="{x:Bind ViewModel.UseSystemNotifications, Mode=TwoWay}" />
+            <ToggleSwitch
+                Header="后台收到聊天消息时弹通知（默认开）"
+                IsOn="{x:Bind ViewModel.ChatMessageNotifications, Mode=TwoWay}" />
+            <TextBlock
+                Opacity="0.7"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="挂到托盘或在看别的页面时，私聊/群聊新消息会弹出系统通知 + 托盘气泡（正在看的会话不会重复弹）。"
+                TextWrapping="WrapWholeWords" />
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{x:Bind ViewModel.TestSystemNotificationCommand}" Content="测试系统通知" />
+                <Button Command="{x:Bind ViewModel.TestTrayCommand}" Content="测试托盘图标" />
+                <Button Command="{x:Bind ViewModel.MinimizeToTrayNowCommand}" Content="立即最小化到托盘" />
+            </StackPanel>
+            <TextBlock
+                Opacity="0.7"
+                Text="{x:Bind ViewModel.TrayStatusText, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="深度链接 solian://" />
+            <TextBlock
+                Opacity="0.75"
+                Text="{x:Bind ViewModel.ProtocolStatusText, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <Button Command="{x:Bind ViewModel.RegisterProtocolCommand}" Content="注册 solian:// 协议（当前用户）" />
+            <TextBlock
+                Opacity="0.6"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="示例：solian://user/demo · solian://chat/{roomId} · solian://auth/qr/{id} · solian://settings"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="多账号" />
+            <TextBlock
+                Opacity="0.75"
+                Text="登录成功的账号会保存在本地。切换会加载对应 token 槽（PasswordVault）。"
+                TextWrapping="WrapWholeWords" />
+            <ListView
+                IsItemClickEnabled="False"
+                ItemsSource="{x:Bind ViewModel.SavedAccounts, Mode=OneWay}"
+                SelectionMode="None">
+                <ListView.ItemTemplate>
+                    <DataTemplate x:DataType="models:SavedAccountProfile">
+                        <Grid Padding="0,8" ColumnSpacing="8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind DisplayLabel}" />
+                                <TextBlock
+                                    Opacity="0.65"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind LastUsedAt}" />
+                            </StackPanel>
+                            <StackPanel
+                                Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="6">
+                                <Button
+                                    Click="SwitchAccount_OnClick"
+                                    Content="切换"
+                                    Tag="{x:Bind}" />
+                                <Button
+                                    Click="RemoveAccount_OnClick"
+                                    Content="移除"
+                                    Tag="{x:Bind}" />
+                            </StackPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListView.ItemTemplate>
+            </ListView>
+            <Button Command="{x:Bind ViewModel.RefreshAccountsCommand}" Content="刷新账号列表" />
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="离线缓存" />
+            <TextBlock>
+                <Run Text="缓存占用 " />
+                <Run Text="{x:Bind ViewModel.CacheSizeText, Mode=OneWay}" />
+            </TextBlock>
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button Command="{x:Bind ViewModel.RefreshCacheStatsCommand}" Content="刷新统计" />
+                <Button Command="{x:Bind ViewModel.ClearOfflineCacheCommand}" Content="清空离线缓存" />
+            </StackPanel>
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="账户与安全" />
+            <Button Click="Security_OnClick" Content="账号安全（设备 / 会话 / MFA / 密钥）" />
             <Button
                 Command="{x:Bind ViewModel.LogoutCommand}"
                 Content="退出登录"

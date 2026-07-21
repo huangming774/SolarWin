@@ -24,6 +24,8 @@ public static class JsonDefaults
         };
 
         options.Converters.Add(new FlexibleDateTimeOffsetConverter());
+        options.Converters.Add(new FlexibleBoolConverter());
+        options.Converters.Add(new FlexibleInt32Converter());
         options.Converters.Add(new FlexibleGuidConverter());
         options.Converters.Add(new FlexibleNullableGuidConverter());
         options.Converters.Add(new FlexibleByteArrayConverter());

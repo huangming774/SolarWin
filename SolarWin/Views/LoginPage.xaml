@@ -5,6 +5,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
     <ScrollViewer>
@@ -18,56 +19,220 @@
             <TextBlock
                 Opacity="0.7"
                 Style="{StaticResource BodyTextBlockStyle}"
-                Text="密码登录（Padlock）或 OAuth 设备码（第三方应用）" />
+                Text="密码 · MFA · 扫码 · Passkey · 社交登录 · 注册 / 恢复码"
+                TextWrapping="WrapWholeWords" />
 
-            <TextBox
-                x:Name="AccountBox"
-                Header="账户名"
-                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                PlaceholderText="用户名 / 邮箱 / 手机号"
-                Text="{x:Bind ViewModel.Account, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <!-- Password login -->
+            <StackPanel Spacing="12" Visibility="{x:Bind ViewModel.ShowPasswordForm, Mode=OneWay}">
+                <TextBox
+                    x:Name="AccountBox"
+                    Header="账户名"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                    PlaceholderText="用户名 / 邮箱 / 手机号"
+                    Text="{x:Bind ViewModel.Account, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-            <PasswordBox
-                x:Name="PasswordBox"
-                Header="密码"
-                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                KeyDown="PasswordBox_OnKeyDown"
-                PasswordChanged="PasswordBox_OnPasswordChanged"
-                PlaceholderText="密码" />
+                <PasswordBox
+                    x:Name="PasswordBox"
+                    Header="密码"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                    KeyDown="PasswordBox_OnKeyDown"
+                    PasswordChanged="PasswordBox_OnPasswordChanged"
+                    PlaceholderText="密码" />
+
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.LoginCommand}"
+                    Content="密码登录"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                    Style="{StaticResource AccentButtonStyle}" />
+
+                <Grid ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <HyperlinkButton
+                        Grid.Column="0"
+                        Command="{x:Bind ViewModel.GoRegisterCommand}"
+                        Content="注册账号"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                    <HyperlinkButton
+                        Grid.Column="1"
+                        HorizontalAlignment="Right"
+                        Command="{x:Bind ViewModel.GoRecoverCommand}"
+                        Content="恢复码登录"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                </Grid>
+
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.LoginWithQrCommand}"
+                    Content="扫码登录（手机 App 确认）"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.LoginWithPasskeyCommand}"
+                    Content="Passkey / Windows Hello 登录"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+
+                <TextBlock Margin="0,4,0,0" Opacity="0.75" Text="—— 社交登录 ——" />
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button
+                        Command="{x:Bind ViewModel.LoginWithSocialCommand}"
+                        CommandParameter="github"
+                        Content="GitHub"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                    <Button
+                        Command="{x:Bind ViewModel.LoginWithSocialCommand}"
+                        CommandParameter="google"
+                        Content="Google"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                    <Button
+                        Command="{x:Bind ViewModel.LoginWithSocialCommand}"
+                        CommandParameter="discord"
+                        Content="Discord"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                    <Button
+                        Command="{x:Bind ViewModel.LoginWithSocialCommand}"
+                        CommandParameter="microsoft"
+                        Content="Microsoft"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                </StackPanel>
+
+                <TextBlock
+                    Margin="0,8,0,0"
+                    Opacity="0.75"
+                    Text="—— 或使用 OAuth 设备码 ——" />
+
+                <TextBox
+                    Header="OAuth client_id"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                    PlaceholderText="在 Padlock 注册的公共客户端 ID"
+                    Text="{x:Bind ViewModel.OAuthClientId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <Button
+                    HorizontalAlignment="Stretch"
+                    Command="{x:Bind ViewModel.LoginWithOAuthCommand}"
+                    Content="OAuth 设备码登录"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+
+                <TextBlock
+                    FontFamily="Consolas"
+                    FontSize="20"
+                    FontWeight="Bold"
+                    Text="{x:Bind ViewModel.DeviceUserCode, Mode=OneWay}" />
+                <TextBlock
+                    Opacity="0.8"
+                    Text="{x:Bind ViewModel.DeviceVerificationUrl, Mode=OneWay}"
+                    TextWrapping="Wrap" />
+            </StackPanel>
+
+            <!-- Multi-factor -->
+            <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.IsMfaRequired, Mode=OneWay}">
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Text="额外验证" />
+                <TextBlock
+                    Text="{x:Bind ViewModel.MfaHint, Mode=OneWay}"
+                    TextWrapping="WrapWholeWords" />
+
+                <ListView
+                    MaxHeight="180"
+                    IsItemClickEnabled="True"
+                    ItemClick="FactorList_OnItemClick"
+                    ItemsSource="{x:Bind ViewModel.FactorOptions, Mode=OneWay}"
+                    SelectionMode="Single">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:FactorOptionItem">
+                            <TextBlock Padding="4" Text="{x:Bind Label}" />
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock
+                    Opacity="0.75"
+                    Text="{x:Bind ViewModel.SelectedFactorLabel, Mode=OneWay}" />
+
+                <TextBox
+                    Header="验证码 / TOTP / 恢复码"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                    PlaceholderText="输入代码"
+                    Text="{x:Bind ViewModel.FactorCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button
+                        Command="{x:Bind ViewModel.SubmitFactorCommand}"
+                        Content="提交验证"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                        Style="{StaticResource AccentButtonStyle}" />
+                    <Button
+                        Command="{x:Bind ViewModel.RequestFactorCodeCommand}"
+                        Content="发送验证码"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                        Visibility="{x:Bind ViewModel.CanRequestCode, Mode=OneWay}" />
+                    <Button
+                        Command="{x:Bind ViewModel.WaitInAppApprovalCommand}"
+                        Content="等待应用内确认"
+                        IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                        Visibility="{x:Bind ViewModel.ShowInAppWait, Mode=OneWay}" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- QR status: real scannable image (solian://auth/qr/{id}) -->
+            <StackPanel Spacing="10" Visibility="{x:Bind ViewModel.IsQrMode, Mode=OneWay}">
+                <TextBlock
+                    FontWeight="SemiBold"
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Text="扫码登录" />
+                <TextBlock
+                    Text="{x:Bind ViewModel.QrStatusText, Mode=OneWay}"
+                    TextWrapping="WrapWholeWords" />
+                <Border
+                    Width="260"
+                    Height="260"
+                    HorizontalAlignment="Center"
+                    Background="White"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="12"
+                    Padding="12">
+                    <Grid>
+                        <ProgressRing
+                            Width="40"
+                            Height="40"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                        <Image
+                            Width="232"
+                            Height="232"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            Source="{x:Bind ViewModel.QrImage, Mode=OneWay}"
+                            Stretch="Uniform" />
+                    </Grid>
+                </Border>
+                <TextBlock
+                    FontFamily="Consolas"
+                    FontSize="11"
+                    IsTextSelectionEnabled="True"
+                    Opacity="0.75"
+                    Text="{x:Bind ViewModel.QrData, Mode=OneWay}"
+                    TextWrapping="WrapWholeWords" />
+                <TextBlock
+                    Opacity="0.6"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="使用已登录的手机 Solar / Solian App 扫描。也可复制上方 solian:// 链接在手机打开。"
+                    TextWrapping="WrapWholeWords" />
+            </StackPanel>
 
             <Button
                 HorizontalAlignment="Stretch"
-                Command="{x:Bind ViewModel.LoginCommand}"
-                Content="密码登录"
-                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                Style="{StaticResource AccentButtonStyle}" />
-
-            <TextBlock
-                Margin="0,8,0,0"
-                Opacity="0.75"
-                Text="—— 或使用 OAuth 设备码 ——" />
-
-            <TextBox
-                Header="OAuth client_id"
-                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
-                PlaceholderText="在 Padlock 注册的公共客户端 ID"
-                Text="{x:Bind ViewModel.OAuthClientId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-            <Button
-                HorizontalAlignment="Stretch"
-                Command="{x:Bind ViewModel.LoginWithOAuthCommand}"
-                Content="OAuth 设备码登录"
-                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
-
-            <TextBlock
-                FontFamily="Consolas"
-                FontSize="20"
-                FontWeight="Bold"
-                Text="{x:Bind ViewModel.DeviceUserCode, Mode=OneWay}" />
-            <TextBlock
-                Opacity="0.8"
-                Text="{x:Bind ViewModel.DeviceVerificationUrl, Mode=OneWay}"
-                TextWrapping="Wrap" />
+                Command="{x:Bind ViewModel.CancelLoginCommand}"
+                Content="取消"
+                Visibility="{x:Bind ViewModel.CanCancel, Mode=OneWay}" />
 
             <ProgressRing
                 Width="40"
@@ -88,7 +253,7 @@
             <TextBlock
                 Opacity="0.55"
                 Style="{StaticResource CaptionTextBlockStyle}"
-                Text="密码登录换票使用 grant_type=authorization_code（与 solian.app 一致）。OAuth 需有效 client_id。"
+                Text="密码登录使用 grant_type=authorization_code。多因素支持 TOTP / 邮箱 / 短信 / 应用内确认。扫码需手机端已登录。"
                 TextWrapping="WrapWholeWords" />
         </StackPanel>
     </ScrollViewer>

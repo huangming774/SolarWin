@@ -7,7 +7,11 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <Grid>
+    <!--
+      Nav icons are assigned in code-behind (ApplyNavIcons).
+      Assets/icon.ico is the app/tray icon only — not per-menu glyphs.
+    -->
+    <Grid x:Name="ShellRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -23,36 +27,24 @@
         <NavigationView
             x:Name="NavView"
             Grid.Row="1"
-            IsBackButtonVisible="Collapsed"
+            IsBackButtonVisible="Auto"
             IsSettingsVisible="True"
+            OpenPaneLength="240"
+            CompactPaneLength="48"
+            IsPaneToggleButtonVisible="True"
+            BackRequested="NavView_OnBackRequested"
             Loaded="NavView_OnLoaded"
             PaneDisplayMode="Left"
             SelectionChanged="NavView_OnSelectionChanged">
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="首页" Tag="home">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE80F;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="聊天" Tag="chat">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8BD;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="帖子" Tag="posts">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8A1;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="文件" Tag="files">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8B7;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
+                <NavigationViewItem Content="首页" Tag="home" />
+                <NavigationViewItem Content="聊天" Tag="chat" />
+                <NavigationViewItem Content="帖子" Tag="posts" />
+                <NavigationViewItem Content="探索" Tag="explore" />
+                <NavigationViewItem Content="寻思" Tag="thinking" />
+                <NavigationViewItem Content="天气" Tag="weather" />
+                <NavigationViewItem Content="文件" Tag="files" />
                 <NavigationViewItem x:Name="NotificationsNavItem" Content="通知" Tag="notifications">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xEA8F;" />
-                    </NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge
                             x:Name="NotificationInfoBadge"
@@ -60,16 +52,8 @@
                             Value="{x:Bind ViewModel.UnreadNotificationCount, Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
-                <NavigationViewItem Content="钱包" Tag="wallet">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE8D4;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
-                <NavigationViewItem Content="我的" Tag="profile">
-                    <NavigationViewItem.Icon>
-                        <FontIcon Glyph="&#xE77B;" />
-                    </NavigationViewItem.Icon>
-                </NavigationViewItem>
+                <NavigationViewItem Content="钱包" Tag="wallet" />
+                <NavigationViewItem Content="我的" Tag="profile" />
             </NavigationView.MenuItems>
 
             <NavigationView.PaneFooter>

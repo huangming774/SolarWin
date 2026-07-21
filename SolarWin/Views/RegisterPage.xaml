@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.RegisterPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    mc:Ignorable="d"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">
+
+    <ScrollViewer>
+        <StackPanel
+            MaxWidth="440"
+            Margin="24"
+            HorizontalAlignment="Center"
+            Spacing="12">
+            <StackPanel Orientation="Horizontal" Spacing="12">
+                <Button Click="Back_OnClick" Content="返回登录" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Style="{StaticResource TitleTextBlockStyle}"
+                    Text="注册账号" />
+            </StackPanel>
+
+            <TextBlock
+                Opacity="0.75"
+                Text="创建 Solar Network 账户。用户名仅支持字母、数字、_ 和 -。"
+                TextWrapping="WrapWholeWords" />
+
+            <TextBox
+                Header="用户名 (name)"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PlaceholderText="my_name"
+                Text="{x:Bind ViewModel.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBox
+                Header="昵称 (nick)"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Text="{x:Bind ViewModel.Nick, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBox
+                Header="邮箱"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PlaceholderText="you@example.com"
+                Text="{x:Bind ViewModel.Email, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <PasswordBox
+                x:Name="PasswordBox"
+                Header="密码"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PasswordChanged="Password_OnChanged" />
+            <PasswordBox
+                x:Name="PasswordConfirmBox"
+                Header="确认密码"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                PasswordChanged="PasswordConfirm_OnChanged" />
+            <TextBox
+                Header="邀请码 / affiliation（可选）"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Text="{x:Bind ViewModel.AffiliationSpell, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <Button
+                    Command="{x:Bind ViewModel.SolveCaptchaCommand}"
+                    Content="完成人机验证"
+                    IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Opacity="0.7"
+                    Text="{x:Bind ViewModel.CaptchaToken, Mode=OneWay}"
+                    MaxWidth="200"
+                    TextTrimming="CharacterEllipsis" />
+            </StackPanel>
+
+            <Button
+                HorizontalAlignment="Stretch"
+                Command="{x:Bind ViewModel.RegisterCommand}"
+                Content="注册"
+                IsEnabled="{x:Bind ViewModel.IsNotBusy, Mode=OneWay}"
+                Style="{StaticResource AccentButtonStyle}" />
+
+            <ProgressRing
+                Width="36"
+                Height="36"
+                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            <TextBlock
+                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+            <TextBlock
+                Opacity="0.8"
+                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                TextWrapping="WrapWholeWords" />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

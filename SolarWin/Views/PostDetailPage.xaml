@@ -45,19 +45,29 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <PersonPicture
-                            Width="48"
-                            Height="48"
-                            Initials="{x:Bind ViewModel.Initials, Mode=OneWay}"
-                            ProfilePicture="{x:Bind ViewModel.AvatarImage, Mode=OneWay}" />
+                        <Button
+                            Padding="0"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Command="{x:Bind ViewModel.OpenAuthorProfileCommand}"
+                            ToolTipService.ToolTip="查看主页">
+                            <PersonPicture
+                                Width="48"
+                                Height="48"
+                                Initials="{x:Bind ViewModel.Initials, Mode=OneWay}"
+                                ProfilePicture="{x:Bind ViewModel.AvatarImage, Mode=OneWay}" />
+                        </Button>
                         <StackPanel
                             Grid.Column="1"
                             VerticalAlignment="Center"
                             Spacing="2">
-                            <TextBlock
+                            <HyperlinkButton
+                                Padding="0"
+                                Command="{x:Bind ViewModel.OpenAuthorProfileCommand}"
+                                Content="{x:Bind ViewModel.AuthorName, Mode=OneWay}"
                                 FontSize="16"
                                 FontWeight="SemiBold"
-                                Text="{x:Bind ViewModel.AuthorName, Mode=OneWay}" />
+                                ToolTipService.ToolTip="查看主页" />
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <TextBlock
                                     Opacity="0.55"
@@ -123,15 +133,77 @@
                             Command="{x:Bind ViewModel.ToggleLikeCommand}"
                             Content="{x:Bind ViewModel.LikeButtonText, Mode=OneWay}" />
                         <Button
-                            Command="{x:Bind ViewModel.ToggleBoostCommand}"
+                            Command="{x:Bind ViewModel.ForwardCommand}"
                             Content="{x:Bind ViewModel.BoostButtonText, Mode=OneWay}" />
                         <Button
                             Command="{x:Bind ViewModel.ToggleBookmarkCommand}"
                             Content="{x:Bind ViewModel.BookmarkButtonText, Mode=OneWay}" />
                         <Button
+                            Command="{x:Bind ViewModel.TogglePostSubscribeCommand}"
+                            Content="{x:Bind ViewModel.SubscribeButtonText, Mode=OneWay}"
+                            Style="{StaticResource AccentButtonStyle}" />
+                        <Button
                             Command="{x:Bind ViewModel.LoadCommand}"
                             Content="刷新" />
                     </StackPanel>
+
+                    <!-- Award / Sponsor -->
+                    <Border
+                        Padding="12"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                        <StackPanel Spacing="8">
+                            <TextBlock FontWeight="SemiBold" Text="打赏 / 赞助" />
+                            <TextBlock
+                                Opacity="0.6"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind ViewModel.PostIdText, Mode=OneWay}" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox
+                                    Width="96"
+                                    PlaceholderText="打赏额"
+                                    Text="{x:Bind ViewModel.AwardAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox
+                                    Width="180"
+                                    PlaceholderText="留言（可选）"
+                                    Text="{x:Bind ViewModel.AwardMessage, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button
+                                    Command="{x:Bind ViewModel.AwardPostCommand}"
+                                    Content="打赏"
+                                    Style="{StaticResource AccentButtonStyle}" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <TextBox
+                                    Width="96"
+                                    PlaceholderText="赞助额"
+                                    Text="{x:Bind ViewModel.SponsorAmountText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button
+                                    Command="{x:Bind ViewModel.SponsorPostCommand}"
+                                    Content="赞助" />
+                            </StackPanel>
+                            <TextBlock
+                                Opacity="0.75"
+                                Text="{x:Bind ViewModel.MonetizeStatus, Mode=OneWay}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                Opacity="0.65"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind ViewModel.AwardsSummary, Mode=OneWay}" />
+                            <ItemsControl ItemsSource="{x:Bind ViewModel.AwardItems, Mode=OneWay}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:SocialListItemViewModel">
+                                        <StackPanel Margin="0,2" Orientation="Horizontal" Spacing="10">
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock Opacity="0.75" Text="{x:Bind Subtitle}" />
+                                            <TextBlock Opacity="0.5" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind Meta}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </Border>
 
                     <!-- Reply composer -->
                     <Grid ColumnSpacing="8">
@@ -177,14 +249,28 @@
                                             <ColumnDefinition Width="Auto" />
                                             <ColumnDefinition Width="*" />
                                         </Grid.ColumnDefinitions>
-                                        <PersonPicture
-                                            Width="36"
-                                            Height="36"
-                                            Initials="{x:Bind Initials}"
-                                            ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                        <Button
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="ReplyAuthorAvatar_OnClick"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="查看主页">
+                                            <PersonPicture
+                                                Width="36"
+                                                Height="36"
+                                                Initials="{x:Bind Initials}"
+                                                ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                        </Button>
                                         <StackPanel Grid.Column="1" Spacing="2">
                                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                                <TextBlock FontWeight="SemiBold" Text="{x:Bind AuthorName}" />
+                                                <HyperlinkButton
+                                                    Padding="0"
+                                                    Click="ReplyAuthorName_OnClick"
+                                                    Content="{x:Bind AuthorName}"
+                                                    FontWeight="SemiBold"
+                                                    Tag="{x:Bind}"
+                                                    ToolTipService.ToolTip="查看主页" />
                                                 <TextBlock
                                                     Opacity="0.55"
                                                     Style="{StaticResource CaptionTextBlockStyle}"

@@ -30,6 +30,17 @@ public partial class PostItemViewModel : ObservableObject
 
     public string AuthorHandle { get; private set; } = string.Empty;
 
+    /// <summary>Passport account handle (preferred for profile page).</summary>
+    public string? AuthorAccountName { get; private set; }
+
+    public Guid? AuthorAccountId { get; private set; }
+
+    /// <summary>Sphere publisher name (fallback / open publisher).</summary>
+    public string? PublisherName { get; private set; }
+
+    public bool CanOpenAuthorProfile =>
+        !string.IsNullOrWhiteSpace(AuthorAccountName) || !string.IsNullOrWhiteSpace(PublisherName);
+
     public string? AvatarUrl { get; private set; }
 
     public bool HasAvatar { get; private set; }
@@ -145,6 +156,10 @@ public partial class PostItemViewModel : ObservableObject
         ApplyPost(post, imageLoader);
         OnPropertyChanged(nameof(AuthorName));
         OnPropertyChanged(nameof(AuthorHandle));
+        OnPropertyChanged(nameof(AuthorAccountName));
+        OnPropertyChanged(nameof(AuthorAccountId));
+        OnPropertyChanged(nameof(PublisherName));
+        OnPropertyChanged(nameof(CanOpenAuthorProfile));
         OnPropertyChanged(nameof(Initials));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(HasTitle));
@@ -175,12 +190,76 @@ public partial class PostItemViewModel : ObservableObject
         RefreshStatsText();
     }
 
+    /// <summary>Build nav args for the author's passport profile, if resolvable.</summary>
+    public UserProfileNavArgs? TryCreateAuthorProfileArgs()
+    {
+        // Passport GET /accounts/{name} needs the handle (Name), never display Nick (e.g. 清沫).
+        var name = AuthorAccountName;
+        if (string.IsNullOrWhiteSpace(name) && LooksLikeAccountHandle(PublisherName))
+        {
+            // Individual publishers often reuse the account handle as publisher name.
+            name = PublisherName;
+        }
+
+        if (string.IsNullOrWhiteSpace(name) || !LooksLikeAccountHandle(name))
+        {
+            return null;
+        }
+
+        return new UserProfileNavArgs(name.TrimStart('@'), AuthorAccountId, AuthorName);
+    }
+
+    /// <summary>
+    /// Account/publisher handles are latin slug-like. Chinese nicknames must not hit /passport/accounts/{name}.
+    /// </summary>
+    internal static bool LooksLikeAccountHandle(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var s = value.Trim().TrimStart('@');
+        if (s.Length is < 1 or > 64)
+        {
+            return false;
+        }
+
+        // Allow letters, digits, underscore, hyphen, period only (no CJK / spaces).
+        foreach (var ch in s)
+        {
+            if (char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-' or '.')
+            {
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
     private void ApplyPost(SnPost post, DysonFileImageLoader? imageLoader)
     {
         var publisher = post.Publisher;
         AuthorName = publisher?.Nick ?? publisher?.Name ?? "未知发布者";
         AuthorHandle = string.IsNullOrWhiteSpace(publisher?.Name) ? string.Empty : $"@{publisher.Name}";
-        AvatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture);
+        PublisherName = publisher?.Name;
+        // Only passport account handle — never fall back to Nick / Chinese display name.
+        AuthorAccountName = publisher?.Account?.Name;
+        AuthorAccountId = publisher?.AccountId ?? publisher?.Account?.Id;
+        if (string.IsNullOrWhiteSpace(AuthorAccountName) && publisher?.Account is { Name: { } accName })
+        {
+            AuthorAccountName = accName;
+        }
+
+        if (!string.IsNullOrWhiteSpace(AuthorAccountName) && !LooksLikeAccountHandle(AuthorAccountName))
+        {
+            AuthorAccountName = null;
+        }
+
+        AvatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture)
+            ?? CloudFileUrlHelper.Resolve(publisher?.Account?.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
 
         if (imageLoader is not null && HasAvatar && AvatarImage is null &&

@@ -146,4 +146,21 @@ public sealed class SnAccountAuthFactor
 
     [JsonPropertyName("account_id")]
     public Guid AccountId { get; set; }
+
+    [JsonIgnore]
+    public bool IsEnabled => EnabledAt is not null && (ExpiredAt is null || ExpiredAt > DateTimeOffset.UtcNow);
+
+    [JsonIgnore]
+    public string TypeDisplayName => Type switch
+    {
+        AccountAuthFactorType.Password => "密码",
+        AccountAuthFactorType.Email => "邮箱验证码",
+        AccountAuthFactorType.PhoneCode => "短信验证码",
+        AccountAuthFactorType.Totp => "TOTP / 验证器",
+        AccountAuthFactorType.Passkey => "Passkey",
+        AccountAuthFactorType.InApp => "应用内确认",
+        AccountAuthFactorType.Recovery => "恢复码",
+        AccountAuthFactorType.Oidc => "第三方登录",
+        _ => Type.ToString(),
+    };
 }

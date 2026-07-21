@@ -11,34 +11,88 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
 
-        <Grid Padding="12,8" ColumnSpacing="8">
+        <Grid
+            Grid.ColumnSpan="2"
+            Padding="12,8"
+            ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Button Click="BackButton_OnClick" Content="返回" />
-            <TextBlock
-                Grid.Column="1"
-                VerticalAlignment="Center"
-                Style="{StaticResource SubtitleTextBlockStyle}"
-                Text="{x:Bind ViewModel.RoomTitle, Mode=OneWay}"
-                TextTrimming="CharacterEllipsis" />
-            <ProgressRing
-                Grid.Column="2"
-                Width="24"
-                Height="24"
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock
+                    Style="{StaticResource SubtitleTextBlockStyle}"
+                    Text="{x:Bind ViewModel.RoomTitle, Mode=OneWay}"
+                    TextTrimming="CharacterEllipsis" />
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <TextBlock
+                        Opacity="0.65"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.OnlineStatusText, Mode=OneWay}" />
+                    <TextBlock
+                        Opacity="0.65"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.MembersSummaryText, Mode=OneWay}" />
+                    <TextBlock
+                        Opacity="0.65"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.PinnedSummaryText, Mode=OneWay}" />
+                    <TextBlock
+                        Opacity="0.75"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.RealtimeModeText, Mode=OneWay}" />
+                </StackPanel>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+                <Button
+                    Command="{x:Bind ViewModel.CycleNotifyCommand}"
+                    Content="{x:Bind ViewModel.NotifyModeText, Mode=OneWay}" />
+                <Button Command="{x:Bind ViewModel.ToggleMembersPanelCommand}" Content="成员" />
+                <Button Command="{x:Bind ViewModel.ToggleCallPanelCommand}" Content="通话" />
+                <Button Command="{x:Bind ViewModel.LeaveRoomCommand}" Content="退出" />
+                <ProgressRing
+                    Width="24"
+                    Height="24"
+                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+            </StackPanel>
         </Grid>
+
+        <!-- Tools row -->
+        <StackPanel
+            Grid.Row="1"
+            Grid.ColumnSpan="2"
+            Padding="12,0,12,8"
+            Orientation="Horizontal"
+            Spacing="6">
+            <Button Command="{x:Bind ViewModel.SendTypingPlaceholderCommand}" Content="Placeholder" />
+            <Button Command="{x:Bind ViewModel.EnableE2eeCommand}" Content="启用E2EE" />
+            <Button Command="{x:Bind ViewModel.EnableMlsCommand}" Content="启用MLS" />
+            <TextBox
+                MinWidth="180"
+                PlaceholderText="redirect message ids"
+                Text="{x:Bind ViewModel.RedirectMessageIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+            <Button Command="{x:Bind ViewModel.RedirectMessagesCommand}" Content="Redirect" />
+            <TextBlock
+                VerticalAlignment="Center"
+                Opacity="0.7"
+                Text="{x:Bind ViewModel.E2eeStatusText, Mode=OneWay}" />
+        </StackPanel>
 
         <ListView
             x:Name="MessageList"
-            Grid.Row="1"
+            Grid.Row="2"
             Padding="12,4"
             ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
             SelectionMode="None">
@@ -50,31 +104,40 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
 
-                        <!-- Avatar -->
-                        <Grid
+                        <!-- Avatar (tap → profile for others) -->
+                        <Button
                             Width="36"
                             Height="36"
+                            Padding="0"
                             VerticalAlignment="Top"
-                            Opacity="{x:Bind SenderNameOpacity}">
-                            <Border
-                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
-                                CornerRadius="18"
-                                Opacity="{x:Bind InitialsOpacity, Mode=OneWay}">
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    FontSize="12"
-                                    FontWeight="SemiBold"
-                                    Text="{x:Bind Initials}" />
-                            </Border>
-                            <Ellipse Opacity="{x:Bind AvatarOpacity, Mode=OneWay}">
-                                <Ellipse.Fill>
-                                    <ImageBrush
-                                        ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
-                                        Stretch="UniformToFill" />
-                                </Ellipse.Fill>
-                            </Ellipse>
-                        </Grid>
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Click="SenderAvatar_OnClick"
+                            IsEnabled="{x:Bind CanOpenSenderProfile}"
+                            Opacity="{x:Bind SenderNameOpacity}"
+                            Tag="{x:Bind}"
+                            ToolTipService.ToolTip="查看主页">
+                            <Grid Width="36" Height="36">
+                                <Border
+                                    Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                    CornerRadius="18"
+                                    Opacity="{x:Bind InitialsOpacity, Mode=OneWay}">
+                                    <TextBlock
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center"
+                                        FontSize="12"
+                                        FontWeight="SemiBold"
+                                        Text="{x:Bind Initials}" />
+                                </Border>
+                                <Ellipse Opacity="{x:Bind AvatarOpacity, Mode=OneWay}">
+                                    <Ellipse.Fill>
+                                        <ImageBrush
+                                            ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
+                                            Stretch="UniformToFill" />
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                            </Grid>
+                        </Button>
 
                         <Border
                             Grid.Column="1"
@@ -85,18 +148,96 @@
                             BorderThickness="1"
                             CornerRadius="12"
                             Opacity="{x:Bind BubbleOpacity}">
+                            <Border.ContextFlyout>
+                                <MenuFlyout>
+                                    <MenuFlyoutItem
+                                        Click="ReplyMessage_OnClick"
+                                        Text="回复"
+                                        Tag="{x:Bind}" />
+                                    <MenuFlyoutItem
+                                        Click="ReactMessage_OnClick"
+                                        Text="点赞"
+                                        Tag="{x:Bind}" />
+                                    <MenuFlyoutItem
+                                        Click="PinMessage_OnClick"
+                                        Text="置顶"
+                                        Tag="{x:Bind}" />
+                                    <MenuFlyoutSeparator />
+                                    <MenuFlyoutItem
+                                        Click="EditMessage_OnClick"
+                                        Text="编辑"
+                                        Tag="{x:Bind}" />
+                                    <MenuFlyoutItem
+                                        Click="DeleteMessage_OnClick"
+                                        Text="删除"
+                                        Tag="{x:Bind}" />
+                                </MenuFlyout>
+                            </Border.ContextFlyout>
                             <StackPanel Spacing="6">
                                 <TextBlock
                                     Opacity="{x:Bind SenderNameOpacity}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
                                     Text="{x:Bind SenderName}" />
 
-                                <!-- Text -->
+                                <!-- Quoted reply -->
+                                <Border
+                                    Padding="8,6"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                    BorderThickness="3,0,0,0"
+                                    CornerRadius="6"
+                                    Opacity="{x:Bind ReplyPreviewOpacity}">
+                                    <TextBlock
+                                        FontSize="12"
+                                        Opacity="0.85"
+                                        Text="{x:Bind ReplyPreviewText}"
+                                        TextTrimming="CharacterEllipsis"
+                                        TextWrapping="WrapWholeWords"
+                                        MaxLines="2" />
+                                </Border>
+
+                                <!-- Text (stickers stripped when rendered as images) -->
                                 <TextBlock
                                     Opacity="{x:Bind TextOpacity}"
                                     IsTextSelectionEnabled="True"
                                     Text="{x:Bind Content}"
                                     TextWrapping="WrapWholeWords" />
+
+                                <!-- Stickers (:prefix+slug: → image) -->
+                                <ItemsControl
+                                    ItemsSource="{x:Bind Stickers}"
+                                    Opacity="{x:Bind StickersOpacity, Mode=OneWay}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="6" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MessageStickerViewModel">
+                                            <Grid
+                                                Width="{x:Bind MaxSide}"
+                                                Height="{x:Bind MaxSide}"
+                                                Margin="0,2">
+                                                <Border
+                                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                                    CornerRadius="8">
+                                                    <Grid>
+                                                        <ProgressRing
+                                                            Width="24"
+                                                            Height="24"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            IsActive="{x:Bind IsLoading, Mode=OneWay}" />
+                                                        <Image
+                                                            Stretch="Uniform"
+                                                            Opacity="{x:Bind ImageOpacity, Mode=OneWay}"
+                                                            Source="{x:Bind Image, Mode=OneWay}" />
+                                                    </Grid>
+                                                </Border>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
                                 <!-- Attachments / images (DysonFS) -->
                                 <ItemsControl
@@ -143,10 +284,49 @@
                                 </ItemsControl>
 
                                 <TextBlock
+                                    Opacity="0.75"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind ReactionText, Mode=OneWay}"
+                                    Visibility="{x:Bind ReactionVisibility, Mode=OneWay}" />
+
+                                <TextBlock
                                     HorizontalAlignment="Right"
                                     Opacity="0.55"
                                     Style="{StaticResource CaptionTextBlockStyle}"
                                     Text="{x:Bind TimeText}" />
+
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button
+                                        Click="ReplyMessage_OnClick"
+                                        Content="回复"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="ReactMessage_OnClick"
+                                        Content="赞"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="PinMessage_OnClick"
+                                        Content="置顶"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="EditMessage_OnClick"
+                                        Content="改"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="DeleteMessage_OnClick"
+                                        Content="删"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -154,7 +334,230 @@
             </ListView.ItemTemplate>
         </ListView>
 
-        <StackPanel Grid.Row="2" Padding="12,0" Spacing="4">
+        <!-- Sticker picker panel -->
+        <Border
+            Grid.Row="2"
+            Grid.Column="1"
+            Width="300"
+            Margin="0,0,8,0"
+            Padding="10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="{x:Bind ViewModel.StickerPanelVisibility, Mode=OneWay}">
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid>
+                    <TextBlock FontWeight="SemiBold" Text="贴纸 / 表情包" />
+                    <Button
+                        HorizontalAlignment="Right"
+                        Command="{x:Bind ViewModel.ToggleStickerPanelCommand}"
+                        Content="关闭"
+                        FontSize="12"
+                        Padding="8,2" />
+                </Grid>
+                <ComboBox
+                    Grid.Row="1"
+                    HorizontalAlignment="Stretch"
+                    ItemsSource="{x:Bind ViewModel.StickerPacks, Mode=OneWay}"
+                    SelectedIndex="{x:Bind ViewModel.SelectedStickerPackIndex, Mode=TwoWay}"
+                    DisplayMemberPath="Title"
+                    PlaceholderText="选择贴纸包…" />
+                <GridView
+                    Grid.Row="2"
+                    ItemsSource="{x:Bind ViewModel.StickerGrid, Mode=OneWay}"
+                    SelectionMode="None"
+                    IsItemClickEnabled="True"
+                    ItemClick="StickerGrid_OnItemClick">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StickerPickItem">
+                            <Border
+                                Width="72"
+                                Height="72"
+                                Margin="4"
+                                CornerRadius="8"
+                                Background="{ThemeResource SubtleFillColorSecondaryBrush}">
+                                <Grid>
+                                    <Image Stretch="Uniform" Source="{x:Bind Image, Mode=OneWay}" />
+                                    <TextBlock
+                                        VerticalAlignment="Bottom"
+                                        FontSize="9"
+                                        Opacity="0.7"
+                                        Text="{x:Bind Title}"
+                                        TextAlignment="Center"
+                                        TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+                <TextBlock
+                    Grid.Row="3"
+                    Opacity="0.65"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.StickerPanelStatus, Mode=OneWay}"
+                    TextWrapping="Wrap" />
+            </Grid>
+        </Border>
+
+        <!-- Side panels -->
+        <Border
+            Grid.Row="2"
+            Grid.Column="1"
+            Width="300"
+            Margin="0,0,8,0"
+            Padding="10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="{x:Bind ViewModel.MembersPanelVisibility, Mode=OneWay}">
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock FontWeight="SemiBold" Text="成员管理" />
+                <StackPanel Grid.Row="1" Spacing="6">
+                    <TextBox
+                        PlaceholderText="本群昵称"
+                        Text="{x:Bind ViewModel.MyRoomNick, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Command="{x:Bind ViewModel.SaveMyRoomNickCommand}"
+                        Content="保存昵称" />
+                    <TextBox
+                        PlaceholderText="禁言分钟数"
+                        Text="{x:Bind ViewModel.TimeoutMinutesText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Command="{x:Bind ViewModel.RefreshMembersCommand}"
+                        Content="刷新成员" />
+                </StackPanel>
+                <ListView
+                    Grid.Row="2"
+                    ItemsSource="{x:Bind ViewModel.Members, Mode=OneWay}"
+                    SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ChatMemberItemViewModel">
+                            <StackPanel Padding="2,6" Spacing="4">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind DisplayName}" />
+                                <TextBlock
+                                    Opacity="0.6"
+                                    Style="{StaticResource CaptionTextBlockStyle}"
+                                    Text="{x:Bind TimeoutText}" />
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button
+                                        Click="KickMember_OnClick"
+                                        Content="踢出"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="TimeoutMember_OnClick"
+                                        Content="禁言"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="ClearTimeout_OnClick"
+                                        Content="解禁"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <Border
+            Grid.Row="2"
+            Grid.Column="1"
+            Width="300"
+            Margin="0,0,8,0"
+            Padding="10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="8"
+            Visibility="{x:Bind ViewModel.CallPanelVisibility, Mode=OneWay}">
+            <Grid RowSpacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock FontWeight="SemiBold" Text="实时通话" />
+                <StackPanel Grid.Row="1" Spacing="6">
+                    <TextBlock Text="{x:Bind ViewModel.CallStatusText, Mode=OneWay}" TextWrapping="Wrap" />
+                    <TextBlock
+                        Opacity="0.7"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.CallEndpointText, Mode=OneWay}"
+                        TextWrapping="Wrap"
+                        IsTextSelectionEnabled="True" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Command="{x:Bind ViewModel.JoinVoiceCommand}"
+                        Content="加入通话" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Command="{x:Bind ViewModel.RefreshCallCommand}"
+                        Content="刷新参与者" />
+                    <TextBox
+                        PlaceholderText="邀请账号 UUID"
+                        Text="{x:Bind ViewModel.InviteAccountIdText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Button
+                        HorizontalAlignment="Stretch"
+                        Command="{x:Bind ViewModel.InviteToCallCommand}"
+                        Content="邀请入会" />
+                </StackPanel>
+                <ListView
+                    Grid.Row="2"
+                    ItemsSource="{x:Bind ViewModel.CallParticipants, Mode=OneWay}"
+                    SelectionMode="None">
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CallParticipantItemViewModel">
+                            <StackPanel Padding="2,6" Spacing="4">
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind DisplayName}" />
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <Button
+                                        Click="MuteCall_OnClick"
+                                        Content="静音"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="UnmuteCall_OnClick"
+                                        Content="开麦"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                    <Button
+                                        Click="KickCall_OnClick"
+                                        Content="踢出"
+                                        FontSize="11"
+                                        Padding="8,2"
+                                        Tag="{x:Bind}" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </Border>
+
+        <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Padding="12,0" Spacing="4">
             <ProgressRing
                 Width="24"
                 Height="24"
@@ -164,6 +567,149 @@
                 Foreground="{ThemeResource SystemFillColorCriticalBrush}"
                 Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                 TextWrapping="Wrap" />
+
+            <!-- Bot commands panel -->
+            <Border
+                MaxHeight="220"
+                Padding="8"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Visibility="{x:Bind ViewModel.BotPanelVisibility, Mode=OneWay}">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock
+                            FontWeight="SemiBold"
+                            Text="机器人命令"
+                            VerticalAlignment="Center" />
+                        <Button
+                            Grid.Column="1"
+                            Command="{x:Bind ViewModel.ToggleBotPanelCommand}"
+                            Content="关闭"
+                            Padding="10,4" />
+                    </Grid>
+                    <ListView
+                        Grid.Row="1"
+                        MaxHeight="160"
+                        IsItemClickEnabled="True"
+                        ItemClick="BotCommand_OnItemClick"
+                        ItemsSource="{x:Bind ViewModel.BotCommands, Mode=OneWay}"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChatBotCommandItem">
+                                <Grid Padding="4,8" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border
+                                        Padding="8,4"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        CornerRadius="6">
+                                        <TextBlock
+                                            FontFamily="Consolas"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource TextOnAccentFillColorPrimaryBrush}"
+                                            Text="{x:Bind Title}" />
+                                    </Border>
+                                    <TextBlock
+                                        Grid.Column="1"
+                                        VerticalAlignment="Center"
+                                        Opacity="0.75"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind Subtitle}"
+                                        TextWrapping="WrapWholeWords" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                    <TextBlock
+                        Grid.Row="2"
+                        Opacity="0.7"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.BotPanelStatusText, Mode=OneWay}"
+                        TextWrapping="WrapWholeWords" />
+                </Grid>
+            </Border>
+
+            <!-- Autocomplete / bot / mention suggestions -->
+            <Border
+                MaxHeight="200"
+                Padding="6"
+                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                BorderThickness="1"
+                CornerRadius="10"
+                Visibility="{x:Bind ViewModel.SuggestionsVisibility, Mode=OneWay}">
+                <Grid RowSpacing="4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock
+                        Opacity="0.7"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.SuggestionHintText, Mode=OneWay}" />
+                    <ListView
+                        x:Name="SuggestionList"
+                        Grid.Row="1"
+                        MaxHeight="168"
+                        IsItemClickEnabled="True"
+                        ItemClick="Suggestion_OnItemClick"
+                        ItemsSource="{x:Bind ViewModel.Suggestions, Mode=OneWay}"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChatSuggestionItem">
+                                <Grid Padding="2,2">
+                                    <Border
+                                        Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                        CornerRadius="6"
+                                        Opacity="0.4"
+                                        Visibility="{x:Bind IsSelected, Mode=OneWay}" />
+                                    <Grid Padding="6,8" ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon
+                                            FontSize="14"
+                                            Glyph="{x:Bind Glyph}"
+                                            Opacity="0.85" />
+                                        <Border
+                                            Grid.Column="1"
+                                            Padding="6,2"
+                                            VerticalAlignment="Center"
+                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                            CornerRadius="4">
+                                            <TextBlock FontSize="11" Text="{x:Bind KindLabel}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="2" Spacing="1">
+                                            <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
+                                            <TextBlock
+                                                Opacity="0.65"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Text="{x:Bind Subtitle}"
+                                                TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
             <StackPanel
                 Orientation="Horizontal"
                 Spacing="8"
@@ -177,40 +723,111 @@
                     Command="{x:Bind ViewModel.ClearPendingImageCommand}"
                     Content="清除" />
             </StackPanel>
+
+            <StackPanel
+                Orientation="Horizontal"
+                Spacing="8"
+                Visibility="{x:Bind ViewModel.RecordingVisibility, Mode=OneWay}">
+                <FontIcon Glyph="&#xE720;" />
+                <TextBlock
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource SystemFillColorCriticalBrush}"
+                    Text="{x:Bind ViewModel.RecordingElapsedText, Mode=OneWay}" />
+                <Button
+                    Command="{x:Bind ViewModel.CancelVoiceRecordCommand}"
+                    Content="取消录音" />
+            </StackPanel>
+
             <ProgressBar
                 Maximum="1"
                 Minimum="0"
                 Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}" />
+            <ProgressRing
+                Width="22"
+                Height="22"
+                HorizontalAlignment="Left"
+                IsActive="{x:Bind ViewModel.IsSendingVoice, Mode=OneWay}" />
         </StackPanel>
 
-        <Grid
-            Grid.Row="3"
-            Padding="12"
-            ColumnSpacing="8"
-            Background="{ThemeResource LayerFillColorDefaultBrush}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <Button
-                Click="PickImage_OnClick"
-                Content="图片"
-                IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}" />
-            <TextBox
-                x:Name="DraftBox"
-                Grid.Column="1"
-                AcceptsReturn="False"
-                IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                KeyDown="DraftBox_OnKeyDown"
-                PlaceholderText="输入消息…"
-                Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <Button
-                Grid.Column="2"
-                MinWidth="88"
-                Command="{x:Bind ViewModel.SendCommand}"
-                Content="发送"
-                Style="{StaticResource AccentButtonStyle}" />
-        </Grid>
+        <StackPanel
+            Grid.Row="4"
+            Grid.ColumnSpan="2"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            Spacing="0">
+            <!-- Reply banner -->
+            <Grid
+                Padding="12,8,12,4"
+                ColumnSpacing="8"
+                Visibility="{x:Bind ViewModel.ReplyTargetVisibility, Mode=OneWay}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border
+                    Padding="10,6"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                    BorderThickness="3,0,0,0"
+                    CornerRadius="8">
+                    <TextBlock
+                        FontSize="13"
+                        Text="{x:Bind ViewModel.ReplyBannerText, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis"
+                        TextWrapping="NoWrap" />
+                </Border>
+                <Button
+                    Grid.Column="1"
+                    Command="{x:Bind ViewModel.CancelReplyCommand}"
+                    Content="取消"
+                    FontSize="12"
+                    Padding="10,4" />
+            </Grid>
+
+            <Grid Padding="12" ColumnSpacing="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Click="PickImage_OnClick"
+                    Content="图片"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    ToolTipService.ToolTip="发送图片" />
+                <Button
+                    Grid.Column="1"
+                    Command="{x:Bind ViewModel.ToggleStickerPanelCommand}"
+                    Content="贴纸"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    ToolTipService.ToolTip="表情包 / 贴图" />
+                <Button
+                    Grid.Column="2"
+                    Command="{x:Bind ViewModel.ToggleVoiceRecordCommand}"
+                    Content="{x:Bind ViewModel.RecordButtonText, Mode=OneWay}" />
+                <Button
+                    Grid.Column="3"
+                    Command="{x:Bind ViewModel.ToggleBotPanelCommand}"
+                    Content="命令"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    ToolTipService.ToolTip="机器人命令面板（也可用 / 触发）" />
+                <TextBox
+                    x:Name="DraftBox"
+                    Grid.Column="4"
+                    AcceptsReturn="False"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    KeyDown="DraftBox_OnKeyDown"
+                    PlaceholderText="输入消息… 贴纸 / 右键回复 · / 命令 · @ 提及"
+                    Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                <Button
+                    Grid.Column="5"
+                    MinWidth="88"
+                    Command="{x:Bind ViewModel.SendCommand}"
+                    Content="发送"
+                    Style="{StaticResource AccentButtonStyle}" />
+            </Grid>
+        </StackPanel>
     </Grid>
 </Page>

@@ -11,7 +11,7 @@
   <Identity
     Name="76CE4152-9298-4B93-9F3D-D09C9EED2037"
     Publisher="CN=user"
-    Version="1.0.1.0" />
+    Version="1.1.0.0" />
 
   <mp:PhoneIdentity PhoneProductId="76CE4152-9298-4B93-9F3D-D09C9EED2037" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
@@ -43,11 +43,20 @@
         <uap:DefaultTile Wide310x150Logo="Assets\Wide310x150Logo.png" />
         <uap:SplashScreen Image="Assets\SplashScreen.png" />
       </uap:VisualElements>
+      <Extensions>
+        <uap:Extension Category="windows.protocol">
+          <uap:Protocol Name="solian">
+            <uap:DisplayName>Solar Network</uap:DisplayName>
+          </uap:Protocol>
+        </uap:Extension>
+      </Extensions>
     </Application>
   </Applications>
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
     <systemai:Capability Name="systemAIModels"/>
+    <!-- Voice messages -->
+    <DeviceCapability Name="microphone" />
   </Capabilities>
 </Package>
