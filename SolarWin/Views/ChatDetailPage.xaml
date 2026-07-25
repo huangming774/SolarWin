@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:SolarWin.ViewModels"
+    xmlns:svc="using:SolarWin.Services"
     mc:Ignorable="d">
 
     <Grid>
@@ -90,10 +91,15 @@
                 Text="{x:Bind ViewModel.E2eeStatusText, Mode=OneWay}" />
         </StackPanel>
 
+        <!--
+          ListView keeps its internal ScrollViewer (do NOT wrap in an outer ScrollViewer)
+          so item virtualization stays enabled for large group histories.
+        -->
         <ListView
             x:Name="MessageList"
             Grid.Row="2"
             Padding="12,4"
+            IsItemClickEnabled="False"
             ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
             SelectionMode="None">
             <ListView.ItemTemplate>
@@ -491,25 +497,169 @@
             BorderThickness="1"
             CornerRadius="8"
             Visibility="{x:Bind ViewModel.CallPanelVisibility, Mode=OneWay}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
             <Grid RowSpacing="8">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
-                <TextBlock FontWeight="SemiBold" Text="实时通话" />
+                <TextBlock FontWeight="SemiBold" Text="实时通话（语音 / 视频）" />
                 <StackPanel Grid.Row="1" Spacing="6">
                     <TextBlock Text="{x:Bind ViewModel.CallStatusText, Mode=OneWay}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <TextBlock
+                            Opacity="0.75"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.ConnectionQualityText, Mode=OneWay}" />
+                        <TextBlock
+                            Foreground="{ThemeResource SystemFillColorCautionBrush}"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="弱网重连中…"
+                            Visibility="{x:Bind ViewModel.ReconnectingBannerVisibility, Mode=OneWay}" />
+                    </StackPanel>
                     <TextBlock
                         Opacity="0.7"
                         Style="{StaticResource CaptionTextBlockStyle}"
                         Text="{x:Bind ViewModel.CallEndpointText, Mode=OneWay}"
                         TextWrapping="Wrap"
                         IsTextSelectionEnabled="True" />
+
+                    <!-- Focus surface -->
+                    <Border
+                        Height="140"
+                        Background="{ThemeResource LayerFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="8">
+                        <Grid>
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Opacity="0.4"
+                                Text="焦点画面（点下方宫格切换）" />
+                            <Image
+                                Stretch="Uniform"
+                                Source="{x:Bind ViewModel.RemoteVideoBitmap, Mode=OneWay}" />
+                            <Border
+                                Width="72"
+                                Height="54"
+                                Margin="8"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Bottom"
+                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                                <Image
+                                    Stretch="UniformToFill"
+                                    Source="{x:Bind ViewModel.LocalVideoBitmap, Mode=OneWay}" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <!-- Multi video grid -->
+                    <GridView
+                        Height="120"
+                        ItemsSource="{x:Bind ViewModel.VideoTiles, Mode=OneWay}"
+                        SelectionMode="None"
+                        IsItemClickEnabled="True"
+                        ItemClick="VideoTile_OnItemClick">
+                        <GridView.ItemTemplate>
+                            <DataTemplate x:DataType="svc:CallVideoTile">
+                                <Border
+                                    Width="96"
+                                    Height="72"
+                                    Margin="2"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="6">
+                                    <Grid>
+                                        <Image Stretch="UniformToFill" Source="{x:Bind Bitmap, Mode=OneWay}" />
+                                        <StackPanel VerticalAlignment="Bottom" Background="#88000000" Padding="4,2">
+                                            <TextBlock
+                                                FontSize="10"
+                                                Foreground="White"
+                                                Text="{x:Bind DisplayName}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                FontSize="9"
+                                                Foreground="#CCFFFFFF"
+                                                Text="{x:Bind QualityText, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </GridView.ItemTemplate>
+                    </GridView>
+
                     <Button
                         HorizontalAlignment="Stretch"
                         Command="{x:Bind ViewModel.JoinVoiceCommand}"
-                        Content="加入通话" />
+                        Content="加入通话"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Visibility="{x:Bind ViewModel.JoinCallVisibility, Mode=OneWay}" />
+
+                    <StackPanel
+                        Spacing="6"
+                        Visibility="{x:Bind ViewModel.InCallControlsVisibility, Mode=OneWay}">
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button
+                                HorizontalAlignment="Stretch"
+                                Command="{x:Bind ViewModel.ToggleMicCommand}"
+                                Content="{x:Bind ViewModel.MicToggleLabel, Mode=OneWay}" />
+                            <Button
+                                Grid.Column="1"
+                                HorizontalAlignment="Stretch"
+                                Command="{x:Bind ViewModel.ToggleCameraCommand}"
+                                Content="{x:Bind ViewModel.CameraToggleLabel, Mode=OneWay}" />
+                        </Grid>
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button
+                                HorizontalAlignment="Stretch"
+                                Command="{x:Bind ViewModel.ToggleScreenShareCommand}"
+                                Content="{x:Bind ViewModel.ScreenShareToggleLabel, Mode=OneWay}" />
+                            <Button
+                                Grid.Column="1"
+                                HorizontalAlignment="Stretch"
+                                Command="{x:Bind ViewModel.ToggleSidetoneCommand}"
+                                Content="{x:Bind ViewModel.SidetoneToggleLabel, Mode=OneWay}" />
+                        </Grid>
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            Command="{x:Bind ViewModel.HangUpCommand}"
+                            Content="挂断" />
+
+                        <TextBlock FontSize="12" Opacity="0.7" Text="设备" />
+                        <ComboBox
+                            HorizontalAlignment="Stretch"
+                            Header="麦克风"
+                            ItemsSource="{x:Bind ViewModel.MicDeviceNames, Mode=OneWay}"
+                            SelectedIndex="{x:Bind ViewModel.SelectedMicDeviceIndex, Mode=TwoWay}"
+                            SelectionChanged="MicDevice_OnSelectionChanged" />
+                        <ComboBox
+                            HorizontalAlignment="Stretch"
+                            Header="扬声器"
+                            ItemsSource="{x:Bind ViewModel.SpeakerDeviceNames, Mode=OneWay}"
+                            SelectedIndex="{x:Bind ViewModel.SelectedSpeakerDeviceIndex, Mode=TwoWay}"
+                            SelectionChanged="SpeakerDevice_OnSelectionChanged" />
+                        <ComboBox
+                            HorizontalAlignment="Stretch"
+                            Header="摄像头"
+                            ItemsSource="{x:Bind ViewModel.CameraDeviceNames, Mode=OneWay}"
+                            SelectedIndex="{x:Bind ViewModel.SelectedCameraDeviceIndex, Mode=TwoWay}"
+                            SelectionChanged="CameraDevice_OnSelectionChanged" />
+                    </StackPanel>
+
                     <Button
                         HorizontalAlignment="Stretch"
                         Command="{x:Bind ViewModel.RefreshCallCommand}"
@@ -522,8 +672,15 @@
                         Command="{x:Bind ViewModel.InviteToCallCommand}"
                         Content="邀请入会" />
                 </StackPanel>
-                <ListView
+                <ProgressRing
                     Grid.Row="2"
+                    Width="28"
+                    Height="28"
+                    HorizontalAlignment="Center"
+                    IsActive="{x:Bind ViewModel.IsCallConnecting, Mode=OneWay}" />
+                <ListView
+                    Grid.Row="3"
+                    MaxHeight="160"
                     ItemsSource="{x:Bind ViewModel.CallParticipants, Mode=OneWay}"
                     SelectionMode="None">
                     <ListView.ItemTemplate>
@@ -555,6 +712,7 @@
                     </ListView.ItemTemplate>
                 </ListView>
             </Grid>
+            </ScrollViewer>
         </Border>
 
         <StackPanel Grid.Row="3" Grid.ColumnSpan="2" Padding="12,0" Spacing="4">

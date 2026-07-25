@@ -20,6 +20,7 @@ public sealed partial class WeatherPage : Page
         ViewModel = App.Services.GetRequiredService<WeatherViewModel>();
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
         ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
         CitySearchBox.ItemsSource = ViewModel.CitySuggestions;
     }
@@ -29,6 +30,12 @@ public sealed partial class WeatherPage : Page
         ApplyCinematicBackground();
         ApplyGlassToCards();
         EnsureCardShadows();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        ViewModel.PropertyChanged -= ViewModel_OnPropertyChanged;
+        Unloaded -= OnUnloaded;
     }
 
     private void Page_OnActualThemeChanged(FrameworkElement sender, object args)

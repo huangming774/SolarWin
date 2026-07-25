@@ -61,7 +61,7 @@ public partial class StickerPackItemViewModel : ObservableObject
         IsLoadingIcon = true;
         try
         {
-            IconImage = await _images.LoadSafeAsync(IconFileId).ConfigureAwait(true);
+            IconImage = await _images.LoadSafeAsync(IconFileId, DysonFileImageLoader.StickerThumbDecodeWidth).ConfigureAwait(true);
         }
         finally
         {
@@ -141,7 +141,7 @@ public partial class StickerItemViewModel : ObservableObject
         IsLoading = true;
         try
         {
-            Image = await _images.LoadSafeAsync(ImageFileId).ConfigureAwait(true);
+            Image = await _images.LoadSafeAsync(ImageFileId, DysonFileImageLoader.StickerDecodeWidth).ConfigureAwait(true);
         }
         finally
         {

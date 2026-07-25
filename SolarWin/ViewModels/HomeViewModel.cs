@@ -18,6 +18,8 @@ public partial class HomeViewModel : ObservableObject
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly ChatViewModel _chat;
+    private readonly HashSet<int> _loadedSections = [];
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
 
     private SnAccount? _me;
     private SnAccountProfile? _profile;
@@ -225,35 +227,111 @@ public partial class HomeViewModel : ObservableObject
     [ObservableProperty]
     public partial string SpellResultText { get; set; } = string.Empty;
 
+    public Task InitializeAsync() => LoadSectionAsync(SelectedSectionIndex);
+
+    public async Task LoadSectionAsync(int sectionIndex)
+    {
+        if (sectionIndex is < 0 or > 8)
+        {
+            return;
+        }
+
+        await _loadGate.WaitAsync().ConfigureAwait(true);
+        try
+        {
+            if (_loadedSections.Contains(sectionIndex))
+            {
+                return;
+            }
+
+            IsBusy = true;
+            ErrorMessage = null;
+
+            if (!_loadedSections.Contains(0))
+            {
+                await LoadOverviewAsync().ConfigureAwait(true);
+                await SafeLoadAsync(LoadOverviewExtrasAsync).ConfigureAwait(true);
+                _loadedSections.Add(0);
+            }
+
+            if (sectionIndex != 0)
+            {
+                if (GetSectionLoader(sectionIndex) is { } loadSection)
+                {
+                    await SafeLoadAsync(loadSection).ConfigureAwait(true);
+                }
+
+                _loadedSections.Add(sectionIndex);
+            }
+        }
+        catch (SolarApiException ex)
+        {
+            ShowOverviewLoadError(ex);
+        }
+        finally
+        {
+            IsBusy = false;
+            _loadGate.Release();
+        }
+    }
+
     [RelayCommand]
     private async Task LoadAsync()
     {
+        await _loadGate.WaitAsync().ConfigureAwait(true);
         try
         {
             IsBusy = true;
             ErrorMessage = null;
             InfoMessage = null;
+            _loadedSections.Add(0);
 
             await LoadOverviewAsync().ConfigureAwait(true);
-            await SafeLoadAsync(LoadFriendsAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadRealmsAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadGrowthAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadCalendarAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadTicketsAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadNearbyAsync).ConfigureAwait(true);
-            await SafeLoadAsync(LoadFunExtrasAsync).ConfigureAwait(true);
+            await SafeLoadAsync(LoadOverviewExtrasAsync).ConfigureAwait(true);
+            foreach (var sectionIndex in _loadedSections.Where(index => index > 0).Order())
+            {
+                if (GetSectionLoader(sectionIndex) is { } loadSection)
+                {
+                    await SafeLoadAsync(loadSection).ConfigureAwait(true);
+                }
+            }
         }
         catch (SolarApiException ex)
         {
-            ErrorMessage = ex.Message;
-            WelcomeText = _authService.CurrentAccount is { } a
-                ? $"离线缓存：{a.Nick ?? a.Name}"
-                : "无法加载首页数据";
+            ShowOverviewLoadError(ex);
         }
         finally
         {
             IsBusy = false;
+            _loadGate.Release();
         }
+    }
+
+    private Func<Task>? GetSectionLoader(int sectionIndex) => sectionIndex switch
+    {
+        2 => LoadFriendsAsync,
+        3 => LoadRealmsAsync,
+        4 => LoadGrowthAsync,
+        5 => LoadCalendarAsync,
+        6 => LoadTicketsAsync,
+        7 => LoadNearbyAsync,
+        8 => LoadUserNotableDaysAsync,
+        _ => null,
+    };
+
+    private void ShowOverviewLoadError(SolarApiException ex)
+    {
+        ErrorMessage = ex.Message;
+        WelcomeText = _authService.CurrentAccount is { } account
+            ? $"离线缓存：{account.Nick ?? account.Name}"
+            : "无法加载首页数据";
+    }
+
+    private async Task LoadOverviewExtrasAsync()
+    {
+        await LoadFortunePreviewAsync().ConfigureAwait(true);
+        await LoadIpCheckAsync().ConfigureAwait(true);
+        await LoadRewindAsync().ConfigureAwait(true);
     }
 
     private async Task LoadOverviewAsync()
@@ -1268,7 +1346,7 @@ public partial class HomeViewModel : ObservableObject
     {
         try
         {
-            var img = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            var img = await _imageLoader.LoadAsync(url, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
             if (img is not null)
             {
                 item.AvatarImage = img;

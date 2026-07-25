@@ -211,8 +211,8 @@ public partial class ProfileViewModel : ObservableObject
 
             _pendingPictureId = id;
             var url = CloudFileUrlHelper.DriveFileUrl(id);
-            var bmp = await _imageLoader.LoadAsync(id).ConfigureAwait(true)
-                      ?? await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            var bmp = await _imageLoader.LoadAsync(id, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true)
+                      ?? await _imageLoader.LoadAsync(url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
             if (bmp is not null)
             {
                 EditAvatarPreview = bmp;
@@ -393,7 +393,7 @@ public partial class ProfileViewModel : ObservableObject
 
         try
         {
-            var bmp = await _imageLoader.LoadAsync(id ?? url).ConfigureAwait(true);
+            var bmp = await _imageLoader.LoadAsync(id ?? url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
             if (bmp is not null)
             {
                 AvatarImage = bmp;

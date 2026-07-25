@@ -34,12 +34,24 @@
                 IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
         </Grid>
 
-        <ScrollViewer Grid.Row="1">
-            <Grid Padding="24">
-                <StackPanel
-                    MaxWidth="680"
-                    HorizontalAlignment="Center"
-                    Spacing="12">
+        <ListView
+            x:Name="ReplyList"
+            Grid.Row="1"
+            ContainerContentChanging="ReplyList_OnContainerContentChanging"
+            ItemsSource="{x:Bind ViewModel.Replies, Mode=OneWay}"
+            SelectionMode="None">
+            <ListView.ItemContainerStyle>
+                <Style TargetType="ListViewItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="Padding" Value="0" />
+                </Style>
+            </ListView.ItemContainerStyle>
+            <ListView.Header>
+                <Grid Padding="24">
+                    <StackPanel
+                        MaxWidth="680"
+                        HorizontalAlignment="Center"
+                        Spacing="12">
                     <Grid ColumnSpacing="12">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
@@ -111,13 +123,21 @@
                         Visibility="{x:Bind ViewModel.ImagesVisibility, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate x:DataType="media:BitmapImage">
-                                <Image
-                                    MaxWidth="560"
-                                    MaxHeight="480"
-                                    Margin="0,0,0,8"
-                                    HorizontalAlignment="Left"
-                                    Source="{x:Bind}"
-                                    Stretch="Uniform" />
+                                <Button
+                                    Padding="0"
+                                    Background="Transparent"
+                                    BorderThickness="0"
+                                    Click="PostImage_OnClick"
+                                    DoubleTapped="PostImage_OnDoubleTapped"
+                                    Tag="{x:Bind}"
+                                    ToolTipService.ToolTip="点击或双击放大">
+                                    <Image
+                                        MaxWidth="560"
+                                        MaxHeight="480"
+                                        HorizontalAlignment="Left"
+                                        Source="{x:Bind}"
+                                        Stretch="Uniform" />
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -236,12 +256,15 @@
                         Opacity="0.55"
                         Text="暂无回复"
                         Visibility="{x:Bind ViewModel.EmptyRepliesVisibility, Mode=OneWay}" />
-
-                    <ItemsControl ItemsSource="{x:Bind ViewModel.Replies, Mode=OneWay}">
-                        <ItemsControl.ItemTemplate>
+                    </StackPanel>
+                </Grid>
+            </ListView.Header>
+            <ListView.ItemTemplate>
                             <DataTemplate x:DataType="vm:PostItemViewModel">
                                 <Border
+                                    MaxWidth="680"
                                     Padding="0,10"
+                                    HorizontalAlignment="Center"
                                     BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                                     BorderThickness="0,0,0,1">
                                     <Grid ColumnSpacing="10">
@@ -289,9 +312,13 @@
                                     </Grid>
                                 </Border>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
+            </ListView.ItemTemplate>
+            <ListView.Footer>
+                <StackPanel
+                    MaxWidth="680"
+                    Padding="24,12,24,24"
+                    HorizontalAlignment="Center"
+                    Spacing="12">
                     <StackPanel
                         HorizontalAlignment="Center"
                         Orientation="Horizontal"
@@ -312,7 +339,7 @@
                         TextWrapping="Wrap"
                         Visibility="{x:Bind ViewModel.ErrorVisibility, Mode=OneWay}" />
                 </StackPanel>
-            </Grid>
-        </ScrollViewer>
+            </ListView.Footer>
+        </ListView>
     </Grid>
 </Page>

@@ -11,6 +11,10 @@ namespace SolarWin.ViewModels;
 /// <summary>Single chat bubble bound in the detail ListView.</summary>
 public partial class MessageItemViewModel : ObservableObject
 {
+    /// <summary>Cap nested ItemsControl children so a single bubble cannot explode layout (#15).</summary>
+    private const int MaxVisibleAttachments = 4;
+    private const int MaxVisibleStickers = 6;
+
     /// <summary>Solian sticker markdown: <c>:prefix+slug:</c>.</summary>
     private static readonly Regex StickerPlaceholderRegex = new(
         @":([-\w]*\+[-\w]*):",
@@ -72,9 +76,11 @@ public partial class MessageItemViewModel : ObservableObject
         AvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(message.Sender?.Account)
             ?? CloudFileUrlHelper.Resolve(message.Sender?.Account?.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar))
+        // BitmapImage is a WinRT object with UI-thread affinity. Only touch the cache on the UI thread.
+        var onUi = SolarWin.App.DispatcherQueue is null || SolarWin.App.DispatcherQueue.HasThreadAccess;
+        if (HasAvatar && onUi && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth) && cachedAvatar is not null)
         {
-            SetAuthenticatedAvatar(cachedAvatar!);
+            SetAuthenticatedAvatar(cachedAvatar);
         }
         else
         {
@@ -84,11 +90,17 @@ public partial class MessageItemViewModel : ObservableObject
         }
         Initials = string.IsNullOrWhiteSpace(SenderName) ? "?" : SenderName[..1].ToUpperInvariant();
 
-        // Attachments
+        // Attachments (hard cap for ItemsControl under virtualized ListView)
         if (message.Attachments is { Count: > 0 })
         {
+            var n = 0;
             foreach (var att in message.Attachments)
             {
+                if (n >= MaxVisibleAttachments)
+                {
+                    break;
+                }
+
                 var vm = new MessageAttachmentViewModel(att);
                 // Force image when message type says so
                 if (isImageType && !vm.IsImage && !string.IsNullOrWhiteSpace(vm.FileId ?? vm.Url))
@@ -99,6 +111,8 @@ public partial class MessageItemViewModel : ObservableObject
                 {
                     Attachments.Add(vm);
                 }
+
+                n++;
             }
         }
 
@@ -280,6 +294,12 @@ public partial class MessageItemViewModel : ObservableObject
             }
 
             return existing;
+        }
+
+        if (Stickers.Count >= MaxVisibleStickers)
+        {
+            // Cap nested ItemsControl children; still return a slot so callers do not NRE.
+            return Stickers[^1];
         }
 
         var item = new MessageStickerViewModel(placeholder, fileId, large);

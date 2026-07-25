@@ -1,34 +1,42 @@
-using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media.Imaging;
+using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
 
-public partial class FilesViewModel : ObservableObject
+public partial class FilesViewModel : ObservableObject, IDisposable
 {
     /// <summary>Files at or above this size use chunked upload (create → chunks → complete).</summary>
     private const long ChunkedUploadThresholdBytes = 5 * 1024 * 1024;
 
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
+    private readonly FileThumbnailLoader _thumbnailLoader;
     private readonly Stack<(string? Id, string Name)> _navStack = new();
+    private readonly Dictionary<FileItemViewModel, CancellationTokenSource> _thumbnailRequests = new();
+    private CancellationTokenSource _folderThumbnailCts = new();
+    private int _folderVersion;
+    private bool _disposed;
 
-    public FilesViewModel(ISolarApiClient api, IToastService toast)
+    public FilesViewModel(ISolarApiClient api, IToastService toast, FileThumbnailLoader thumbnailLoader)
     {
         _api = api;
         _toast = toast;
+        _thumbnailLoader = thumbnailLoader;
         _navStack.Push((null, "我的文件"));
         Breadcrumb = "我的文件";
         UpdateModeVisibility();
     }
 
-    public ObservableCollection<FileItemViewModel> Files { get; } = [];
+    public RangeObservableCollection<FileItemViewModel> Files { get; } = [];
 
     /// <summary>Folders available as move targets in the current listing (excludes selection).</summary>
-    public ObservableCollection<FileItemViewModel> FolderTargets { get; } = [];
+    public RangeObservableCollection<FileItemViewModel> FolderTargets { get; } = [];
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -74,26 +82,35 @@ public partial class FilesViewModel : ObservableObject
     [RelayCommand]
     private async Task LoadAsync()
     {
+        CancelAllThumbnailRequests(resetThumbnails: true);
+        var loadVersion = _folderVersion;
+
         try
         {
             IsBusy = true;
             ErrorMessage = null;
-            Files.Clear();
-            FolderTargets.Clear();
+            SelectedFile = null;
+            Files.ReplaceAll([]);
+            FolderTargets.ReplaceAll([]);
 
             var parentId = CurrentParentId;
             var list = await _api
                 .GetMyFilesAsync(parentId, offset: 0, take: 100, recycled: IsRecycleBinMode)
                 .ConfigureAwait(true);
 
-            foreach (var file in list
-                         .OrderByDescending(f => f.IsFolder)
-                         .ThenByDescending(f => f.UpdatedAt ?? f.CreatedAt)
-                         .ThenBy(f => f.Name))
+            if (loadVersion != _folderVersion)
             {
-                Files.Add(new FileItemViewModel(file));
+                return;
             }
 
+            var items = list
+                .OrderByDescending(f => f.IsFolder)
+                .ThenByDescending(f => f.UpdatedAt ?? f.CreatedAt)
+                .ThenBy(f => f.Name)
+                .Select(file => new FileItemViewModel(file))
+                .ToList();
+
+            Files.ReplaceAll(items);
             RebuildFolderTargets();
             StatusMessage = IsRecycleBinMode
                 ? $"回收站 · 共 {Files.Count} 项"
@@ -102,13 +119,21 @@ public partial class FilesViewModel : ObservableObject
         }
         catch (SolarApiException ex)
         {
+            if (loadVersion != _folderVersion)
+            {
+                return;
+            }
+
             ErrorMessage = ex.Message;
             StatusMessage = "加载失败";
             _toast.Error("文件列表加载失败");
         }
         finally
         {
-            IsBusy = false;
+            if (loadVersion == _folderVersion)
+            {
+                IsBusy = false;
+            }
         }
     }
 
@@ -482,6 +507,230 @@ public partial class FilesViewModel : ObservableObject
             .ConfigureAwait(true);
     }
 
+    public void UpdateVisibleThumbnailWindow(IReadOnlyCollection<FileItemViewModel> visibleItems, int prefetchCount)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        var indexes = visibleItems
+            .Select(item => Files.IndexOf(item))
+            .Where(index => index >= 0)
+            .ToList();
+
+        if (indexes.Count == 0)
+        {
+            foreach (var item in _thumbnailRequests.Keys.ToList())
+            {
+                CancelThumbnailForItem(item);
+            }
+
+            return;
+        }
+
+        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
+        var end = Math.Min(Files.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
+        var window = Files
+            .Skip(start)
+            .Take(end - start + 1)
+            .Where(item => item.CanLoadThumbnail)
+            .ToHashSet();
+
+        foreach (var item in _thumbnailRequests.Keys.ToList())
+        {
+            if (!window.Contains(item))
+            {
+                CancelThumbnailForItem(item);
+            }
+        }
+
+        foreach (var item in window)
+        {
+            LoadThumbnailForVisibleItem(item);
+        }
+    }
+
+    public void LoadThumbnailForVisibleItem(FileItemViewModel? item)
+    {
+        if (_disposed || item is null || !item.CanLoadThumbnail)
+        {
+            return;
+        }
+
+        if (item.Thumbnail is not null)
+        {
+            return;
+        }
+
+        if (_thumbnailLoader.TryGetCached(item.ThumbnailUrl, FileThumbnailLoader.DefaultDecodePixelWidth, out var cached)
+            && cached is not null)
+        {
+            ApplyCachedThumbnailOnUiThread(item, cached);
+            return;
+        }
+
+        if (_thumbnailRequests.ContainsKey(item))
+        {
+            return;
+        }
+
+        var requestVersion = _folderVersion;
+        var requestParentId = CurrentParentId;
+        var cts = CancellationTokenSource.CreateLinkedTokenSource(_folderThumbnailCts.Token);
+        _thumbnailRequests[item] = cts;
+        _ = LoadThumbnailAsync(item, requestVersion, requestParentId, cts);
+    }
+
+    public void CancelThumbnailForItem(FileItemViewModel? item)
+    {
+        if (item is null)
+        {
+            return;
+        }
+
+        if (_thumbnailRequests.Remove(item, out var cts))
+        {
+            cts.Cancel();
+        }
+    }
+
+    public void CancelAllThumbnailRequests(bool resetThumbnails = false)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _folderVersion++;
+        _folderThumbnailCts.Cancel();
+        foreach (var cts in _thumbnailRequests.Values)
+        {
+            cts.Cancel();
+        }
+
+        _thumbnailRequests.Clear();
+        _folderThumbnailCts.Dispose();
+        _folderThumbnailCts = new CancellationTokenSource();
+
+        if (resetThumbnails)
+        {
+            foreach (var item in Files)
+            {
+                item.Thumbnail = null;
+            }
+        }
+    }
+
+    private async Task LoadThumbnailAsync(
+        FileItemViewModel item,
+        int requestVersion,
+        string? requestParentId,
+        CancellationTokenSource requestCts)
+    {
+        try
+        {
+            var image = await _thumbnailLoader
+                .LoadSafeAsync(item.ThumbnailUrl, FileThumbnailLoader.DefaultDecodePixelWidth, requestCts.Token)
+                .ConfigureAwait(true);
+
+            if (image is null
+                || requestCts.IsCancellationRequested
+                || requestVersion != _folderVersion
+                || !string.Equals(requestParentId, CurrentParentId, StringComparison.Ordinal)
+                || !Files.Contains(item))
+            {
+                return;
+            }
+
+            await ApplyThumbnailOnUiThreadAsync(item, image, requestVersion, requestParentId, requestCts)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            if (_thumbnailRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
+            {
+                _thumbnailRequests.Remove(item);
+            }
+
+            requestCts.Dispose();
+        }
+    }
+
+    private void ApplyCachedThumbnailOnUiThread(FileItemViewModel item, BitmapImage image)
+    {
+        var dq = App.DispatcherQueue;
+        if (dq is null || dq.HasThreadAccess)
+        {
+            if (!_disposed && Files.Contains(item))
+            {
+                item.Thumbnail = image;
+            }
+
+            return;
+        }
+
+        dq.TryEnqueue(DispatcherQueuePriority.Low, () =>
+        {
+            if (!_disposed && Files.Contains(item))
+            {
+                item.Thumbnail = image;
+            }
+        });
+    }
+
+    private async Task ApplyThumbnailOnUiThreadAsync(
+        FileItemViewModel item,
+        BitmapImage image,
+        int requestVersion,
+        string? requestParentId,
+        CancellationTokenSource requestCts)
+    {
+        var dq = App.DispatcherQueue;
+        if (dq is null || dq.HasThreadAccess)
+        {
+            Apply();
+            return;
+        }
+
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!dq.TryEnqueue(DispatcherQueuePriority.Low, () =>
+            {
+                try
+                {
+                    Apply();
+                    tcs.TrySetResult();
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            }))
+        {
+            return;
+        }
+
+        await tcs.Task.ConfigureAwait(false);
+
+        void Apply()
+        {
+            if (!_disposed
+                && !requestCts.IsCancellationRequested
+                && requestVersion == _folderVersion
+                && string.Equals(requestParentId, CurrentParentId, StringComparison.Ordinal)
+                && Files.Contains(item))
+            {
+                item.Thumbnail = image;
+            }
+        }
+    }
+
+    public int ThumbnailMaxConcurrency => _thumbnailLoader.MaxConcurrency;
+
+    public int ThumbnailCacheMaxEntries => _thumbnailLoader.CacheMaxEntries;
+
+    public long ThumbnailCacheMaxEstimatedBytes => _thumbnailLoader.CacheMaxEstimatedBytes;
+
     private void RebuildBreadcrumb()
     {
         if (IsRecycleBinMode)
@@ -498,11 +747,19 @@ public partial class FilesViewModel : ObservableObject
 
     private void RebuildFolderTargets()
     {
-        FolderTargets.Clear();
-        foreach (var f in Files.Where(x => x.IsFolder && !string.IsNullOrWhiteSpace(x.Id)))
+        FolderTargets.ReplaceAll(Files.Where(x => x.IsFolder && !string.IsNullOrWhiteSpace(x.Id)));
+    }
+
+    public void Dispose()
+    {
+        if (_disposed)
         {
-            FolderTargets.Add(f);
+            return;
         }
+
+        CancelAllThumbnailRequests(resetThumbnails: false);
+        _disposed = true;
+        _folderThumbnailCts.Dispose();
     }
 
     private void UpdateModeVisibility()

@@ -6,6 +6,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:SolarWin.ViewModels"
+    Unloaded="FilesPage_OnUnloaded"
     mc:Ignorable="d">
 
     <Grid Padding="16" RowSpacing="12">
@@ -79,6 +80,7 @@
             x:Name="FileGrid"
             Grid.Row="3"
             IsItemClickEnabled="True"
+            ContainerContentChanging="FileGrid_OnContainerContentChanging"
             ItemClick="FileGrid_OnItemClick"
             ItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}"
             SelectionChanged="FileGrid_OnSelectionChanged"
@@ -104,7 +106,13 @@
                                 <FontIcon
                                     FontSize="40"
                                     Glyph="{x:Bind IconGlyph}"
-                                    Opacity="{x:Bind IconOpacity}" />
+                                    Opacity="{x:Bind IconOpacity, Mode=OneWay}" />
+                                <Image
+                                    Width="96"
+                                    Height="96"
+                                    Source="{x:Bind Thumbnail, Mode=OneWay}"
+                                    Opacity="{x:Bind ThumbnailOpacity, Mode=OneWay}"
+                                    Stretch="UniformToFill" />
                             </Grid>
 
                             <TextBlock

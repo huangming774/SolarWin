@@ -100,7 +100,7 @@ public sealed class ChatWebSocketService : IChatWebSocketService
         }
     }
 
-    public bool TrySendPing()
+    public async Task<bool> TrySendPingAsync(CancellationToken cancellationToken = default)
     {
         var socket = _socket;
         if (socket is not { State: WebSocketState.Open })
@@ -110,12 +110,18 @@ public sealed class ChatWebSocketService : IChatWebSocketService
 
         try
         {
-            var json = """{"type":"ping","data":null}""";
-            var bytes = Encoding.UTF8.GetBytes(json);
-            socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None)
-                .GetAwaiter()
-                .GetResult();
+            var bytes = Encoding.UTF8.GetBytes("""{"type":"ping","data":null}""");
+            await socket.SendAsync(
+                    new ArraySegment<byte>(bytes),
+                    WebSocketMessageType.Text,
+                    true,
+                    cancellationToken)
+                .ConfigureAwait(false);
             return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
         }
         catch
         {
@@ -185,7 +191,7 @@ public sealed class ChatWebSocketService : IChatWebSocketService
                     break;
                 }
 
-                TrySendPing();
+                await TrySendPingAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {

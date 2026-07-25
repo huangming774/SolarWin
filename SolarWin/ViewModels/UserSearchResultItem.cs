@@ -23,7 +23,7 @@ public partial class UserSearchResultItem : ObservableObject
         AvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(account)
             ?? CloudFileUrlHelper.Resolve(account.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cached) && cached is not null)
+        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cached, DysonFileImageLoader.AvatarDecodeWidth) && cached is not null)
         {
             AvatarImage = cached;
         }

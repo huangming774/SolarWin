@@ -34,6 +34,8 @@ public sealed class TrayService : ITrayService
                 ToolTipText = "Solar Network — 点击显示窗口",
                 // ImageSource: load .ico from disk (unpackaged-friendly)
                 IconSource = CreateTrayImageSource(),
+                // PopupMenu hosts the flyout in the main window's XamlRoot — its items
+                // stop responding once the window is hidden to tray. SecondWindow works.
                 ContextMenuMode = ContextMenuMode.SecondWindow,
             };
 
@@ -51,7 +53,9 @@ public sealed class TrayService : ITrayService
 
             _icon.ContextFlyout = menu;
 
-            _icon.LeftClickCommand = new TrayRelayCommand(ShowMainWindow);
+            var showMainWindowCommand = new TrayRelayCommand(ShowMainWindow);
+            _icon.LeftClickCommand = showMainWindowCommand;
+            _icon.DoubleClickCommand = showMainWindowCommand;
             _icon.NoLeftClickDelay = true;
 
             // Critical: without ForceCreate the tray icon is never registered with the shell.

@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media.Imaging;
+using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
@@ -21,6 +22,11 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IDeepLinkService _deepLinks;
     private readonly ISystemNotificationService _systemNotifications;
     private readonly ITrayService _tray;
+    private readonly IAccountDbContextFactory _accountDb;
+    private readonly IChatWritePump _writePump;
+    private readonly IChatDataCache _chatCache;
+    private readonly DysonFileImageLoader _imageLoader;
+    private readonly FileThumbnailLoader _thumbnailLoader;
     private bool _wallpaperReady;
 
     public SettingsViewModel(
@@ -29,7 +35,12 @@ public partial class SettingsViewModel : ObservableObject
         IAccountSessionService sessions,
         IDeepLinkService deepLinks,
         ISystemNotificationService systemNotifications,
-        ITrayService tray)
+        ITrayService tray,
+        IAccountDbContextFactory accountDb,
+        IChatWritePump writePump,
+        IChatDataCache chatCache,
+        DysonFileImageLoader imageLoader,
+        FileThumbnailLoader thumbnailLoader)
     {
         _authService = authService;
         _toast = toast;
@@ -37,6 +48,11 @@ public partial class SettingsViewModel : ObservableObject
         _deepLinks = deepLinks;
         _systemNotifications = systemNotifications;
         _tray = tray;
+        _accountDb = accountDb;
+        _writePump = writePump;
+        _chatCache = chatCache;
+        _imageLoader = imageLoader;
+        _thumbnailLoader = thumbnailLoader;
         VersionText = ResolveVersion();
         SelectedThemeIndex = ThemeHelper.GetSavedTheme() switch
         {
@@ -49,9 +65,11 @@ public partial class SettingsViewModel : ObservableObject
         MinimizeToTray = AppSettings.MinimizeToTray;
         UseSystemNotifications = AppSettings.UseSystemNotifications;
         ChatMessageNotifications = AppSettings.ChatMessageNotifications;
+        FileThumbnailMaxConcurrency = AppSettings.FileThumbnailMaxConcurrency;
         LoadWallpaperState();
         RefreshAccounts();
         RefreshCacheStats();
+        RefreshWritePumpStats();
         RefreshTrayStatus();
         _wallpaperReady = true;
     }
@@ -59,7 +77,7 @@ public partial class SettingsViewModel : ObservableObject
     public ObservableCollection<SavedAccountProfile> SavedAccounts { get; } = [];
 
     [ObservableProperty]
-    public partial string VersionText { get; set; } = "1.1.0";
+    public partial string VersionText { get; set; } = "1.1.2";
 
     [ObservableProperty]
     public partial string ThemeLabel { get; set; } = "跟随系统";
@@ -83,7 +101,16 @@ public partial class SettingsViewModel : ObservableObject
     public partial bool ChatMessageNotifications { get; set; }
 
     [ObservableProperty]
+    public partial double FileThumbnailMaxConcurrency { get; set; } = 4;
+
+    [ObservableProperty]
     public partial string CacheSizeText { get; set; } = "—";
+
+    [ObservableProperty]
+    public partial string LocalChatDbPathText { get; set; } = "—";
+
+    [ObservableProperty]
+    public partial string WritePumpStatsText { get; set; } = "—";
 
     [ObservableProperty]
     public partial string ProtocolStatusText { get; set; } =
@@ -174,6 +201,14 @@ public partial class SettingsViewModel : ObservableObject
 
     partial void OnChatMessageNotificationsChanged(bool value) => AppSettings.ChatMessageNotifications = value;
 
+    partial void OnFileThumbnailMaxConcurrencyChanged(double value)
+    {
+        if (!double.IsNaN(value))
+        {
+            AppSettings.FileThumbnailMaxConcurrency = (int)Math.Round(value);
+        }
+    }
+
     partial void OnWallpaperEnabledChanged(bool value)
     {
         if (!_wallpaperReady)
@@ -256,6 +291,8 @@ public partial class SettingsViewModel : ObservableObject
             {
                 var bmp = new BitmapImage();
                 bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+                // Preview thumbnail only — a full-res decode of a 4K wallpaper is ~32MB.
+                bmp.DecodePixelWidth = 480;
                 bmp.UriSource = new Uri(WallpaperHelper.ImagePath!, UriKind.Absolute);
                 WallpaperPreview = bmp;
             }
@@ -484,9 +521,75 @@ public partial class SettingsViewModel : ObservableObject
     {
         OfflineCache.ClearAll();
         RefreshCacheStats();
-        StatusMessage = "离线缓存已清空";
+        StatusMessage = "JSON 离线缓存已清空（不含聊天 SQLite）";
         _toast.Success(StatusMessage);
     }
+
+    /// <summary>
+    /// Phase 7: delete current account SQLite db (+ wal/shm), clear L1 message windows, re-migrate empty file.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanClearLocalChatData))]
+    private async Task ClearLocalChatDataAsync()
+    {
+        var accountId = _authService.CurrentAccount?.Id
+                        ?? _sessions.ActiveAccountId
+                        ?? _accountDb.BoundAccountId;
+        if (accountId is not { } id || id == Guid.Empty)
+        {
+            StatusMessage = "未登录，无法清除本地聊天库";
+            _toast.Warning(StatusMessage);
+            return;
+        }
+
+        try
+        {
+            IsBusyClearChat = true;
+            ClearLocalChatDataCommand.NotifyCanExecuteChanged();
+            try
+            {
+                await _writePump.CompleteAndDrainAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[Settings] drain before clear chat: {ex.Message}");
+            }
+
+            _chatCache.ClearMessageWindows();
+            _imageLoader.Clear();
+            _thumbnailLoader.Clear();
+
+            if (_accountDb.BoundAccountId == id)
+            {
+                _accountDb.ResetBoundDatabase();
+            }
+            else
+            {
+                _accountDb.Remove(id);
+                _accountDb.Bind(id);
+            }
+
+            _writePump.EnsureRunning();
+            RefreshCacheStats();
+            RefreshWritePumpStats();
+            StatusMessage = "已清除当前账号本地聊天数据库";
+            _toast.Success(StatusMessage);
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "清除本地聊天失败：" + ex.Message;
+            _toast.Error(StatusMessage);
+        }
+        finally
+        {
+            IsBusyClearChat = false;
+            ClearLocalChatDataCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    [ObservableProperty]
+    public partial bool IsBusyClearChat { get; set; }
+
+    private bool CanClearLocalChatData() => !IsBusyClearChat;
 
     [RelayCommand]
     private void RefreshCacheStats()
@@ -497,6 +600,36 @@ public partial class SettingsViewModel : ObservableObject
             : bytes < 1024 * 1024
                 ? $"{bytes / 1024.0:0.#} KB"
                 : $"{bytes / (1024.0 * 1024):0.##} MB";
+
+        var dbPath = _accountDb.BoundDatabasePath;
+        if (string.IsNullOrWhiteSpace(dbPath))
+        {
+            LocalChatDbPathText = "未绑定账号库";
+        }
+        else if (File.Exists(dbPath))
+        {
+            var len = new FileInfo(dbPath).Length;
+            var size = len < 1024 * 1024
+                ? $"{len / 1024.0:0.#} KB"
+                : $"{len / (1024.0 * 1024):0.##} MB";
+            LocalChatDbPathText = $"{dbPath}  ({size})";
+        }
+        else
+        {
+            LocalChatDbPathText = dbPath + "  (文件尚未创建)";
+        }
+    }
+
+    [RelayCommand]
+    private void RefreshWritePumpStats()
+    {
+        WritePumpStatsText =
+            $"队列深度 {_writePump.QueueDepth} · " +
+            $"入队 {_writePump.EnqueuedTotal} · " +
+            $"丢弃 {_writePump.DroppedTotal} · " +
+            $"批成功 {_writePump.BatchesSucceeded} · " +
+            $"批失败 {_writePump.BatchesFailed} · " +
+            $"失败率 {_writePump.BatchFailureRate:P1}";
     }
 
     [RelayCommand]
@@ -588,7 +721,7 @@ public partial class SettingsViewModel : ObservableObject
             var av = Assembly.GetExecutingAssembly().GetName().Version;
             if (av is null)
             {
-                return "1.1.0";
+                return "1.1.2";
             }
 
             return av.Revision == 0

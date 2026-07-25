@@ -6,13 +6,15 @@ public sealed class ProgressStream : Stream
     private readonly Stream _inner;
     private readonly long _length;
     private readonly IProgress<double>? _progress;
+    private readonly bool _leaveOpen;
     private long _position;
 
-    public ProgressStream(Stream inner, long length, IProgress<double>? progress)
+    public ProgressStream(Stream inner, long length, IProgress<double>? progress, bool leaveOpen = false)
     {
         _inner = inner;
         _length = length > 0 ? length : inner.Length;
         _progress = progress;
+        _leaveOpen = leaveOpen;
     }
 
     public override bool CanRead => _inner.CanRead;
@@ -54,7 +56,7 @@ public sealed class ProgressStream : Stream
 
     protected override void Dispose(bool disposing)
     {
-        if (disposing)
+        if (disposing && !_leaveOpen)
         {
             _inner.Dispose();
         }

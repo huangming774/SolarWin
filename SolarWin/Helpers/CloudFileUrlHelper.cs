@@ -65,6 +65,49 @@ public static class CloudFileUrlHelper
         return null;
     }
 
+    /// <summary>
+    /// Prefer a server-provided thumbnail / preview URL for feed cards.
+    /// Falls back to <see cref="Resolve"/> (full file) when no thumb exists.
+    /// </summary>
+    public static string? ResolveListImage(SnCloudFile? file)
+    {
+        if (file is null)
+        {
+            return null;
+        }
+
+        if (file.FileMeta is not null)
+        {
+            foreach (var key in new[] { "thumbnail_url", "thumb_url", "preview_url", "thumbnail", "thumb" })
+            {
+                if (!file.FileMeta.TryGetValue(key, out var el)
+                    || el.ValueKind != System.Text.Json.JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var s = el.GetString();
+                if (string.IsNullOrWhiteSpace(s))
+                {
+                    continue;
+                }
+
+                if (!s.Contains('/') && !s.Contains(':'))
+                {
+                    return DriveFileUrl(s);
+                }
+
+                var n = Normalize(s);
+                if (n is not null)
+                {
+                    return n;
+                }
+            }
+        }
+
+        return Resolve(file);
+    }
+
     public static string? ResolveFileId(SnCloudFile? file)
     {
         if (file is null)

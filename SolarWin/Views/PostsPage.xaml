@@ -156,6 +156,8 @@
 
         <Grid Grid.Row="3">
             <ListView
+                x:Name="PostList"
+                ContainerContentChanging="PostList_OnContainerContentChanging"
                 IsItemClickEnabled="True"
                 ItemClick="PostList_OnItemClick"
                 ItemsSource="{x:Bind ViewModel.Items, Mode=OneWay}"
@@ -236,17 +238,27 @@
                                     </Border>
 
                                     <Grid HorizontalAlignment="Left" Visibility="{x:Bind ImagesVisibility}">
-                                        <Image
-                                            MaxWidth="480"
-                                            MaxHeight="320"
-                                            HorizontalAlignment="Left"
-                                            Source="{x:Bind FirstImage, Mode=OneWay}"
-                                            Stretch="Uniform" />
+                                        <Button
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="PostImage_OnClick"
+                                            DoubleTapped="PostImage_OnDoubleTapped"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="点击或双击放大">
+                                            <Image
+                                                MaxWidth="480"
+                                                MaxHeight="320"
+                                                HorizontalAlignment="Left"
+                                                Source="{x:Bind FirstImage, Mode=OneWay}"
+                                                Stretch="Uniform" />
+                                        </Button>
                                         <Border
                                             Margin="0,0,8,8"
                                             Padding="6,2"
                                             HorizontalAlignment="Right"
                                             VerticalAlignment="Bottom"
+                                            IsHitTestVisible="False"
                                             Background="{ThemeResource SmokeFillColorDefaultBrush}"
                                             CornerRadius="4"
                                             Visibility="{x:Bind ExtraImagesVisibility}">

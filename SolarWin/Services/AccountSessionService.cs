@@ -1,4 +1,5 @@
 using System.Text.Json;
+using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.Models;
 
@@ -10,12 +11,25 @@ public sealed class AccountSessionService : IAccountSessionService
 {
     private const string ActiveIdKey = "ActiveAccountId";
     private readonly ITokenStorage _tokens;
+    private readonly IAccountDbContextFactory _accountDb;
+    private readonly IChatWritePump _writePump;
+    private readonly DysonFileImageLoader _dysonImages;
+    private readonly FileThumbnailLoader _thumbnails;
     private readonly object _sync = new();
     private List<SavedAccountProfile> _profiles = [];
 
-    public AccountSessionService(ITokenStorage tokens)
+    public AccountSessionService(
+        ITokenStorage tokens,
+        IAccountDbContextFactory accountDb,
+        IChatWritePump writePump,
+        DysonFileImageLoader dysonImages,
+        FileThumbnailLoader thumbnails)
     {
         _tokens = tokens;
+        _accountDb = accountDb;
+        _writePump = writePump;
+        _dysonImages = dysonImages;
+        _thumbnails = thumbnails;
         LoadProfiles();
         if (Guid.TryParse(SettingsStore.GetString(ActiveIdKey), out var id))
         {
@@ -67,6 +81,10 @@ public sealed class AccountSessionService : IAccountSessionService
 
         // Offline cache me
         OfflineCache.SetJson($"account_me_{account.Id:N}", account, TimeSpan.FromDays(14));
+
+        // Local SQLite bind + background migrate; start write pump (Phase 1–2).
+        _accountDb.Bind(account.Id);
+        _writePump.EnsureRunning();
     }
 
     public async Task SwitchToAsync(Guid accountId, CancellationToken cancellationToken = default)
@@ -81,6 +99,16 @@ public sealed class AccountSessionService : IAccountSessionService
             throw new InvalidOperationException("Token storage does not support multi-account.");
         }
 
+        // Drain dual-write queue for the previous account before rebinding the db file.
+        try
+        {
+            await _writePump.CompleteAndDrainAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[AccountSession] write pump drain: {ex.Message}");
+        }
+
         // Snapshot current active into its slot
         if (ActiveAccountId is { } cur && cur != Guid.Empty)
         {
@@ -92,6 +120,9 @@ public sealed class AccountSessionService : IAccountSessionService
         ActiveAccountId = accountId;
         SettingsStore.SetString(ActiveIdKey, accountId.ToString("D"));
 
+        // Drop the previous account's decoded bitmaps (avatars / thumbnails).
+        ClearImageCaches();
+
         lock (_sync)
         {
             var p = _profiles.FirstOrDefault(x => x.AccountId == accountId);
@@ -101,6 +132,9 @@ public sealed class AccountSessionService : IAccountSessionService
                 PersistProfiles_NoLock();
             }
         }
+
+        _accountDb.Switch(accountId);
+        _writePump.EnsureRunning();
     }
 
     public async Task RemoveAsync(Guid accountId, CancellationToken cancellationToken = default)
@@ -112,6 +146,22 @@ public sealed class AccountSessionService : IAccountSessionService
 
         OfflineCache.Remove($"account_me_{accountId:N}");
         OfflineCache.Remove($"chat_rooms_{accountId:N}");
+
+        // Stop writing into the file we are about to delete.
+        if (_accountDb.BoundAccountId == accountId)
+        {
+            try
+            {
+                await _writePump.CompleteAndDrainAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"[AccountSession] write pump drain on remove: {ex.Message}");
+            }
+        }
+
+        // Drop per-account SQLite file(s).
+        _accountDb.Remove(accountId);
 
         lock (_sync)
         {
@@ -143,6 +193,21 @@ public sealed class AccountSessionService : IAccountSessionService
 
         ActiveAccountId = null;
         SettingsStore.SetString(ActiveIdKey, string.Empty);
+        ClearImageCaches();
+    }
+
+    /// <summary>Decoded bitmaps are account-scoped data; drop both bounded caches on logout/switch.</summary>
+    private void ClearImageCaches()
+    {
+        try
+        {
+            _dysonImages.Clear();
+            _thumbnails.Clear();
+        }
+        catch
+        {
+            // best-effort
+        }
     }
 
     private void LoadProfiles()

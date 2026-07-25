@@ -36,6 +36,9 @@
             Loaded="NavView_OnLoaded"
             PaneDisplayMode="Left"
             SelectionChanged="NavView_OnSelectionChanged">
+            <NavigationView.Resources>
+                <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
+            </NavigationView.Resources>
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="首页" Tag="home" />
                 <NavigationViewItem Content="聊天" Tag="chat" />
@@ -43,6 +46,7 @@
                 <NavigationViewItem Content="探索" Tag="explore" />
                 <NavigationViewItem Content="寻思" Tag="thinking" />
                 <NavigationViewItem Content="天气" Tag="weather" />
+                <NavigationViewItem Content="AI" Tag="ai" />
                 <NavigationViewItem Content="文件" Tag="files" />
                 <NavigationViewItem x:Name="NotificationsNavItem" Content="通知" Tag="notifications">
                     <NavigationViewItem.InfoBadge>
@@ -76,5 +80,44 @@
 
             <Frame x:Name="ContentFrame" />
         </NavigationView>
+
+        <!-- Incoming call overlay (global) -->
+        <Border
+            x:Name="IncomingCallBanner"
+            Grid.RowSpan="2"
+            Padding="20"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Top"
+            Margin="0,48,0,0"
+            Background="{ThemeResource AcrylicBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="16"
+            Visibility="Collapsed"
+            Canvas.ZIndex="100">
+            <StackPanel MinWidth="280" Spacing="10">
+                <TextBlock FontSize="18" FontWeight="SemiBold" Text="来电" />
+                <TextBlock
+                    x:Name="IncomingCallerText"
+                    FontSize="16"
+                    Text="…" />
+                <TextBlock
+                    x:Name="IncomingRoomText"
+                    Opacity="0.7"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="" />
+                <StackPanel Orientation="Horizontal" Spacing="12" HorizontalAlignment="Center">
+                    <Button
+                        MinWidth="100"
+                        Click="DeclineCall_OnClick"
+                        Content="拒绝" />
+                    <Button
+                        MinWidth="100"
+                        Click="AcceptCall_OnClick"
+                        Content="接听"
+                        Style="{StaticResource AccentButtonStyle}" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
     </Grid>
 </Page>

@@ -13,6 +13,7 @@ namespace SolarWin.Views;
 public sealed partial class ShellPage : Page
 {
     private readonly IToastService _toast;
+    private readonly IIncomingCallService _incomingCalls;
     private DispatcherTimer? _toastTimer;
     private DispatcherTimer? _badgeTimer;
 
@@ -22,10 +23,12 @@ public sealed partial class ShellPage : Page
     {
         ViewModel = App.Services.GetRequiredService<MainViewModel>();
         _toast = App.Services.GetRequiredService<IToastService>();
+        _incomingCalls = App.Services.GetRequiredService<IIncomingCallService>();
         InitializeComponent();
 
         ViewModel.LoggedOut += OnLoggedOut;
         _toast.MessageRaised += OnToastMessage;
+        _incomingCalls.Changed += OnIncomingCallChanged;
         Unloaded += OnUnloaded;
     }
 
@@ -39,6 +42,8 @@ public sealed partial class ShellPage : Page
         {
             App.Services.GetRequiredService<IChatMessageNotifier>().Start();
             App.Services.GetRequiredService<ChatViewModel>().EnsureRealtimeStarted();
+            _incomingCalls.Start();
+            RefreshIncomingCallBanner();
         }
         catch
         {
@@ -47,7 +52,7 @@ public sealed partial class ShellPage : Page
 
         try
         {
-            // Content can stay clear for wallpaper; pane keeps a solid theme brush so icons contrast.
+            // Content can stay clear for wallpaper; the pane gets its own contrast brush.
             ContentFrame.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             ApplyNavChrome();
             ApplyNavIcons();
@@ -80,6 +85,11 @@ public sealed partial class ShellPage : Page
         _badgeTimer.Tick += async (_, _) => await ViewModel.RefreshNotificationBadgeAsync();
         _badgeTimer.Start();
 
+        if (App.Window is MainWindow mainWindow)
+        {
+            mainWindow.TrayStateChanged += OnTrayStateChanged;
+        }
+
         ContentFrame.Navigated += ContentFrame_OnNavigated;
 
         if (NavView.MenuItems.Count > 0 && NavView.SelectedItem is null)
@@ -88,18 +98,38 @@ public sealed partial class ShellPage : Page
         }
     }
 
+    /// <summary>
+    /// Cap content-frame history. Pages use the default NavigationCacheMode (instances are
+    /// recreated on each visit), so back entries are small records — but their parameters
+    /// and any future cached page would otherwise accumulate without bound.
+    /// </summary>
+    private const int MaxBackStackDepth = 4;
+
+    private void NavigateContent(Type pageType, object? parameter = null)
+    {
+        if (!ContentFrame.Navigate(pageType, parameter))
+        {
+            return;
+        }
+
+        while (ContentFrame.BackStack.Count > MaxBackStackDepth)
+        {
+            ContentFrame.BackStack.RemoveAt(0);
+        }
+    }
+
     /// <summary>Deep link: open user profile page inside shell content frame.</summary>
     public void NavigateToUserProfile(string name)
     {
         SelectNavTag("home");
-        ContentFrame.Navigate(typeof(UserProfilePage), new UserProfileNavArgs(name));
+        NavigateContent(typeof(UserProfilePage), new UserProfileNavArgs(name));
     }
 
     /// <summary>Deep link: open chat room detail.</summary>
     public void NavigateToChatRoom(Guid roomId)
     {
         SelectNavTag("chat");
-        ContentFrame.Navigate(typeof(ChatDetailPage), roomId);
+        NavigateContent(typeof(ChatDetailPage), roomId);
     }
 
     private void SelectNavTag(string tag)
@@ -129,8 +159,22 @@ public sealed partial class ShellPage : Page
         });
     }
 
+    /// <summary>No badge polling while hidden in the tray; refresh once on restore.</summary>
+    private void OnTrayStateChanged(object? sender, bool isInTray)
+    {
+        if (isInTray)
+        {
+            _badgeTimer?.Stop();
+        }
+        else
+        {
+            _badgeTimer?.Start();
+            _ = ViewModel.RefreshNotificationBadgeAsync();
+        }
+    }
+
     /// <summary>
-    /// Keep the left pane legible (especially with custom wallpaper). Never leave it fully transparent.
+    /// Keep the left pane legible without covering the wallpaper behind the content area.
     /// </summary>
     private void ApplyNavChrome()
     {
@@ -144,32 +188,37 @@ public sealed partial class ShellPage : Page
                 var pane = isDark
                     ? Windows.UI.Color.FromArgb(0xE6, 0x20, 0x20, 0x24)
                     : Windows.UI.Color.FromArgb(0xE6, 0xF3, 0xF3, 0xF3);
-                NavView.Background = new SolidColorBrush(pane);
+                NavView.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
+                SetPaneBackground(pane);
             }
             else
             {
-                // Prefer theme pane brush when present.
                 object? brush = null;
-                if (Application.Current.Resources.ContainsKey("NavigationViewExpandedPaneBackground"))
-                {
-                    brush = Application.Current.Resources["NavigationViewExpandedPaneBackground"];
-                }
-                else if (Application.Current.Resources.ContainsKey("LayerFillColorDefaultBrush"))
+                if (Application.Current.Resources.ContainsKey("LayerFillColorDefaultBrush"))
                 {
                     brush = Application.Current.Resources["LayerFillColorDefaultBrush"];
                 }
 
-                NavView.Background = brush as Brush
-                    ?? new SolidColorBrush(
-                        ActualTheme == ElementTheme.Dark
-                            ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
-                            : Windows.UI.Color.FromArgb(255, 243, 243, 243));
+                var color = ActualTheme == ElementTheme.Dark
+                    ? Windows.UI.Color.FromArgb(255, 32, 32, 32)
+                    : Windows.UI.Color.FromArgb(255, 243, 243, 243);
+                NavView.Background = brush as Brush ?? new SolidColorBrush(color);
+                SetPaneBackground(color);
             }
         }
         catch
         {
-            NavView.Background = new SolidColorBrush(
-                Windows.UI.Color.FromArgb(255, 40, 40, 40));
+            var color = Windows.UI.Color.FromArgb(255, 40, 40, 40);
+            NavView.Background = new SolidColorBrush(color);
+            SetPaneBackground(color);
+        }
+    }
+
+    private void SetPaneBackground(Windows.UI.Color color)
+    {
+        if (NavView.Resources["NavigationViewExpandedPaneBackground"] is SolidColorBrush paneBrush)
+        {
+            paneBrush.Color = color;
         }
     }
 
@@ -199,6 +248,7 @@ public sealed partial class ShellPage : Page
             "explore" => Symbol.Find,
             "thinking" => Symbol.Edit,
             "weather" => Symbol.Globe,
+            "ai" => Symbol.Comment,
             "files" => Symbol.Folder,
             "notifications" => Symbol.Mail,
             "wallet" => Symbol.Shop,
@@ -227,6 +277,7 @@ public sealed partial class ShellPage : Page
             "explore" => "\uE721",
             "thinking" => "\uE70F",
             "weather" => "\uE823",
+            "ai" => "\uE99A",
             "files" => "\uE8B7",
             "notifications" => "\uEA8F",
             "wallet" => "\uE8C7",
@@ -274,7 +325,7 @@ public sealed partial class ShellPage : Page
         if (args.IsSettingsSelected)
         {
             ViewModel.SelectedTag = "settings";
-            ContentFrame.Navigate(typeof(SettingsPage));
+            NavigateContent(typeof(SettingsPage));
             return;
         }
 
@@ -292,6 +343,7 @@ public sealed partial class ShellPage : Page
             "explore" => typeof(SphereExplorePage),
             "thinking" => typeof(ThinkingPage),
             "weather" => typeof(WeatherPage),
+            "ai" => typeof(AiPage),
             "files" => typeof(FilesPage),
             "notifications" => typeof(NotificationsPage),
             "wallet" => typeof(WalletPage),
@@ -299,7 +351,7 @@ public sealed partial class ShellPage : Page
             _ => typeof(HomePage),
         };
 
-        ContentFrame.Navigate(pageType);
+        NavigateContent(pageType);
 
         if (tag == "notifications")
         {
@@ -348,11 +400,70 @@ public sealed partial class ShellPage : Page
         Frame?.Navigate(typeof(LoginPage));
     }
 
+    private void OnIncomingCallChanged(object? sender, EventArgs e)
+    {
+        DispatcherQueue.TryEnqueue(RefreshIncomingCallBanner);
+    }
+
+    private void RefreshIncomingCallBanner()
+    {
+        if (_incomingCalls.HasIncoming && _incomingCalls.Current is { } info)
+        {
+            IncomingCallBanner.Visibility = Visibility.Visible;
+            IncomingCallerText.Text = info.DisplayTitle;
+            IncomingRoomText.Text = info.DisplaySubtitle;
+        }
+        else
+        {
+            IncomingCallBanner.Visibility = Visibility.Collapsed;
+        }
+    }
+
+    private void DeclineCall_OnClick(object sender, RoutedEventArgs e)
+    {
+        _incomingCalls.Decline();
+        RefreshIncomingCallBanner();
+    }
+
+    private async void AcceptCall_OnClick(object sender, RoutedEventArgs e)
+    {
+        var info = _incomingCalls.Accept();
+        RefreshIncomingCallBanner();
+        if (info is null || info.RoomId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            SelectNavTag("chat");
+            NavigateContent(typeof(ChatDetailPage), info.RoomId);
+
+            // Join after navigation; reuse the page's own VM — resolving another transient
+            // ChatDetailViewModel here would leak it on the singleton media/WS services.
+            await Task.Delay(200);
+            if (ContentFrame.Content is ChatDetailPage detailPage)
+            {
+                await detailPage.ViewModel.AcceptIncomingAndJoinAsync(info.RoomId, info.RoomTitle);
+            }
+        }
+        catch (Exception ex)
+        {
+            _toast.Error("接听失败：" + ex.Message);
+        }
+    }
+
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.LoggedOut -= OnLoggedOut;
         _toast.MessageRaised -= OnToastMessage;
+        _incomingCalls.Changed -= OnIncomingCallChanged;
         WallpaperHelper.Changed -= OnWallpaperSettingsChanged;
+        if (App.Window is MainWindow mainWindow)
+        {
+            mainWindow.TrayStateChanged -= OnTrayStateChanged;
+        }
+
         ContentFrame.Navigated -= ContentFrame_OnNavigated;
         _badgeTimer?.Stop();
         _toastTimer?.Stop();

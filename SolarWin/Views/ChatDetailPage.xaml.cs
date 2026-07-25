@@ -57,6 +57,8 @@ public sealed partial class ChatDetailPage : Page
     {
         base.OnNavigatedFrom(e);
         ViewModel.StopPolling();
+        ViewModel.CancelPendingLoads();
+        ViewModel.Unhook();
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e) => TryHookScrollViewer();
@@ -64,6 +66,8 @@ public sealed partial class ChatDetailPage : Page
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
         ViewModel.StopPolling();
+        ViewModel.CancelPendingLoads();
+        ViewModel.Unhook();
         ViewModel.ScrollToBottomRequested -= OnScrollToBottomRequested;
         ViewModel.OpenImageRequested -= OnOpenImageRequested;
         if (_messageScrollViewer is not null)
@@ -80,6 +84,7 @@ public sealed partial class ChatDetailPage : Page
     private void BackButton_OnClick(object sender, RoutedEventArgs e)
     {
         ViewModel.StopPolling();
+        ViewModel.CancelPendingLoads();
         if (Frame?.CanGoBack == true)
         {
             Frame.GoBack();
@@ -328,6 +333,39 @@ public sealed partial class ChatDetailPage : Page
         }
     }
 
+    private void VideoTile_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is CallVideoTile tile
+            && ViewModel.FocusVideoTileCommand.CanExecute(tile))
+        {
+            ViewModel.FocusVideoTileCommand.Execute(tile);
+        }
+    }
+
+    private void MicDevice_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel.ApplyMicDeviceCommand.CanExecute(null))
+        {
+            ViewModel.ApplyMicDeviceCommand.Execute(null);
+        }
+    }
+
+    private void SpeakerDevice_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel.ApplySpeakerDeviceCommand.CanExecute(null))
+        {
+            ViewModel.ApplySpeakerDeviceCommand.Execute(null);
+        }
+    }
+
+    private void CameraDevice_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (ViewModel.ApplyCameraDeviceCommand.CanExecute(null))
+        {
+            ViewModel.ApplyCameraDeviceCommand.Execute(null);
+        }
+    }
+
     private void MuteCall_OnClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: CallParticipantItemViewModel item }
@@ -361,7 +399,7 @@ public sealed partial class ChatDetailPage : Page
         if (image is null && !string.IsNullOrWhiteSpace(attachment.FileId ?? attachment.Url))
         {
             var loader = App.Services.GetRequiredService<DysonFileImageLoader>();
-            image = await loader.LoadAsync(attachment.FileId ?? attachment.Url);
+            image = await loader.LoadAsync(attachment.FileId ?? attachment.Url, DysonFileImageLoader.DetailImageDecodeWidth);
             if (image is not null)
             {
                 attachment.Image = image;
@@ -423,9 +461,18 @@ public sealed partial class ChatDetailPage : Page
             return;
         }
 
+        // Top → load older history.
         if (_messageScrollViewer.VerticalOffset <= 48 && ViewModel.LoadMoreCommand.CanExecute(null))
         {
             ViewModel.LoadMoreCommand.Execute(null);
+        }
+
+        // Bottom → Phase 5 rehydrate detached newer tail from L2.
+        var distanceFromBottom =
+            _messageScrollViewer.ScrollableHeight - _messageScrollViewer.VerticalOffset;
+        if (distanceFromBottom <= 72 && ViewModel.HasDetachedNewer)
+        {
+            ViewModel.NotifyNearBottom();
         }
     }
 
@@ -434,6 +481,13 @@ public sealed partial class ChatDetailPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             TryHookScrollViewer();
+
+            // Phase 5: restore trimmed newest side from SQLite before scrolling.
+            if (ViewModel.HasDetachedNewer)
+            {
+                ViewModel.NotifyNearBottom();
+            }
+
             if (ViewModel.Messages.Count == 0)
             {
                 return;

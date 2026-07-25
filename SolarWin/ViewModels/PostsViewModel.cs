@@ -14,10 +14,16 @@ public partial class PostsViewModel : ObservableObject
     /// <summary>Fetch at least 40 posts per page (user request).</summary>
     private const int PageSize = 48;
 
+    /// <summary>In-memory feed window — drop oldest when LoadMore grows past this (memory review #14).</summary>
+    private const int MaxFeedItems = 120;
+
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly IAuthService _auth;
+    private readonly Dictionary<PostItemViewModel, CancellationTokenSource> _imageRequests = [];
+    private HashSet<PostItemViewModel> _imageWindow = [];
+    private int _imageWindowVersion;
 
     private int _offset;
     private bool _usingTimeline = true;
@@ -123,6 +129,7 @@ public partial class PostsViewModel : ObservableObject
         {
             IsBusy = true;
             ErrorMessage = null;
+            ClearImageWindow(clearImages: true);
             Items.Clear();
             _offset = 0;
             OnPropertyChanged(nameof(IsEmpty));
@@ -171,8 +178,6 @@ public partial class PostsViewModel : ObservableObject
             {
                 StatusText = "暂无帖子（接口无数据或解析失败）";
             }
-
-            _ = LoadImagesAsync();
         }
         catch (SolarApiException ex)
         {
@@ -212,9 +217,7 @@ public partial class PostsViewModel : ObservableObject
 
             StatusText = _usingTimeline
                 ? $"时间线 · {Items.Count} 条"
-                : $"公共 · {Items.Count} 条";
-            _ = LoadImagesAsync();
-        }
+                : $"公共 · {Items.Count} 条";        }
         catch (SolarApiException ex)
         {
             _toast.Error($"加载更多失败:{ex.Message}");
@@ -242,12 +245,28 @@ public partial class PostsViewModel : ObservableObject
 
             try
             {
-                Items.Add(new PostItemViewModel(post, _imageLoader));
+                Items.Add(new PostItemViewModel(post, _imageLoader, bindCachedImages: true));
             }
             catch
             {
                 // One bad card must not wipe the whole feed.
             }
+        }
+
+        TrimFeedWindow();
+    }
+
+    /// <summary>Keep at most <see cref="MaxFeedItems"/> cards; drop from the top (older).</summary>
+    private void TrimFeedWindow()
+    {
+        while (Items.Count > MaxFeedItems)
+        {
+            var old = Items[0];
+            CancelImageRequest(old);
+            _imageWindow.Remove(old);
+            old.FirstImage = null;
+            old.AvatarImage = null;
+            Items.RemoveAt(0);
         }
     }
 
@@ -285,7 +304,7 @@ public partial class PostsViewModel : ObservableObject
             BitmapImage? preview = null;
             try
             {
-                preview = await _imageLoader.LoadSafeAsync(id).ConfigureAwait(true);
+                preview = await _imageLoader.LoadSafeAsync(id, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
             }
             catch
             {
@@ -386,7 +405,7 @@ public partial class PostsViewModel : ObservableObject
             var created = await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
             try
             {
-                Items.Insert(0, new PostItemViewModel(created, _imageLoader));
+                Items.Insert(0, new PostItemViewModel(created, _imageLoader, bindCachedImages: false));
             }
             catch
             {
@@ -398,9 +417,7 @@ public partial class PostsViewModel : ObservableObject
             NotifyComposer();
             StatusText = _usingTimeline
                 ? $"时间线 · {Items.Count} 条"
-                : $"公共 · {Items.Count} 条";
-            _ = LoadImagesAsync();
-            _toast.Success(attachmentIds.Count > 0 ? "已发布（含图片）" : "已发布");
+                : $"公共 · {Items.Count} 条";            _toast.Success(attachmentIds.Count > 0 ? "已发布（含图片）" : "已发布");
         }
         catch (SolarApiException ex)
         {
@@ -418,11 +435,10 @@ public partial class PostsViewModel : ObservableObject
                         Attachments = attachmentIds,
                     }, pub).ConfigureAwait(true);
 
-                    Items.Insert(0, new PostItemViewModel(created, _imageLoader));
+                    Items.Insert(0, new PostItemViewModel(created, _imageLoader, bindCachedImages: false));
                     NewPostContent = string.Empty;
                     PendingAttachments.Clear();
                     NotifyComposer();
-                    _ = LoadImagesAsync();
                     _toast.Success("已发布（含图片）");
                     return;
                 }
@@ -534,64 +550,217 @@ public partial class PostsViewModel : ObservableObject
         return _publisherName;
     }
 
-    private bool _imagesLoading;
-
-    private async Task LoadImagesAsync()
+    public void UpdateVisibleImageWindow(
+        IReadOnlyCollection<PostItemViewModel> visibleItems,
+        int prefetchCount)
     {
-        // Single-flight: load/load-more/create can all trigger this concurrently.
-        if (_imagesLoading)
+        var indexes = visibleItems
+            .Select(item => Items.IndexOf(item))
+            .Where(index => index >= 0)
+            .ToList();
+
+        if (indexes.Count == 0)
+        {
+            // Keep already-decoded bitmaps while briefly empty (virtualization churn).
+            // Full clear only happens on page leave / reload.
+            return;
+        }
+
+        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
+        var end = Math.Min(Items.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
+        var window = Items
+            .Skip(start)
+            .Take(end - start + 1)
+            .ToHashSet();
+
+        var changed = !_imageWindow.SetEquals(window);
+        if (changed)
+        {
+            foreach (var item in _imageRequests.Keys.ToList())
+            {
+                if (!window.Contains(item))
+                {
+                    CancelImageRequest(item);
+                }
+            }
+
+            // Do not null AvatarImage / FirstImage when scrolling away — re-fetch was the
+            // main reason feed images felt slow. Memory is bounded by MaxFeedItems + LRU.
+            _imageWindow = window;
+        }
+
+        var version = _imageWindowVersion;
+        foreach (var item in window)
+        {
+            LoadImagesForVisibleItem(item, version);
+        }
+    }
+
+    public void ClearVisibleImageWindow()
+        => ClearImageWindow(clearImages: true);
+
+    private void LoadImagesForVisibleItem(PostItemViewModel item, int version)
+    {
+        if (_imageRequests.ContainsKey(item))
         {
             return;
         }
 
-        _imagesLoading = true;
+        if (!NeedsImageLoad(item))
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _imageRequests[item] = cts;
+        _ = LoadItemImagesAsync(item, version, cts);
+    }
+
+    private async Task LoadItemImagesAsync(
+        PostItemViewModel item,
+        int version,
+        CancellationTokenSource requestCts)
+    {
         try
         {
-            var avatarTasks = new List<(PostItemViewModel Item, Task<BitmapImage?> Task)>();
-            var imageTasks = new List<(PostItemViewModel Item, Task<BitmapImage?> Task)>();
+            Task<BitmapImage?>? avatarTask = null;
+            Task<BitmapImage?>? imageTask = null;
 
-            foreach (var item in Items.ToList())
+            if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
             {
-                if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
+                if (_imageLoader.TryGetCached(
+                        item.AvatarUrl,
+                        out var cachedAvatar,
+                        DysonFileImageLoader.AvatarDecodeWidth)
+                    && cachedAvatar is not null)
                 {
-                    avatarTasks.Add((item, _imageLoader.LoadSafeAsync(item.AvatarUrl)));
+                    if (CanApplyImage(item, version, requestCts))
+                    {
+                        item.AvatarImage = cachedAvatar;
+                    }
                 }
-
-                if (item.HasImages && item.FirstImage is null)
+                else
                 {
-                    imageTasks.Add((item, _imageLoader.LoadSafeAsync(item.ImageUrls[0])));
-                }
-            }
-
-            if (avatarTasks.Count == 0 && imageTasks.Count == 0)
-            {
-                return;
-            }
-
-            // Parallel download; apply in one UI turn so the feed doesn't ripple.
-            await Task.WhenAll(
-                avatarTasks.Select(t => t.Task)
-                    .Concat(imageTasks.Select(t => t.Task))).ConfigureAwait(true);
-
-            foreach (var (item, task) in avatarTasks)
-            {
-                if (task.Result is { } bmp)
-                {
-                    item.AvatarImage = bmp;
+                    avatarTask = _imageLoader.LoadSafeAsync(
+                        item.AvatarUrl,
+                        DysonFileImageLoader.AvatarDecodeWidth,
+                        requestCts.Token);
                 }
             }
 
-            foreach (var (item, task) in imageTasks)
+            if (item.HasImages && item.FirstImage is null && item.ImageUrls.Count > 0)
             {
-                if (task.Result is { } bmp)
+                var url = item.ImageUrls[0];
+                if (_imageLoader.TryGetCached(
+                        url,
+                        out var cachedImage,
+                        DysonFileImageLoader.FeedImageDecodeWidth)
+                    && cachedImage is not null)
                 {
-                    item.FirstImage = bmp;
+                    if (CanApplyImage(item, version, requestCts))
+                    {
+                        item.FirstImage = cachedImage;
+                    }
                 }
+                else
+                {
+                    imageTask = _imageLoader.LoadSafeAsync(
+                        url,
+                        DysonFileImageLoader.FeedImageDecodeWidth,
+                        requestCts.Token);
+                }
+            }
+
+            // Avatar + post image in parallel (was sequential → ~2× wait per card).
+            if (avatarTask is not null && imageTask is not null)
+            {
+                await Task.WhenAll(avatarTask, imageTask).ConfigureAwait(true);
+            }
+            else if (avatarTask is not null)
+            {
+                await avatarTask.ConfigureAwait(true);
+            }
+            else if (imageTask is not null)
+            {
+                await imageTask.ConfigureAwait(true);
+            }
+
+            if (avatarTask is not null
+                && avatarTask.IsCompletedSuccessfully
+                && avatarTask.Result is { } avatar
+                && CanApplyImage(item, version, requestCts))
+            {
+                item.AvatarImage = avatar;
+            }
+
+            if (imageTask is not null
+                && imageTask.IsCompletedSuccessfully
+                && imageTask.Result is { } image
+                && CanApplyImage(item, version, requestCts))
+            {
+                item.FirstImage = image;
             }
         }
         finally
         {
-            _imagesLoading = false;
+            var shouldRetry = false;
+            if (_imageRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
+            {
+                _imageRequests.Remove(item);
+                shouldRetry = requestCts.IsCancellationRequested
+                              && _imageWindow.Contains(item)
+                              && Items.Contains(item);
+            }
+
+            requestCts.Dispose();
+            if (shouldRetry)
+            {
+                LoadImagesForVisibleItem(item, _imageWindowVersion);
+            }
+        }
+    }
+
+    private bool CanApplyImage(
+        PostItemViewModel item,
+        int version,
+        CancellationTokenSource requestCts)
+        => !requestCts.IsCancellationRequested
+           && version == _imageWindowVersion
+           && _imageWindow.Contains(item)
+           && Items.Contains(item);
+
+    private static bool NeedsImageLoad(PostItemViewModel item)
+        => item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl)
+           || item.HasImages && item.FirstImage is null;
+
+    private void CancelImageRequest(PostItemViewModel item)
+    {
+        if (_imageRequests.TryGetValue(item, out var cts))
+        {
+            cts.Cancel();
+        }
+    }
+
+    private void ClearImageWindow(bool clearImages)
+    {
+        _imageWindowVersion++;
+        foreach (var cts in _imageRequests.Values)
+        {
+            cts.Cancel();
+        }
+
+        _imageRequests.Clear();
+        _imageWindow = [];
+
+        if (!clearImages)
+        {
+            return;
+        }
+
+        foreach (var item in Items)
+        {
+            item.AvatarImage = null;
+            item.FirstImage = null;
         }
     }
 }

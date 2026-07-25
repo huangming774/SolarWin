@@ -111,6 +111,19 @@ public sealed class SolarApiClient : ISolarApiClient
         return await ReadResponseAsync<TResponse>(response, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>SendAsync for callers that re-create their body per retry attempt (large uploads).</summary>
+    private async Task<TResponse> SendAsync<TResponse>(
+        HttpMethod method,
+        string relativePath,
+        Func<HttpContent> contentFactory,
+        CancellationToken cancellationToken)
+    {
+        using var response = await SendCoreAsync(method, relativePath, contentFactory, allowRefresh: true, cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
+        return await ReadResponseAsync<TResponse>(response, cancellationToken).ConfigureAwait(false);
+    }
+
     // —— Business ——
 
     public Task<SnAccount> GetMeAsync(CancellationToken cancellationToken = default)
@@ -434,24 +447,23 @@ public sealed class SolarApiClient : ISolarApiClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(file);
-        using var multipart = new MultipartFormDataContent();
-        var streamContent = new StreamContent(file);
-        if (!string.IsNullOrWhiteSpace(contentType))
+
+        await using var ownedBuffer = file.CanSeek ? null : new MemoryStream();
+        if (ownedBuffer is not null)
         {
-            streamContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+            await file.CopyToAsync(ownedBuffer, cancellationToken).ConfigureAwait(false);
+            file = ownedBuffer;
         }
 
-        multipart.Add(streamContent, "File", fileName);
-        multipart.Add(new StringContent(durationMs.ToString(System.Globalization.CultureInfo.InvariantCulture)), "DurationMs");
-        if (!string.IsNullOrWhiteSpace(nonce))
-        {
-            multipart.Add(new StringContent(nonce), "Nonce");
-        }
+        file.Position = 0;
+        var fileSize = file.Length;
+        MultipartFormDataContent BuildMultipart()
+            => BuildVoiceMessageContent(file, fileSize, fileName, contentType, durationMs, nonce);
 
         return await SendAsync<SnChatMessage>(
                 HttpMethod.Post,
                 $"/messager/chat/{roomId:D}/messages/voice",
-                multipart,
+                BuildMultipart,
                 cancellationToken)
             .ConfigureAwait(false);
     }
@@ -1001,31 +1013,32 @@ public sealed class SolarApiClient : ISolarApiClient
         contentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
         progress?.Report(0);
 
-        // Buffer stream so retries are possible (Node 6: typical desktop files).
-        await using var buffer = new MemoryStream();
-        if (content.CanSeek)
+        // Only non-seekable input is buffered (once). Seekable streams are re-read per
+        // retry attempt — previously the payload was copied 3-4x its size into memory.
+        await using var ownedBuffer = content.CanSeek ? null : new MemoryStream();
+        if (ownedBuffer is not null)
         {
-            content.Position = 0;
+            await content.CopyToAsync(ownedBuffer, cancellationToken).ConfigureAwait(false);
+            content = ownedBuffer;
         }
 
-        await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        var bytes = buffer.ToArray();
+        content.Position = 0;
         if (fileSize <= 0)
         {
-            fileSize = bytes.LongLength;
+            fileSize = content.Length;
         }
 
-        using var multipart = BuildDirectUploadContent(bytes, fileName, contentType, parentId, progress);
+        MultipartFormDataContent BuildMultipart()
+            => BuildDirectUploadContent(content, fileSize, fileName, contentType, parentId, progress);
 
         try
         {
-            return await SendAsync<SnCloudFile>(HttpMethod.Post, "/drive/files/upload/direct", multipart, cancellationToken)
+            return await SendAsync<SnCloudFile>(HttpMethod.Post, "/drive/files/upload/direct", BuildMultipart, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (SolarApiException)
         {
-            using var multipart2 = BuildDirectUploadContent(bytes, fileName, contentType, parentId, progress);
-            return await SendAsync<SnCloudFile>(HttpMethod.Post, "/api/files/upload/direct", multipart2, cancellationToken)
+            return await SendAsync<SnCloudFile>(HttpMethod.Post, "/api/files/upload/direct", BuildMultipart, cancellationToken)
                 .ConfigureAwait(false);
         }
     }
@@ -1043,22 +1056,28 @@ public sealed class SolarApiClient : ISolarApiClient
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         contentType = string.IsNullOrWhiteSpace(contentType) ? "application/octet-stream" : contentType;
 
-        // Materialize bytes for hash + chunking + retry.
-        await using var buffer = new MemoryStream();
-        if (content.CanSeek)
+        // Only non-seekable input is buffered (once). Hashing and chunking run
+        // incrementally over the stream instead of holding the whole file + copies.
+        await using var ownedBuffer = content.CanSeek ? null : new MemoryStream();
+        if (ownedBuffer is not null)
         {
-            content.Position = 0;
+            await content.CopyToAsync(ownedBuffer, cancellationToken).ConfigureAwait(false);
+            content = ownedBuffer;
         }
 
-        await content.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
-        var bytes = buffer.ToArray();
+        content.Position = 0;
         if (fileSize <= 0)
         {
-            fileSize = bytes.LongLength;
+            fileSize = content.Length;
         }
 
         progress?.Report(0.02);
-        var hash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        var hash = Convert.ToHexString(
+                await System.Security.Cryptography.SHA256
+                    .HashDataAsync(content, cancellationToken)
+                    .ConfigureAwait(false))
+            .ToLowerInvariant();
+        content.Position = 0;
 
         const long defaultChunk = 5 * 1024 * 1024;
         var createBody = new CreateUploadTaskRequest
@@ -1094,8 +1113,7 @@ public sealed class SolarApiClient : ISolarApiClient
             catch (SolarApiException)
             {
                 // Gateway may not expose chunked create — fall back to direct.
-                await using var ms = new MemoryStream(bytes);
-                return await UploadFileDirectAsync(ms, fileName, contentType, fileSize, parentId, progress, cancellationToken)
+                return await UploadFileDirectAsync(content, fileName, contentType, fileSize, parentId, progress, cancellationToken)
                     .ConfigureAwait(false);
             }
         }
@@ -1126,30 +1144,30 @@ public sealed class SolarApiClient : ISolarApiClient
         if (string.IsNullOrWhiteSpace(task.TaskId))
         {
             // Ambiguous response — try deserialize as SnCloudFile via re-post complete path or direct.
-            await using var ms = new MemoryStream(bytes);
-            return await UploadFileDirectAsync(ms, fileName, contentType, fileSize, parentId, progress, cancellationToken)
+            return await UploadFileDirectAsync(content, fileName, contentType, fileSize, parentId, progress, cancellationToken)
                 .ConfigureAwait(false);
         }
 
         var chunkSize = task.ChunkSize > 0 ? task.ChunkSize : defaultChunk;
         var chunksCount = task.ChunksCount > 0
             ? task.ChunksCount
-            : (int)Math.Ceiling(bytes.LongLength / (double)chunkSize);
+            : (int)Math.Ceiling(fileSize / (double)chunkSize);
 
+        // One chunk-sized staging buffer, reused — not the whole file + per-chunk copies.
+        var staging = new byte[(int)Math.Min(chunkSize, fileSize)];
         for (var i = 0; i < chunksCount; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var offset = (int)(i * chunkSize);
-            if (offset >= bytes.Length)
+            var offset = (long)i * chunkSize;
+            if (offset >= fileSize)
             {
                 break;
             }
 
-            var length = (int)Math.Min(chunkSize, bytes.LongLength - offset);
-            var slice = new byte[length];
-            Buffer.BlockCopy(bytes, offset, slice, 0, length);
+            var length = (int)Math.Min(chunkSize, fileSize - offset);
+            await content.ReadExactlyAsync(staging.AsMemory(0, length), cancellationToken).ConfigureAwait(false);
 
-            await UploadChunkAsync(task.TaskId!, i, slice, cancellationToken).ConfigureAwait(false);
+            await UploadChunkAsync(task.TaskId!, i, staging, length, cancellationToken).ConfigureAwait(false);
             // Progress: 5% create + 90% chunks + 5% complete
             progress?.Report(0.05 + 0.90 * ((i + 1) / (double)chunksCount));
         }
@@ -1171,28 +1189,28 @@ public sealed class SolarApiClient : ISolarApiClient
         }
     }
 
-    private async Task UploadChunkAsync(string taskId, int chunkIndex, byte[] chunkBytes, CancellationToken cancellationToken)
+    private async Task UploadChunkAsync(string taskId, int chunkIndex, byte[] buffer, int length, CancellationToken cancellationToken)
     {
-        using var multipart = new MultipartFormDataContent();
-        var part = new ByteArrayContent(chunkBytes);
-        part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-        multipart.Add(part, "chunk", $"chunk_{chunkIndex}");
+        MultipartFormDataContent BuildMultipart()
+        {
+            var multipart = new MultipartFormDataContent();
+            var part = new ByteArrayContent(buffer, 0, length);
+            part.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
+            multipart.Add(part, "chunk", $"chunk_{chunkIndex}");
+            return multipart;
+        }
 
         var drivePath = $"/drive/files/upload/chunk/{Uri.EscapeDataString(taskId)}/{chunkIndex}";
         try
         {
-            using var response = await SendCoreAsync(HttpMethod.Post, drivePath, multipart, allowRefresh: true, cancellationToken)
+            using var response = await SendCoreAsync(HttpMethod.Post, drivePath, BuildMultipart, allowRefresh: true, cancellationToken)
                 .ConfigureAwait(false);
             await EnsureSuccessAsync(response).ConfigureAwait(false);
         }
         catch (SolarApiException)
         {
-            using var multipart2 = new MultipartFormDataContent();
-            var part2 = new ByteArrayContent(chunkBytes);
-            part2.Headers.ContentType = new MediaTypeHeaderValue("application/octet-stream");
-            multipart2.Add(part2, "chunk", $"chunk_{chunkIndex}");
             var apiPath = $"/api/files/upload/chunk/{Uri.EscapeDataString(taskId)}/{chunkIndex}";
-            using var response = await SendCoreAsync(HttpMethod.Post, apiPath, multipart2, allowRefresh: true, cancellationToken)
+            using var response = await SendCoreAsync(HttpMethod.Post, apiPath, BuildMultipart, allowRefresh: true, cancellationToken)
                 .ConfigureAwait(false);
             await EnsureSuccessAsync(response).ConfigureAwait(false);
         }
@@ -1262,24 +1280,58 @@ public sealed class SolarApiClient : ISolarApiClient
         progress?.Report(1);
     }
 
+    private static MultipartFormDataContent BuildVoiceMessageContent(
+        Stream body,
+        long fileSize,
+        string fileName,
+        string contentType,
+        int durationMs,
+        string? nonce)
+    {
+        body.Position = 0;
+        var multipart = new MultipartFormDataContent();
+        var voiceStream = new ProgressStream(body, fileSize, progress: null, leaveOpen: true);
+        var fileContent = new StreamContent(voiceStream);
+        if (!string.IsNullOrWhiteSpace(contentType))
+        {
+            fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+        }
+
+        multipart.Add(fileContent, "File", fileName);
+        multipart.Add(new StringContent(durationMs.ToString(CultureInfo.InvariantCulture)), "DurationMs");
+        if (!string.IsNullOrWhiteSpace(nonce))
+        {
+            multipart.Add(new StringContent(nonce), "Nonce");
+        }
+
+        return multipart;
+    }
+
     private static MultipartFormDataContent BuildDirectUploadContent(
-        byte[] bytes,
+        Stream body,
+        long fileSize,
         string fileName,
         string contentType,
         string? parentId,
         IProgress<double>? progress)
     {
+        if (body.CanSeek)
+        {
+            body.Position = 0;
+        }
+
         var multipart = new MultipartFormDataContent();
         multipart.Add(new StringContent(fileName), "file_name");
         multipart.Add(new StringContent(contentType), "content_type");
-        multipart.Add(new StringContent(bytes.LongLength.ToString(CultureInfo.InvariantCulture)), "file_size");
+        multipart.Add(new StringContent(fileSize.ToString(CultureInfo.InvariantCulture)), "file_size");
         multipart.Add(new StringContent("true"), "index");
         if (!string.IsNullOrWhiteSpace(parentId))
         {
             multipart.Add(new StringContent(parentId), "parent_id");
         }
 
-        var progressStream = new ProgressStream(new MemoryStream(bytes), bytes.LongLength, progress);
+        // leaveOpen: caller owns the stream; it is re-read from position 0 on retry.
+        var progressStream = new ProgressStream(body, fileSize, progress, leaveOpen: true);
         var fileContent = new StreamContent(progressStream);
         fileContent.Headers.ContentType = new MediaTypeHeaderValue(contentType);
         multipart.Add(fileContent, "file", fileName);
@@ -3768,22 +3820,36 @@ public sealed class SolarApiClient : ISolarApiClient
         bool allowRefresh,
         CancellationToken cancellationToken)
     {
-        Exception? lastException = null;
-        byte[]? contentBytes = null;
-        MediaTypeHeaderValue? contentType = null;
-        List<KeyValuePair<string, IEnumerable<string>>>? contentHeaders = null;
-
+        Func<HttpContent>? contentFactory = null;
         if (content is not null)
         {
-            contentBytes = await content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-            contentType = content.Headers.ContentType;
-            contentHeaders = content.Headers
+            var contentBytes = await content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
+            var contentType = content.Headers.ContentType;
+            var contentHeaders = content.Headers
                 .Where(h => !string.Equals(h.Key, "Content-Type", StringComparison.OrdinalIgnoreCase))
                 .Select(h => new KeyValuePair<string, IEnumerable<string>>(h.Key, h.Value))
                 .ToList();
             content.Dispose();
+            contentFactory = () => CreateBody(contentBytes, contentType, contentHeaders);
         }
 
+        return await SendCoreAsync(method, relativePath, contentFactory, allowRefresh, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Same retry pipeline as the HttpContent overload, but the body is re-created per
+    /// attempt — large uploads stream from a seekable source instead of being held
+    /// whole in managed memory for the entire retry budget.
+    /// </summary>
+    private async Task<HttpResponseMessage> SendCoreAsync(
+        HttpMethod method,
+        string relativePath,
+        Func<HttpContent>? contentFactory,
+        bool allowRefresh,
+        CancellationToken cancellationToken)
+    {
+        Exception? lastException = null;
         var didRefresh = false;
 
         for (var attempt = 1; attempt <= MaxAttempts; attempt++)
@@ -3792,9 +3858,9 @@ public sealed class SolarApiClient : ISolarApiClient
 
             var client = _httpClientFactory.CreateClient(HttpClientName);
             using var request = new HttpRequestMessage(method, NormalizePath(relativePath));
-            if (contentBytes is not null)
+            if (contentFactory is not null)
             {
-                request.Content = CreateBody(contentBytes, contentType, contentHeaders);
+                request.Content = contentFactory();
             }
 
             await AttachBearerAsync(request, cancellationToken).ConfigureAwait(false);

@@ -6,7 +6,7 @@ public sealed class WalletTransactionItemViewModel
 {
     public WalletTransactionItemViewModel(SnWalletTransaction transaction, Guid walletId)
     {
-        Transaction = transaction;
+        Id = transaction.Id;
         var incoming = transaction.PayeeWalletId == walletId;
         var sign = incoming ? "+" : "-";
         var amount = Math.Abs(transaction.Amount);
@@ -15,25 +15,19 @@ public sealed class WalletTransactionItemViewModel
             ? TypeText(transaction.Type)
             : transaction.Remarks!;
         AmountText = $"{sign}{amount:0.##} {transaction.Currency}";
-        CurrencyText = transaction.Currency ?? string.Empty;
         TimeText = FormatTime(transaction.CreatedAt);
         StatusText = StatusLabel(transaction.Status);
-        DirectionText = incoming ? "收入" : "支出";
     }
 
-    public SnWalletTransaction Transaction { get; }
+    public Guid Id { get; }
 
     public string Title { get; }
 
     public string AmountText { get; }
 
-    public string CurrencyText { get; }
-
     public string TimeText { get; }
 
     public string StatusText { get; }
-
-    public string DirectionText { get; }
 
     private static string TypeText(int type)
         => type switch

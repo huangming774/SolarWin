@@ -10,6 +10,7 @@ namespace SolarWin.ViewModels;
 public partial class WalletViewModel : ObservableObject
 {
     private const int PageSize = 20;
+    private const int MaxTransactions = 150;
     private readonly ISolarApiClient _api;
 
     private Guid? _walletId;
@@ -109,13 +110,10 @@ public partial class WalletViewModel : ObservableObject
         {
             IsLoadingMore = true;
             var page = await _api.GetTransactionsAsync(_walletId.Value, _offset, PageSize).ConfigureAwait(true);
-            foreach (var tx in page)
-            {
-                Transactions.Add(new WalletTransactionItemViewModel(tx, _walletId.Value));
-            }
+            AddTransactions(page, _walletId.Value);
 
             _offset += page.Count;
-            _hasMore = page.Count >= PageSize;
+            _hasMore = page.Count >= PageSize && Transactions.Count < MaxTransactions;
             UpdateStatus();
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(LoadMoreVisibility));
@@ -149,13 +147,10 @@ public partial class WalletViewModel : ObservableObject
             _hasMore = true;
 
             var page = await _api.GetTransactionsAsync(wallet.Id, 0, PageSize).ConfigureAwait(true);
-            foreach (var tx in page)
-            {
-                Transactions.Add(new WalletTransactionItemViewModel(tx, wallet.Id));
-            }
+            AddTransactions(page, wallet.Id);
 
             _offset = page.Count;
-            _hasMore = page.Count >= PageSize;
+            _hasMore = page.Count >= PageSize && Transactions.Count < MaxTransactions;
             UpdateStatus();
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(EmptyVisibility));
@@ -169,6 +164,15 @@ public partial class WalletViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    private void AddTransactions(IEnumerable<SnWalletTransaction> transactions, Guid walletId)
+    {
+        var remaining = MaxTransactions - Transactions.Count;
+        foreach (var transaction in transactions.Take(Math.Max(0, remaining)))
+        {
+            Transactions.Add(new WalletTransactionItemViewModel(transaction, walletId));
         }
     }
 
@@ -195,6 +199,8 @@ public partial class WalletViewModel : ObservableObject
 
     private void UpdateStatus()
     {
-        StatusText = $"共 {Transactions.Count} 笔";
+        StatusText = Transactions.Count >= MaxTransactions
+            ? $"已加载最近 {MaxTransactions} 笔（已达显示上限）"
+            : $"已加载 {Transactions.Count} 笔";
     }
 }

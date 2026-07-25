@@ -1,6 +1,6 @@
 using System.Net;
-using System.Net.Http.Headers;
 using System.Text.Json;
+using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.Models;
 
@@ -14,6 +14,8 @@ namespace SolarWin.Services;
 /// </summary>
 public sealed class AuthService : IAuthService
 {
+    public const string AnonymousHttpClientName = "AuthAnonymous";
+
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(400);
     private const int MaxPollAttempts = 15;
     private static readonly TimeSpan QrPollInterval = TimeSpan.FromSeconds(2);
@@ -22,18 +24,27 @@ public sealed class AuthService : IAuthService
     private readonly ITokenStorage _tokenStorage;
     private readonly SocialLoginService _socialLogin;
     private readonly IAccountSessionService _sessions;
+    private readonly IAccountDbContextFactory _accountDb;
+    private readonly IChatWritePump _writePump;
+    private readonly IHttpClientFactory _httpClientFactory;
     private DateTimeOffset? _accessExpiresAt;
 
     public AuthService(
         ISolarApiClient api,
         ITokenStorage tokenStorage,
         SocialLoginService socialLogin,
-        IAccountSessionService sessions)
+        IAccountSessionService sessions,
+        IAccountDbContextFactory accountDb,
+        IChatWritePump writePump,
+        IHttpClientFactory httpClientFactory)
     {
         _api = api;
         _tokenStorage = tokenStorage;
         _socialLogin = socialLogin;
         _sessions = sessions;
+        _accountDb = accountDb;
+        _writePump = writePump;
+        _httpClientFactory = httpClientFactory;
     }
 
     public bool IsAuthenticated { get; private set; }
@@ -63,6 +74,8 @@ public sealed class AuthService : IAuthService
             {
                 await _sessions.RememberProfileAsync(CurrentAccount, cancellationToken).ConfigureAwait(false);
             }
+
+            BindLocalDatabaseIfPossible();
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
@@ -81,6 +94,7 @@ public sealed class AuthService : IAuthService
             {
                 CurrentAccount = cached;
                 IsAuthenticated = true;
+                BindLocalDatabaseIfPossible();
             }
             else
             {
@@ -248,13 +262,7 @@ public sealed class AuthService : IAuthService
         // RFC 8628 via Padlock OIDC:
         //   POST /padlock/auth/open/device/code  (form: client_id, scope)
         //   POST /padlock/auth/open/token        (form: grant_type=device_code, ...)
-        using var http = new HttpClient
-        {
-            BaseAddress = new Uri(SolarApiClient.BaseUrl.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(30),
-        };
-        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
+        using var http = _httpClientFactory.CreateClient(AnonymousHttpClientName);
 
         var deviceBody = new FormUrlEncodedContent(new Dictionary<string, string>
         {
@@ -358,7 +366,7 @@ public sealed class AuthService : IAuthService
         // QR generate/status are public endpoints — use a bare HttpClient without Bearer.
         // Attaching a stale vault token via SolarApiClient can make Padlock return 401
         // and block the entire unauthenticated login flow.
-        using var http = CreateAnonymousHttpClient();
+        using var http = _httpClientFactory.CreateClient(AnonymousHttpClientName);
 
         var requestBody = new QrGenerateRequest
         {
@@ -618,18 +626,6 @@ public sealed class AuthService : IAuthService
         };
     }
 
-    private static HttpClient CreateAnonymousHttpClient()
-    {
-        var http = new HttpClient
-        {
-            BaseAddress = new Uri(SolarApiClient.BaseUrl.TrimEnd('/') + "/"),
-            Timeout = TimeSpan.FromSeconds(30),
-        };
-        http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        http.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
-        return http;
-    }
-
     public async Task<TokenExchangeResponse> RefreshTokenAsync(CancellationToken cancellationToken = default)
     {
         var refresh = await _tokenStorage.GetRefreshTokenAsync(cancellationToken).ConfigureAwait(false);
@@ -687,6 +683,7 @@ public sealed class AuthService : IAuthService
     public async Task SwitchAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
     {
         await _sessions.SwitchToAsync(accountId, cancellationToken).ConfigureAwait(false);
+        // Session switch already calls IAccountDbContextFactory.Switch; re-bind after profile load.
         await _api.SetBearerTokenAsync(null, cancellationToken).ConfigureAwait(false);
         _accessExpiresAt = null;
         CurrentAccount = null;
@@ -751,6 +748,8 @@ public sealed class AuthService : IAuthService
             {
                 await _sessions.RememberProfileAsync(CurrentAccount, cancellationToken).ConfigureAwait(false);
             }
+
+            BindLocalDatabaseIfPossible();
         }
         catch (SolarApiException)
         {
@@ -759,11 +758,40 @@ public sealed class AuthService : IAuthService
                 && OfflineCache.TryGetJson<SnAccount>($"account_me_{aid:N}", out var cached, allowExpired: true))
             {
                 CurrentAccount = cached;
+                BindLocalDatabaseIfPossible();
             }
             else
             {
                 CurrentAccount = null;
             }
+        }
+    }
+
+    /// <summary>
+    /// Bind per-account SQLite and kick off background MigrateAsync (design v1.0 Phase 1).
+    /// Does not await readiness — L2 readers must WaitUntilReadyAsync first.
+    /// </summary>
+    private void BindLocalDatabaseIfPossible()
+    {
+        var id = CurrentAccount?.Id is { } cid && cid != Guid.Empty
+            ? cid
+            : _sessions.ActiveAccountId is { } aid && aid != Guid.Empty
+                ? aid
+                : (Guid?)null;
+
+        if (id is not { } accountId)
+        {
+            return;
+        }
+
+        try
+        {
+            _accountDb.Bind(accountId);
+            _writePump.EnsureRunning();
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[Auth] Local DB bind failed: {ex.Message}");
         }
     }
 

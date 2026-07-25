@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SolarWin.Helpers;
 using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
@@ -10,12 +11,18 @@ public partial class NotificationsViewModel : ObservableObject
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly MainViewModel _main;
+    private readonly DysonFileImageLoader _imageLoader;
 
-    public NotificationsViewModel(ISolarApiClient api, IToastService toast, MainViewModel main)
+    public NotificationsViewModel(
+        ISolarApiClient api,
+        IToastService toast,
+        MainViewModel main,
+        DysonFileImageLoader imageLoader)
     {
         _api = api;
         _toast = toast;
         _main = main;
+        _imageLoader = imageLoader;
     }
 
     public ObservableCollection<NotificationItemViewModel> Items { get; } = [];
@@ -56,7 +63,7 @@ public partial class NotificationsViewModel : ObservableObject
             var list = await _api.GetNotificationsAsync(offset: 0, take: 20).ConfigureAwait(true);
             foreach (var n in list.OrderByDescending(x => x.CreatedAt))
             {
-                Items.Add(new NotificationItemViewModel(n));
+                Items.Add(new NotificationItemViewModel(n, _imageLoader));
             }
 
             UnreadCount = Items.Count(i => i.IsUnread);

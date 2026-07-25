@@ -16,7 +16,11 @@ public sealed partial class MainPage : Page
         ViewModel = App.Services.GetRequiredService<MainPageViewModel>();
         InitializeComponent();
         ViewModel.LoggedOut += OnLoggedOut;
-        Unloaded += (_, _) => ViewModel.LoggedOut -= OnLoggedOut;
+        Unloaded += (_, _) =>
+        {
+            ViewModel.LoggedOut -= OnLoggedOut;
+            ViewModel.Detach();
+        };
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)

@@ -1,0 +1,225 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.AiPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <Grid Padding="16" RowSpacing="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid ColumnSpacing="12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="AI" />
+                <TextBlock
+                    Opacity="0.7"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                    TextWrapping="WrapWholeWords" />
+            </StackPanel>
+            <StackPanel
+                Grid.Column="1"
+                Orientation="Horizontal"
+                Spacing="8"
+                VerticalAlignment="Top">
+                <ToggleButton
+                    Content="{x:Bind ViewModel.Context1MLabel, Mode=OneWay}"
+                    IsChecked="{x:Bind ViewModel.Use1MContext, Mode=TwoWay}"
+                    ToolTipService.ToolTip="1M 上下文：保留完整对话历史，并请求更大 max_tokens（适合长上下文模型）" />
+                <Button
+                    Command="{x:Bind ViewModel.ToggleSettingsCommand}"
+                    Content="配置"
+                    ToolTipService.ToolTip="API URL / Key / 模型" />
+                <Button Command="{x:Bind ViewModel.NewChatCommand}" Content="新对话" />
+                <ProgressRing
+                    Width="28"
+                    Height="28"
+                    IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Settings card -->
+        <Border
+            Grid.Row="1"
+            Padding="14"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="14"
+            Visibility="{x:Bind ViewModel.SettingsVisibility, Mode=OneWay}">
+            <StackPanel Spacing="10">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <FontIcon FontSize="14" Glyph="&#xE713;" />
+                    <TextBlock FontWeight="SemiBold" Text="API 配置" />
+                    <TextBlock
+                        Opacity="0.55"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        VerticalAlignment="Center"
+                        Text="OpenAI 兼容 · 流式 SSE · 无默认模型" />
+                </StackPanel>
+
+                <TextBox
+                    Header="API URL"
+                    PlaceholderText="https://api.example.com/v1 或完整 …/chat/completions"
+                    Text="{x:Bind ViewModel.ApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <PasswordBox
+                    x:Name="ApiKeyBox"
+                    Header="API Key"
+                    PasswordChanged="ApiKeyBox_OnPasswordChanged"
+                    PlaceholderText="sk-… / 网关 Key" />
+
+                <TextBox
+                    Header="模型名称（必填，无默认）"
+                    PlaceholderText="自行填写，例如 gpt-4o / claude-… / grok-…"
+                    Text="{x:Bind ViewModel.ModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button
+                        Command="{x:Bind ViewModel.SaveSettingsCommand}"
+                        Content="保存配置"
+                        Style="{StaticResource AccentButtonStyle}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        Opacity="0.6"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="本地保存，仅本机可读" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Messages -->
+        <Border
+            Grid.Row="2"
+            Background="{ThemeResource LayerFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="14">
+            <Grid>
+                <ListView
+                    x:Name="MessageList"
+                    Padding="12"
+                    ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
+                    SelectionMode="None">
+                    <ListView.ItemContainerStyle>
+                        <Style TargetType="ListViewItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="Margin" Value="0" />
+                        </Style>
+                    </ListView.ItemContainerStyle>
+                    <ListView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AiBubbleItem">
+                            <Grid Margin="0,6" HorizontalAlignment="{x:Bind Alignment}">
+                                <Border
+                                    MaxWidth="640"
+                                    Padding="12,10"
+                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12">
+                                    <StackPanel Spacing="6">
+                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                            <TextBlock
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Opacity="0.75"
+                                                Text="{x:Bind RoleLabel, Mode=OneWay}" />
+                                            <TextBlock
+                                                FontSize="11"
+                                                Opacity="0.5"
+                                                Text="{x:Bind TimeText, Mode=OneWay}" />
+                                            <TextBlock
+                                                FontSize="11"
+                                                Opacity="0.45"
+                                                Text="{x:Bind ModelHint, Mode=OneWay}" />
+                                        </StackPanel>
+                                        <TextBlock
+                                            IsTextSelectionEnabled="True"
+                                            Opacity="0.65"
+                                            FontSize="12"
+                                            Text="{x:Bind ReasoningText, Mode=OneWay}"
+                                            TextWrapping="WrapWholeWords"
+                                            Visibility="{x:Bind ReasoningVisibility, Mode=OneWay}" />
+                                        <TextBlock
+                                            IsTextSelectionEnabled="True"
+                                            Text="{x:Bind Content, Mode=OneWay}"
+                                            TextWrapping="WrapWholeWords" />
+                                    </StackPanel>
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Opacity="0.45"
+                    Text="在下方输入消息开始对话"
+                    Visibility="{x:Bind EmptyHintVisibility, Mode=OneWay}" />
+            </Grid>
+        </Border>
+
+        <!-- Composer: reasoning effort + input + send -->
+        <Grid
+            Grid.Row="3"
+            ColumnSpacing="10"
+            Padding="4,0,4,4">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ComboBox
+                x:Name="EffortBox"
+                MinWidth="140"
+                VerticalAlignment="Bottom"
+                Header="推理强度"
+                ItemsSource="{x:Bind ViewModel.EffortLabels}"
+                SelectedIndex="{x:Bind ViewModel.SelectedEffortIndex, Mode=TwoWay}"
+                ToolTipService.ToolTip="对应 API 的 reasoning_effort（low / medium / high）；关闭则不传该参数" />
+
+            <TextBox
+                x:Name="DraftBox"
+                Grid.Column="1"
+                AcceptsReturn="True"
+                MinHeight="44"
+                MaxHeight="140"
+                PlaceholderText="输入消息… Ctrl+Enter 发送"
+                Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                TextWrapping="Wrap"
+                KeyDown="DraftBox_OnKeyDown" />
+
+            <StackPanel
+                Grid.Column="2"
+                VerticalAlignment="Bottom"
+                Spacing="6">
+                <Button
+                    MinWidth="72"
+                    Command="{x:Bind ViewModel.CancelSendCommand}"
+                    Content="停止"
+                    Visibility="{x:Bind ViewModel.CancelVisibility, Mode=OneWay}" />
+                <Button
+                    MinWidth="88"
+                    Command="{x:Bind ViewModel.SendCommand}"
+                    Content="发送"
+                    Style="{StaticResource AccentButtonStyle}" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Page>

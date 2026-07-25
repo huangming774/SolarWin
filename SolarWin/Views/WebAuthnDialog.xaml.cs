@@ -23,6 +23,7 @@ public sealed partial class WebAuthnDialog : ContentDialog
         InitializeComponent();
         PrimaryButtonClick += (_, _) => { ResultJson = null; };
         Opened += OnOpened;
+        Closed += OnClosed;
         HintText.Text = _mode == "create"
             ? "注册 Passkey：请在弹出的 Windows Hello / 安全密钥提示中确认。"
             : "使用 Passkey 登录：请确认 Windows Hello 或插入安全密钥。";
@@ -37,7 +38,8 @@ public sealed partial class WebAuthnDialog : ContentDialog
     {
         try
         {
-            await WebView.EnsureCoreWebView2Async();
+            var env = await Helpers.WebView2EnvironmentHolder.GetOrCreateAsync();
+            await WebView.EnsureCoreWebView2Async(env);
             WebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
             WebView.CoreWebView2.WebMessageReceived += OnWebMessage;
             WebView.CoreWebView2.NavigationCompleted += OnNavCompleted;
@@ -177,5 +179,16 @@ public sealed partial class WebAuthnDialog : ContentDialog
             ErrorMessage = ex.Message;
             StatusText.Text = "解析 WebAuthn 结果失败。";
         }
+    }
+
+    private void OnClosed(ContentDialog sender, ContentDialogClosedEventArgs args)
+    {
+        if (WebView.CoreWebView2 is not null)
+        {
+            WebView.CoreWebView2.WebMessageReceived -= OnWebMessage;
+            WebView.CoreWebView2.NavigationCompleted -= OnNavCompleted;
+        }
+
+        WebView.Close();
     }
 }

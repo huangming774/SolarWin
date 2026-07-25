@@ -17,6 +17,7 @@ public sealed partial class CaptchaDialog : ContentDialog
         InitializeComponent();
         PrimaryButtonClick += OnPrimaryCancel;
         Opened += OnOpened;
+        Closed += OnClosed;
     }
 
     /// <summary>Solved captcha token, or null if cancelled.</summary>
@@ -26,16 +27,11 @@ public sealed partial class CaptchaDialog : ContentDialog
     {
         try
         {
-            await WebView.EnsureCoreWebView2Async();
+            var env = await Helpers.WebView2EnvironmentHolder.GetOrCreateAsync();
+            await WebView.EnsureCoreWebView2Async(env);
             WebView.CoreWebView2.Settings.IsWebMessageEnabled = true;
             WebView.CoreWebView2.WebMessageReceived += OnWebMessage;
-            WebView.CoreWebView2.NavigationCompleted += (_, e) =>
-            {
-                if (!e.IsSuccess)
-                {
-                    StatusText.Text = "验证页加载失败，请使用下方手动 token 或重试。";
-                }
-            };
+            WebView.CoreWebView2.NavigationCompleted += OnNavigationCompleted;
 
             var html = BuildHtml(_siteKey);
             WebView.NavigateToString(html);
@@ -44,6 +40,14 @@ public sealed partial class CaptchaDialog : ContentDialog
         catch (Exception ex)
         {
             StatusText.Text = "WebView2 初始化失败：" + ex.Message + "。请粘贴 token。";
+        }
+    }
+
+    private void OnNavigationCompleted(CoreWebView2 sender, CoreWebView2NavigationCompletedEventArgs e)
+    {
+        if (!e.IsSuccess)
+        {
+            StatusText.Text = "验证页加载失败，请使用下方手动 token 或重试。";
         }
     }
 
@@ -104,6 +108,17 @@ public sealed partial class CaptchaDialog : ContentDialog
     private void OnPrimaryCancel(ContentDialog sender, ContentDialogButtonClickEventArgs args)
     {
         _token = null;
+    }
+
+    private void OnClosed(ContentDialog sender, ContentDialogClosedEventArgs args)
+    {
+        if (WebView.CoreWebView2 is not null)
+        {
+            WebView.CoreWebView2.WebMessageReceived -= OnWebMessage;
+            WebView.CoreWebView2.NavigationCompleted -= OnNavigationCompleted;
+        }
+
+        WebView.Close();
     }
 
     private static string BuildHtml(string siteKey)

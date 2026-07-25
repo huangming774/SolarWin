@@ -18,7 +18,7 @@ public partial class ChatRoomListItem : ObservableObject
         Description = room.Description;
 
         // Cache-first; a bare UriSource would 401 on private drive files. Initials until loaded.
-        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar) && cachedAvatar is not null)
+        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth) && cachedAvatar is not null)
         {
             AvatarImage = cachedAvatar;
             InitialsOpacity = 0.0;
@@ -32,9 +32,12 @@ public partial class ChatRoomListItem : ObservableObject
 
         if (summary?.LastMessage is { } last)
         {
-            LastMessagePreview = string.IsNullOrWhiteSpace(last.Content)
-                ? (last.Type is null or "text" ? "（消息）" : $"[{last.Type}]")
-                : last.Content;
+            // Encrypted previews are not decrypted on the list path yet (Phase 6: BLOB in SQLite).
+            LastMessagePreview = last.IsEncrypted
+                ? "[加密消息]"
+                : string.IsNullOrWhiteSpace(last.Content)
+                    ? (last.Type is null or "text" ? "（消息）" : $"[{last.Type}]")
+                    : last.Content;
             LastMessageTime = FormatTime(last.CreatedAt);
         }
         else

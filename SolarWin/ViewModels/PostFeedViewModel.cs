@@ -12,6 +12,7 @@ namespace SolarWin.ViewModels;
 public partial class PostFeedViewModel : ObservableObject
 {
     private const int PageSize = 20;
+    private const int MaxFeedItems = 120;
 
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
@@ -165,6 +166,7 @@ public partial class PostFeedViewModel : ObservableObject
                 Items.Add(new PostItemViewModel(post, _imageLoader));
             }
 
+            TrimFeedWindow();
             StatusText = $"{Items.Count} 条";
             _ = LoadImagesAsync();
         }
@@ -185,6 +187,18 @@ public partial class PostFeedViewModel : ObservableObject
         if (item is not null)
         {
             OpenPost?.Invoke(this, item);
+        }
+    }
+
+    /// <summary>Keep at most <see cref="MaxFeedItems"/> cards; drop from the top (older).</summary>
+    private void TrimFeedWindow()
+    {
+        while (Items.Count > MaxFeedItems)
+        {
+            var old = Items[0];
+            old.FirstImage = null;
+            old.AvatarImage = null;
+            Items.RemoveAt(0);
         }
     }
 
@@ -331,7 +345,7 @@ public partial class PostFeedViewModel : ObservableObject
             {
                 try
                 {
-                    var bmp = await _imageLoader.LoadAsync(item.AvatarUrl).ConfigureAwait(true);
+                    var bmp = await _imageLoader.LoadAsync(item.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
                     if (bmp is not null)
                     {
                         item.AvatarImage = bmp;

@@ -1,12 +1,19 @@
 <Solution>
   <Configurations>
     <Platform Name="Any CPU" />
+    <Platform Name="ARM64" />
     <Platform Name="x64" />
+    <Platform Name="x86" />
   </Configurations>
   <Project Path="SolarWin/SolarWin.csproj">
-    <BuildType Solution="Debug|Any CPU" Project="Release" />
+    <Platform Solution="*|Any CPU" Project="x64" />
+    <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
     <Deploy Solution="*|x64" />
   </Project>
-  <Project Path="SolarWin.Tests/SolarWin.Tests.csproj" />
+  <Project Path="SolarWin.Tests/SolarWin.Tests.csproj">
+    <Platform Solution="*|ARM64" Project="ARM64" />
+    <Platform Solution="*|x86" Project="AnyCPU" />
+  </Project>
 </Solution>

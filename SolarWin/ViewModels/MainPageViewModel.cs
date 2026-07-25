@@ -12,8 +12,13 @@ public partial class MainPageViewModel : ObservableObject
     {
         _authService = authService;
         RefreshAccountDisplay();
-        _authService.AuthenticationStateChanged += (_, _) => RefreshAccountDisplay();
+        _authService.AuthenticationStateChanged += OnAuthenticationStateChanged;
     }
+
+    /// <summary>Detach from the singleton auth service so this transient VM can be collected.</summary>
+    public void Detach() => _authService.AuthenticationStateChanged -= OnAuthenticationStateChanged;
+
+    private void OnAuthenticationStateChanged(object? sender, EventArgs e) => RefreshAccountDisplay();
 
     [ObservableProperty]
     public partial string Greeting { get; set; } = "Solar Network";

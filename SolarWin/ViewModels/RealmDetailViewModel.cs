@@ -302,7 +302,7 @@ public partial class RealmDetailViewModel : ObservableObject
 
         try
         {
-            PictureImage = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            PictureImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
         }
         catch
         {

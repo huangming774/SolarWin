@@ -8,16 +8,32 @@ namespace SolarWin.Services;
 /// </summary>
 public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
 {
+    private const int SampleRate = 16000;
+    private const int BitsPerSample = 16;
+    private const int Channels = 1;
+    private const int MaxRecordingSeconds = 60;
+    private const int MaxPcmBytes = SampleRate * (BitsPerSample / 8) * Channels * MaxRecordingSeconds;
+
     private readonly object _gate = new();
     private WaveInEvent? _waveIn;
     private MemoryStream? _pcm;
     private WaveFileWriter? _writer;
     private Stopwatch? _clock;
     private DispatcherTimerProxy? _tick;
+    private int _pcmBytesWritten;
 
     public bool IsRecording { get; private set; }
 
-    public TimeSpan Elapsed => _clock?.Elapsed ?? TimeSpan.Zero;
+    public TimeSpan Elapsed
+    {
+        get
+        {
+            var elapsed = _clock?.Elapsed ?? TimeSpan.Zero;
+            return elapsed < MaxDuration ? elapsed : MaxDuration;
+        }
+    }
+
+    public TimeSpan MaxDuration { get; } = TimeSpan.FromSeconds(MaxRecordingSeconds);
 
     public event EventHandler<TimeSpan>? ElapsedChanged;
 
@@ -31,8 +47,8 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
             }
 
             _pcm = new MemoryStream();
-            // 16 kHz mono is enough for speech and keeps payloads small.
-            var format = new WaveFormat(16000, 16, 1);
+            _pcmBytesWritten = 0;
+            var format = new WaveFormat(SampleRate, BitsPerSample, Channels);
             _writer = new WaveFileWriter(new IgnoreDisposeStream(_pcm), format);
             _waveIn = new WaveInEvent
             {
@@ -79,7 +95,7 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
             _tick?.Stop();
             _tick = null;
             _clock.Stop();
-            var durationMs = (int)Math.Max(1, _clock.Elapsed.TotalMilliseconds);
+            var durationMs = (int)Math.Max(1, Elapsed.TotalMilliseconds);
 
             _writer.Flush();
             _writer.Dispose();
@@ -90,21 +106,22 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
             _waveIn.Dispose();
             _waveIn = null;
 
-            var bytes = _pcm.ToArray();
-            _pcm.Dispose();
+            var stream = _pcm;
             _pcm = null;
             _clock = null;
+            _pcmBytesWritten = 0;
             IsRecording = false;
 
-            // Header-only / empty capture
-            if (bytes.Length < 100 || durationMs < 200)
+            if (stream.Length < 100 || durationMs < 200)
             {
+                stream.Dispose();
                 return Task.FromResult<VoiceRecordingResult?>(null);
             }
 
+            stream.Position = 0;
             var result = new VoiceRecordingResult
             {
-                WavBytes = bytes,
+                WavStream = stream,
                 DurationMs = durationMs,
                 FileName = $"voice_{DateTimeOffset.Now:yyyyMMdd_HHmmss}.wav",
                 ContentType = "audio/wav",
@@ -149,7 +166,15 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
                 return;
             }
 
-            _writer.Write(e.Buffer, 0, e.BytesRecorded);
+            var remaining = MaxPcmBytes - _pcmBytesWritten;
+            if (remaining <= 0)
+            {
+                return;
+            }
+
+            var bytesToWrite = Math.Min(e.BytesRecorded, remaining);
+            _writer.Write(e.Buffer, 0, bytesToWrite);
+            _pcmBytesWritten += bytesToWrite;
         }
     }
 
@@ -198,6 +223,7 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
 
         _pcm = null;
         _clock = null;
+        _pcmBytesWritten = 0;
     }
 
     public void Dispose()

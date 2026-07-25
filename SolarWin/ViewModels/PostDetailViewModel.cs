@@ -14,10 +14,16 @@ public partial class PostDetailViewModel : ObservableObject
 {
     private const int ReplyPageSize = 20;
 
+    /// <summary>Stop paging past this many replies — long threads otherwise accumulate unbounded.</summary>
+    private const int MaxReplies = 500;
+
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly IAuthService _auth;
+    private readonly Dictionary<PostItemViewModel, CancellationTokenSource> _replyImageRequests = [];
+    private HashSet<PostItemViewModel> _replyImageWindow = [];
+    private int _replyImageWindowVersion;
 
     private Guid _postId;
     private int _replyOffset;
@@ -213,6 +219,7 @@ public partial class PostDetailViewModel : ObservableObject
             IsBusy = true;
             ErrorMessage = null;
             Images.Clear();
+            ClearReplyImageWindow(clearImages: true);
             Replies.Clear();
             _replyOffset = 0;
 
@@ -464,12 +471,11 @@ public partial class PostDetailViewModel : ObservableObject
             };
 
             var created = await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
-            Replies.Insert(0, new PostItemViewModel(created, _imageLoader));
+            Replies.Insert(0, new PostItemViewModel(created, _imageLoader, bindCachedImages: false));
             ReplyContent = string.Empty;
             RepliesCount++;
             RepliesHeader = $"回复 ({RepliesCount})";
             RefreshStats();
-            _ = LoadReplyImagesAsync();
             _toast.Success("已回复");
         }
         catch (SolarApiException ex)
@@ -703,13 +709,12 @@ public partial class PostDetailViewModel : ObservableObject
             var list = await _api.GetPostRepliesAsync(_postId, _replyOffset, ReplyPageSize).ConfigureAwait(true);
             foreach (var reply in list)
             {
-                Replies.Add(new PostItemViewModel(reply, _imageLoader));
+                Replies.Add(new PostItemViewModel(reply, _imageLoader, bindCachedImages: false));
             }
 
             _replyOffset += list.Count;
-            HasMoreReplies = list.Count >= ReplyPageSize;
+            HasMoreReplies = list.Count >= ReplyPageSize && Replies.Count < MaxReplies;
             RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
-            _ = LoadReplyImagesAsync();
         }
         finally
         {
@@ -834,7 +839,7 @@ public partial class PostDetailViewModel : ObservableObject
 
         foreach (var url in item.ImageUrls)
         {
-            var bmp = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.DetailImageDecodeWidth).ConfigureAwait(true);
             if (bmp is not null)
             {
                 Images.Add(bmp);
@@ -856,7 +861,7 @@ public partial class PostDetailViewModel : ObservableObject
 
         foreach (var url in urls)
         {
-            var bmp = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.DetailImageDecodeWidth).ConfigureAwait(true);
             if (bmp is not null)
             {
                 Images.Add(bmp);
@@ -868,25 +873,154 @@ public partial class PostDetailViewModel : ObservableObject
 
     private async Task LoadAvatarAsync(string url)
     {
-        var bmp = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+        var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
         if (bmp is not null)
         {
             AvatarImage = bmp;
         }
     }
 
-    private async Task LoadReplyImagesAsync()
+    public void UpdateVisibleReplyImageWindow(
+        IReadOnlyCollection<PostItemViewModel> visibleItems,
+        int prefetchCount)
     {
-        foreach (var item in Replies.ToList())
+        var indexes = visibleItems
+            .Select(item => Replies.IndexOf(item))
+            .Where(index => index >= 0)
+            .ToList();
+
+        if (indexes.Count == 0)
         {
-            if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
+            ClearReplyImageWindow(clearImages: true);
+            return;
+        }
+
+        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
+        var end = Math.Min(Replies.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
+        var window = Replies
+            .Skip(start)
+            .Take(end - start + 1)
+            .ToHashSet();
+
+        if (!_replyImageWindow.SetEquals(window))
+        {
+            foreach (var item in _replyImageRequests.Keys.ToList())
             {
-                var bmp = await _imageLoader.LoadSafeAsync(item.AvatarUrl).ConfigureAwait(true);
-                if (bmp is not null)
+                if (!window.Contains(item))
                 {
-                    item.AvatarImage = bmp;
+                    CancelReplyImageRequest(item);
                 }
             }
+
+            foreach (var item in Replies)
+            {
+                if (!window.Contains(item))
+                {
+                    item.AvatarImage = null;
+                }
+            }
+
+            _replyImageWindow = window;
+        }
+
+        var version = _replyImageWindowVersion;
+        foreach (var item in window)
+        {
+            LoadReplyAvatarForVisibleItem(item, version);
+        }
+    }
+
+    public void ClearVisibleReplyImageWindow()
+        => ClearReplyImageWindow(clearImages: true);
+
+    private void LoadReplyAvatarForVisibleItem(PostItemViewModel item, int version)
+    {
+        if (!item.HasAvatar
+            || item.AvatarImage is not null
+            || string.IsNullOrWhiteSpace(item.AvatarUrl)
+            || _replyImageRequests.ContainsKey(item))
+        {
+            return;
+        }
+
+        var cts = new CancellationTokenSource();
+        _replyImageRequests[item] = cts;
+        _ = LoadReplyAvatarAsync(item, version, cts);
+    }
+
+    private async Task LoadReplyAvatarAsync(
+        PostItemViewModel item,
+        int version,
+        CancellationTokenSource requestCts)
+    {
+        try
+        {
+            BitmapImage? image;
+            if (!_imageLoader.TryGetCached(
+                    item.AvatarUrl,
+                    out image,
+                    DysonFileImageLoader.AvatarDecodeWidth))
+            {
+                image = await _imageLoader
+                    .LoadSafeAsync(item.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth, requestCts.Token)
+                    .ConfigureAwait(true);
+            }
+
+            if (image is not null
+                && !requestCts.IsCancellationRequested
+                && version == _replyImageWindowVersion
+                && _replyImageWindow.Contains(item)
+                && Replies.Contains(item))
+            {
+                item.AvatarImage = image;
+            }
+        }
+        finally
+        {
+            var shouldRetry = false;
+            if (_replyImageRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
+            {
+                _replyImageRequests.Remove(item);
+                shouldRetry = requestCts.IsCancellationRequested
+                              && _replyImageWindow.Contains(item)
+                              && Replies.Contains(item);
+            }
+
+            requestCts.Dispose();
+            if (shouldRetry)
+            {
+                LoadReplyAvatarForVisibleItem(item, _replyImageWindowVersion);
+            }
+        }
+    }
+
+    private void CancelReplyImageRequest(PostItemViewModel item)
+    {
+        if (_replyImageRequests.TryGetValue(item, out var cts))
+        {
+            cts.Cancel();
+        }
+    }
+
+    private void ClearReplyImageWindow(bool clearImages)
+    {
+        _replyImageWindowVersion++;
+        foreach (var cts in _replyImageRequests.Values)
+        {
+            cts.Cancel();
+        }
+
+        _replyImageRequests.Clear();
+        _replyImageWindow = [];
+
+        if (!clearImages)
+        {
+            return;
+        }
+
+        foreach (var item in Replies)
+        {
+            item.AvatarImage = null;
         }
     }
 

@@ -18,9 +18,12 @@ public static class AvatarImageHelper
 
         try
         {
-            var bmp = new BitmapImage();
-            bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-            bmp.UriSource = uri;
+            var bmp = new BitmapImage
+            {
+                CreateOptions = BitmapCreateOptions.IgnoreImageCache,
+                DecodePixelWidth = DysonFileImageLoader.AvatarDecodeWidth,
+                UriSource = uri,
+            };
             return bmp;
         }
         catch
@@ -77,7 +80,10 @@ public static class AvatarImageHelper
             }
 
             stream.Seek(0);
-            var bmp = new BitmapImage();
+            var bmp = new BitmapImage
+            {
+                DecodePixelWidth = DysonFileImageLoader.AvatarDecodeWidth,
+            };
             await bmp.SetSourceAsync(stream).AsTask(cancellationToken).ConfigureAwait(false);
             return bmp;
         }

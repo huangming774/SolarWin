@@ -43,6 +43,7 @@
                         <Grid Padding="8,10" ColumnSpacing="12" Opacity="{x:Bind CardOpacity}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
@@ -55,7 +56,31 @@
                                 Fill="{ThemeResource AccentFillColorDefaultBrush}"
                                 Opacity="{x:Bind UnreadOpacity}" />
 
-                            <StackPanel Grid.Column="1" Spacing="2">
+                            <Grid
+                                Grid.Column="1"
+                                Width="40"
+                                Height="40">
+                                <Ellipse
+                                    Width="40"
+                                    Height="40"
+                                    Fill="{ThemeResource ControlFillColorSecondaryBrush}" />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="14"
+                                    FontWeight="SemiBold"
+                                    Opacity="{x:Bind InitialsOpacity, Mode=OneWay}"
+                                    Text="{x:Bind Initials}" />
+                                <Ellipse Width="40" Height="40" Opacity="{x:Bind AvatarOpacity, Mode=OneWay}">
+                                    <Ellipse.Fill>
+                                        <ImageBrush
+                                            ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
+                                            Stretch="UniformToFill" />
+                                    </Ellipse.Fill>
+                                </Ellipse>
+                            </Grid>
+
+                            <StackPanel Grid.Column="2" Spacing="2">
                                 <TextBlock
                                     FontWeight="SemiBold"
                                     Opacity="{x:Bind CardOpacity}"
@@ -71,7 +96,7 @@
                                     Text="{x:Bind Topic}" />
                             </StackPanel>
 
-                            <StackPanel Grid.Column="2" Spacing="4" HorizontalAlignment="Right">
+                            <StackPanel Grid.Column="3" Spacing="4" HorizontalAlignment="Right">
                                 <TextBlock
                                     Opacity="0.6"
                                     Style="{StaticResource CaptionTextBlockStyle}"

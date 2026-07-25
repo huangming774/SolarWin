@@ -18,6 +18,9 @@ public sealed partial class MainWindow : Window
     private bool _forceClose;
     private bool _isInTray;
 
+    /// <summary>Raised on the UI thread when the window hides to / returns from the tray.</summary>
+    public event EventHandler<bool>? TrayStateChanged;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -138,6 +141,8 @@ public sealed partial class MainWindow : Window
                 // ignore
             }
         }
+
+        TrayStateChanged?.Invoke(this, false);
     }
 
     public void HideToTray()
@@ -170,6 +175,7 @@ public sealed partial class MainWindow : Window
 
             tray.SetToolTip("Solar Network — 已在托盘运行，点击恢复");
             tray.ShowBalloon("Solar Network", "已最小化到系统托盘。\n点击托盘图标可恢复窗口。");
+            TrayStateChanged?.Invoke(this, true);
         }
         catch
         {

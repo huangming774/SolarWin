@@ -419,7 +419,7 @@ public partial class PublisherDetailViewModel : ObservableObject
 
         try
         {
-            PictureImage = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            PictureImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
         }
         catch
         {

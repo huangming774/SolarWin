@@ -1,4 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Microsoft.UI.Xaml.Media.Imaging;
+using SolarWin.Helpers;
 using SolarWin.Models;
 
 namespace SolarWin.ViewModels;
@@ -14,7 +16,7 @@ public partial class FileItemViewModel : ObservableObject
         SizeText = file.IsFolder ? "—" : FormatSize(file.Size);
         DateText = FormatDate(file.UpdatedAt ?? file.CreatedAt);
         ThumbnailUrl = ResolveThumbnail(file);
-        HasThumbnail = !string.IsNullOrWhiteSpace(ThumbnailUrl) && !file.IsFolder;
+        CanLoadThumbnail = !string.IsNullOrWhiteSpace(ThumbnailUrl) && !file.IsFolder;
         IconGlyph = file.IsFolder ? "\uE8B7" : GuessFileGlyph(file.MimeType, file.Name);
         MimeType = file.MimeType ?? string.Empty;
         DownloadUrl = file.Url;
@@ -34,13 +36,21 @@ public partial class FileItemViewModel : ObservableObject
 
     public string? ThumbnailUrl { get; }
 
-    public bool HasThumbnail { get; }
+    public bool CanLoadThumbnail { get; }
 
     public string IconGlyph { get; }
 
     public string MimeType { get; }
 
     public string? DownloadUrl { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasThumbnail))]
+    [NotifyPropertyChangedFor(nameof(ThumbnailOpacity))]
+    [NotifyPropertyChangedFor(nameof(IconOpacity))]
+    public partial BitmapImage? Thumbnail { get; set; }
+
+    public bool HasThumbnail => Thumbnail is not null;
 
     public double ThumbnailOpacity => HasThumbnail ? 1.0 : 0.0;
 
@@ -53,12 +63,7 @@ public partial class FileItemViewModel : ObservableObject
             return null;
         }
 
-        if (!string.IsNullOrWhiteSpace(file.Url) && IsImage(file.MimeType, file.Name))
-        {
-            return file.Url;
-        }
-
-        // Some deployments put thumbnail url in file_meta.
+        // Prefer server-provided thumbnails/previews when the gateway includes them.
         if (file.FileMeta is not null)
         {
             foreach (var key in new[] { "thumbnail_url", "thumb_url", "preview_url" })
@@ -68,24 +73,13 @@ public partial class FileItemViewModel : ObservableObject
                     var s = el.GetString();
                     if (!string.IsNullOrWhiteSpace(s))
                     {
-                        return s;
+                        return CloudFileUrlHelper.Normalize(s);
                     }
                 }
             }
         }
 
         return null;
-    }
-
-    private static bool IsImage(string? mime, string? name)
-    {
-        if (!string.IsNullOrWhiteSpace(mime) && mime.StartsWith("image/", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        var ext = Path.GetExtension(name ?? string.Empty);
-        return ext is ".png" or ".jpg" or ".jpeg" or ".gif" or ".webp" or ".bmp";
     }
 
     private static string GuessFileGlyph(string? mime, string? name)

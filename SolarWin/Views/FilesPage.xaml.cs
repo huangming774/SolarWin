@@ -10,6 +10,10 @@ namespace SolarWin.Views;
 
 public sealed partial class FilesPage : Page
 {
+    private const int ThumbnailPrefetchItemCount = 12;
+
+    private readonly HashSet<FileItemViewModel> _visibleThumbnailItems = [];
+
     public FilesViewModel ViewModel { get; }
 
     public string RecycleBinButtonText => ViewModel.IsRecycleBinMode ? "退出回收站" : "回收站";
@@ -18,13 +22,15 @@ public sealed partial class FilesPage : Page
     {
         ViewModel = App.Services.GetRequiredService<FilesViewModel>();
         InitializeComponent();
-        ViewModel.PropertyChanged += (_, e) =>
+        ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
+    }
+
+    private void ViewModel_OnPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(FilesViewModel.IsRecycleBinMode))
         {
-            if (e.PropertyName is nameof(FilesViewModel.IsRecycleBinMode))
-            {
-                Bindings.Update();
-            }
-        };
+            Bindings.Update();
+        }
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -32,14 +38,31 @@ public sealed partial class FilesPage : Page
         base.OnNavigatedTo(e);
         if (ViewModel.LoadCommand.CanExecute(null))
         {
+            _visibleThumbnailItems.Clear();
             ViewModel.LoadCommand.Execute(null);
         }
+    }
+
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        _visibleThumbnailItems.Clear();
+        ViewModel.CancelAllThumbnailRequests(resetThumbnails: false);
+        base.OnNavigatedFrom(e);
+    }
+
+    private void FilesPage_OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        ViewModel.PropertyChanged -= ViewModel_OnPropertyChanged;
+        _visibleThumbnailItems.Clear();
+        ViewModel.CancelAllThumbnailRequests(resetThumbnails: false);
+        ViewModel.Dispose();
     }
 
     private void Refresh_OnClick(object sender, RoutedEventArgs e)
     {
         if (ViewModel.LoadCommand.CanExecute(null))
         {
+            _visibleThumbnailItems.Clear();
             ViewModel.LoadCommand.Execute(null);
         }
     }
@@ -353,6 +376,25 @@ public sealed partial class FilesPage : Page
         {
             ViewModel.IsBusy = false;
         }
+    }
+
+    private void FileGrid_OnContainerContentChanging(ListViewBase sender, ContainerContentChangingEventArgs args)
+    {
+        if (args.Item is not FileItemViewModel item)
+        {
+            return;
+        }
+
+        if (args.InRecycleQueue)
+        {
+            _visibleThumbnailItems.Remove(item);
+            ViewModel.UpdateVisibleThumbnailWindow(_visibleThumbnailItems, ThumbnailPrefetchItemCount);
+            return;
+        }
+
+        _visibleThumbnailItems.RemoveWhere(candidate => !ViewModel.Files.Contains(candidate));
+        _visibleThumbnailItems.Add(item);
+        ViewModel.UpdateVisibleThumbnailWindow(_visibleThumbnailItems, ThumbnailPrefetchItemCount);
     }
 
     private void FileGrid_OnItemClick(object sender, ItemClickEventArgs e)

@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
@@ -9,7 +10,7 @@ namespace SolarWin.ViewModels;
 
 /// <summary>
 /// Chat room list UI (singleton lifetime).
-/// API payloads are held by <see cref="IChatDataCache"/>; this VM projects them to the list.
+/// Rooms authority: SQLite (Phase 6); L1 + UI are projections.
 /// </summary>
 public partial class ChatViewModel : ObservableObject
 {
@@ -19,6 +20,7 @@ public partial class ChatViewModel : ObservableObject
     private readonly IChatWebSocketService _ws;
     private readonly IChatMessageNotifier _messageNotifier;
     private readonly IChatDataCache _cache;
+    private readonly IRoomLocalStore _roomStore;
     private readonly DysonFileImageLoader _imageLoader;
 
     private long _roomsSyncTimestamp;
@@ -26,6 +28,7 @@ public partial class ChatViewModel : ObservableObject
     private int _loadGeneration;
     private bool _wsHooked;
     private CancellationTokenSource? _userSearchCts;
+    private CancellationTokenSource? _wsRefreshCts;
 
     public ChatViewModel(
         ISolarApiClient api,
@@ -34,6 +37,7 @@ public partial class ChatViewModel : ObservableObject
         IChatWebSocketService ws,
         IChatMessageNotifier messageNotifier,
         IChatDataCache cache,
+        IRoomLocalStore roomStore,
         DysonFileImageLoader imageLoader)
     {
         _api = api;
@@ -42,6 +46,7 @@ public partial class ChatViewModel : ObservableObject
         _ws = ws;
         _messageNotifier = messageNotifier;
         _cache = cache;
+        _roomStore = roomStore;
         _imageLoader = imageLoader;
         _authService.AuthenticationStateChanged += OnAuthStateChanged;
         BindCacheToAccount();
@@ -239,17 +244,44 @@ public partial class ChatViewModel : ObservableObject
 
     private void OnWsPacket(object? sender, ChatWsPacket packet)
     {
-        // List-level: any message traffic → soft refresh room list
-        if (packet.Type.StartsWith("messages.", StringComparison.OrdinalIgnoreCase) ||
-            packet.Type.StartsWith("chat.", StringComparison.OrdinalIgnoreCase))
+        // List-level: any message traffic → soft refresh room list, debounced —
+        // a busy room otherwise triggers a full HTTP + SQLite reload per packet.
+        if (!packet.Type.StartsWith("messages.", StringComparison.OrdinalIgnoreCase) &&
+            !packet.Type.StartsWith("chat.", StringComparison.OrdinalIgnoreCase))
         {
-            if (App.DispatcherQueue is { } dq && !dq.HasThreadAccess)
-            {
-                dq.TryEnqueue(() => _ = RefreshAsync(silent: true));
-                return;
-            }
+            return;
+        }
 
-            _ = RefreshAsync(silent: true);
+        if (App.DispatcherQueue is { } dq && !dq.HasThreadAccess)
+        {
+            dq.TryEnqueue(ScheduleWsRefresh);
+            return;
+        }
+
+        ScheduleWsRefresh();
+    }
+
+    private void ScheduleWsRefresh()
+    {
+        _wsRefreshCts?.Cancel();
+        _wsRefreshCts?.Dispose();
+        _wsRefreshCts = new CancellationTokenSource();
+        _ = RefreshAfterWsQuietAsync(_wsRefreshCts.Token);
+    }
+
+    private async Task RefreshAfterWsQuietAsync(CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2), token).ConfigureAwait(true);
+            if (!token.IsCancellationRequested)
+            {
+                await RefreshAsync(silent: true).ConfigureAwait(true);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // superseded by a newer packet
         }
     }
 
@@ -259,8 +291,8 @@ public partial class ChatViewModel : ObservableObject
         EnsureRealtimeStarted();
         BindCacheToAccount();
 
-        // Project singleton cache → UI before network.
-        ApplyRoomsFromCacheIfEmpty();
+        // Project L1 / SQLite → UI before network (fully async; no sync-over-async).
+        await ApplyRoomsFromCacheIfEmptyAsync().ConfigureAwait(true);
 
         // Soft entry: show cache immediately, refresh in background if stale.
         if (IsCacheFresh)
@@ -279,8 +311,8 @@ public partial class ChatViewModel : ObservableObject
         await RefreshAsync(silent: false).ConfigureAwait(true);
     }
 
-    /// <summary>Fill list from IChatDataCache / disk without hitting the network.</summary>
-    private void ApplyRoomsFromCacheIfEmpty()
+    /// <summary>Fill list from L1 / SQLite (Phase 6) without hitting the network.</summary>
+    private async Task ApplyRoomsFromCacheIfEmptyAsync()
     {
         if (Rooms.Count > 0)
         {
@@ -289,7 +321,9 @@ public partial class ChatViewModel : ObservableObject
 
         if (!_cache.TryGetRooms(out var rooms) || rooms.Count == 0)
         {
-            if (!_cache.TryHydrateRoomsFromDisk() || !_cache.TryGetRooms(out rooms) || rooms.Count == 0)
+            if (!await _cache.HydrateRoomsFromDiskAsync().ConfigureAwait(false)
+                || !_cache.TryGetRooms(out rooms)
+                || rooms.Count == 0)
             {
                 return;
             }
@@ -299,25 +333,69 @@ public partial class ChatViewModel : ObservableObject
         var meId = _authService.CurrentAccount?.Id;
         var dict = summary as Dictionary<string, ChatSummaryResponse>
                    ?? summary.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase);
-        MergeRooms(BuildItems(rooms.ToList(), dict.Count > 0 ? dict : null, meId));
+        var items = BuildItems(rooms.ToList(), dict.Count > 0 ? dict : null, meId);
 
-        if (_cache.TotalUnread is { } unread)
+        // MergeRooms / collection mutations must run on UI when we resumed off-UI after await.
+        await RunOnUiAsync(() =>
         {
-            TotalUnreadCount = unread;
-        }
-
-        if (_cache.TryGetInvites(out var invites) && invites.Count > 0)
-        {
-            PendingInvites.Clear();
-            foreach (var room in invites)
+            if (Rooms.Count > 0)
             {
-                PendingInvites.Add(new ChatRoomListItem(room, null, _imageLoader, meId));
+                return;
             }
 
-            PendingInviteCount = PendingInvites.Count;
+            MergeRooms(items);
+
+            if (_cache.TotalUnread is { } unread)
+            {
+                TotalUnreadCount = unread;
+            }
+            else
+            {
+                TotalUnreadCount = Rooms.Sum(r => r.UnreadCount);
+            }
+
+            if (_cache.TryGetInvites(out var invites) && invites.Count > 0)
+            {
+                PendingInvites.Clear();
+                foreach (var room in invites)
+                {
+                    PendingInvites.Add(new ChatRoomListItem(room, null, _imageLoader, meId));
+                }
+
+                PendingInviteCount = PendingInvites.Count;
+            }
+
+            RefreshStatusText();
+        }).ConfigureAwait(true);
+    }
+
+    private static Task RunOnUiAsync(Action action)
+    {
+        var dq = App.DispatcherQueue;
+        if (dq is null || dq.HasThreadAccess)
+        {
+            action();
+            return Task.CompletedTask;
         }
 
-        RefreshStatusText();
+        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!dq.TryEnqueue(() =>
+            {
+                try
+                {
+                    action();
+                    tcs.TrySetResult();
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            }))
+        {
+            tcs.TrySetCanceled();
+        }
+
+        return tcs.Task;
     }
 
     [RelayCommand]
@@ -346,7 +424,8 @@ public partial class ChatViewModel : ObservableObject
             try
             {
                 rooms = await _api.GetChatRoomsAsync().ConfigureAwait(true);
-                _cache.SetRooms(rooms, persistDisk: true);
+                // L1 only until summary arrives; then PersistRoomsFull with remove-missing.
+                _cache.SetRooms(rooms, persistSqlite: false);
             }
             catch (SolarApiException ex)
             {
@@ -359,12 +438,14 @@ public partial class ChatViewModel : ObservableObject
                         StatusText = "内存缓存会话列表";
                     }
                 }
-                else if (_cache.TryHydrateRoomsFromDisk() && _cache.TryGetRooms(out var disk) && disk.Count > 0)
+                else if (await _cache.HydrateRoomsFromDiskAsync().ConfigureAwait(false)
+                         && _cache.TryGetRooms(out var disk)
+                         && disk.Count > 0)
                 {
                     rooms = disk.ToList();
                     if (!silent)
                     {
-                        StatusText = "离线缓存会话列表";
+                        StatusText = "本地库会话列表";
                     }
                 }
                 else if (!HasCache)
@@ -402,6 +483,12 @@ public partial class ChatViewModel : ObservableObject
             if (gen != _loadGeneration)
             {
                 return;
+            }
+
+            // Phase 6: full pull → SQLite upsert + delete missing (no JSON rewrite).
+            if (rooms.Count > 0)
+            {
+                _cache.PersistRoomsFull(rooms, summary, removeMissing: true);
             }
 
             var next = BuildItems(rooms, summary, meId);
@@ -466,8 +553,17 @@ public partial class ChatViewModel : ObservableObject
     public void MarkRoomReadLocal(Guid roomId)
     {
         var item = Rooms.FirstOrDefault(r => r.RoomId == roomId);
+        var lastSeq = 0L;
+        // Prefer preview sequence from list row time is not enough; use cache message L1 if any.
+        if (_cache.TryGetRoomMessages(roomId, out var entry) && entry.Messages.Count > 0)
+        {
+            lastSeq = entry.Messages.Max(m => m.RoomSequence);
+        }
+
         item?.MarkReadLocal();
         TotalUnreadCount = Rooms.Sum(r => r.UnreadCount);
+        // Phase 6: single-row SQLite UPDATE (not whole JSON rewrite).
+        _cache.MarkRoomReadPersisted(roomId, lastSeq);
         RefreshStatusText();
     }
 
@@ -738,7 +834,7 @@ public partial class ChatViewModel : ObservableObject
     {
         var pending = UserSearchResults
             .Where(u => u.HasAvatar && u.AvatarImage is null && !string.IsNullOrWhiteSpace(u.AvatarUrl))
-            .Select(u => (Item: u, Task: _imageLoader.LoadSafeAsync(u.AvatarUrl!)))
+            .Select(u => (Item: u, Task: _imageLoader.LoadSafeAsync(u.AvatarUrl!, DysonFileImageLoader.AvatarDecodeWidth)))
             .ToList();
 
         if (pending.Count == 0)
@@ -936,10 +1032,17 @@ public partial class ChatViewModel : ObservableObject
                     row.UnreadCount = s.UnreadCount;
                     if (s.LastMessage is { } last)
                     {
-                        row.LastMessagePreview = string.IsNullOrWhiteSpace(last.Content)
-                            ? $"[{last.Type ?? "消息"}]"
-                            : last.Content!;
+                        row.LastMessagePreview = last.IsEncrypted
+                            ? "[加密消息]"
+                            : string.IsNullOrWhiteSpace(last.Content)
+                                ? $"[{last.Type ?? "消息"}]"
+                                : last.Content!;
                         row.LastMessageTime = last.CreatedAt?.ToLocalTime().ToString("HH:mm") ?? row.LastMessageTime;
+                        _cache.UpdateRoomPreviewPersisted(s.RoomId, last, s.UnreadCount);
+                    }
+                    else
+                    {
+                        _cache.UpdateRoomPreviewPersisted(s.RoomId, null, s.UnreadCount);
                     }
                 }
 
@@ -1200,7 +1303,7 @@ public partial class ChatViewModel : ObservableObject
     {
         var pending = Rooms
             .Where(r => !string.IsNullOrWhiteSpace(r.AvatarUrl) && r.AvatarImage is null)
-            .Select(r => (Room: r, Task: _imageLoader.LoadSafeAsync(r.AvatarUrl)))
+            .Select(r => (Room: r, Task: _imageLoader.LoadSafeAsync(r.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth)))
             .ToList();
 
         if (pending.Count > 0)

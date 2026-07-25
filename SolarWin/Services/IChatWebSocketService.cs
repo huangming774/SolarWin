@@ -25,7 +25,7 @@ public interface IChatWebSocketService : IAsyncDisposable
 
     Task DisconnectAsync();
 
-    bool TrySendPing();
+    Task<bool> TrySendPingAsync(CancellationToken cancellationToken = default);
 }
 
 public sealed class ChatWsPacket

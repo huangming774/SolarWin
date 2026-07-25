@@ -58,7 +58,7 @@
                 Orientation="Horizontal"
                 Spacing="8"
                 VerticalAlignment="Top">
-                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新全部" />
+                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新已访问" />
                 <ProgressRing
                     Width="28"
                     Height="28"
@@ -79,7 +79,10 @@
         </StackPanel>
 
         <!-- Sections -->
-        <Pivot Grid.Row="2" SelectedIndex="{x:Bind ViewModel.SelectedSectionIndex, Mode=TwoWay}">
+        <Pivot
+            Grid.Row="2"
+            SelectedIndex="{x:Bind ViewModel.SelectedSectionIndex, Mode=TwoWay}"
+            SelectionChanged="Sections_OnSelectionChanged">
             <!-- 概览 -->
             <PivotItem Header="概览">
                 <ScrollViewer Padding="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
@@ -373,12 +376,14 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.AcceptFriendCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="AcceptFriendCommand"
                                                 Content="接受" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.DeclineFriendCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="DeclineFriendCommand"
                                                 Content="拒绝" />
                                         </StackPanel>
                                     </Grid>
@@ -405,21 +410,25 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.StartDirectChatWithFriendCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="StartDirectChatWithFriendCommand"
                                                 Content="私聊"
                                                 Style="{StaticResource AccentButtonStyle}" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenFriendProfileCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="OpenFriendProfileCommand"
                                                 Content="资料" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.SetCloseFriendCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="SetCloseFriendCommand"
                                                 Content="密友" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.RemoveFriendCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="RemoveFriendCommand"
                                                 Content="移除" />
                                         </StackPanel>
                                     </Grid>
@@ -472,13 +481,15 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenRealmDetailCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="OpenRealmDetailCommand"
                                                 Content="详情"
                                                 Style="{StaticResource AccentButtonStyle}" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.LeaveRealmCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="LeaveRealmCommand"
                                                 Content="退出" />
                                         </StackPanel>
                                     </Grid>
@@ -504,13 +515,15 @@
                                         </StackPanel>
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.OpenRealmDetailCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="OpenRealmDetailCommand"
                                                 Content="详情"
                                                 Style="{StaticResource AccentButtonStyle}" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.JoinRealmCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="JoinRealmCommand"
                                                 Content="加入" />
                                         </StackPanel>
                                     </Grid>
@@ -533,12 +546,14 @@
                                         <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6">
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.AcceptRealmInviteCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="AcceptRealmInviteCommand"
                                                 Content="接受" />
                                             <Button
-                                                Command="{Binding ElementName=RootPage, Path=ViewModel.DeclineRealmInviteCommand}"
-                                                CommandParameter="{x:Bind}"
+                                                Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="DeclineRealmInviteCommand"
                                                 Content="拒绝" />
                                         </StackPanel>
                                     </Grid>
@@ -595,8 +610,9 @@
                                         </StackPanel>
                                         <Button
                                             Grid.Column="1"
-                                            Command="{Binding ElementName=RootPage, Path=ViewModel.ActivateBadgeCommand}"
-                                            CommandParameter="{x:Bind}"
+                                            Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="ActivateBadgeCommand"
                                             Content="设为展示" />
                                     </Grid>
                                 </DataTemplate>
@@ -652,8 +668,9 @@
                                         </StackPanel>
                                         <Button
                                             Grid.Column="1"
-                                            Command="{Binding ElementName=RootPage, Path=ViewModel.DeleteEventCommand}"
-                                            CommandParameter="{x:Bind}"
+                                            Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="DeleteEventCommand"
                                             Content="删除" />
                                     </Grid>
                                 </DataTemplate>
@@ -726,8 +743,9 @@
                                         </StackPanel>
                                         <Button
                                             Grid.Column="1"
-                                            Command="{Binding ElementName=RootPage, Path=ViewModel.DeletePinCommand}"
-                                            CommandParameter="{x:Bind}"
+                                            Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="DeletePinCommand"
                                             Content="删除" />
                                     </Grid>
                                 </DataTemplate>
@@ -755,8 +773,9 @@
                                         </StackPanel>
                                         <Button
                                             Grid.Column="1"
-                                            Command="{Binding ElementName=RootPage, Path=ViewModel.CompleteMeetCommand}"
-                                            CommandParameter="{x:Bind}"
+                                            Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="CompleteMeetCommand"
                                             Content="结束" />
                                     </Grid>
                                 </DataTemplate>
@@ -781,8 +800,9 @@
                                         </StackPanel>
                                         <Button
                                             Grid.Column="1"
-                                            Command="{Binding ElementName=RootPage, Path=ViewModel.JoinMeetCommand}"
-                                            CommandParameter="{x:Bind}"
+                                            Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="JoinMeetCommand"
                                             Content="加入" />
                                     </Grid>
                                 </DataTemplate>
@@ -914,8 +934,9 @@
                                                 </StackPanel>
                                                 <Button
                                                     Grid.Column="1"
-                                                    Command="{Binding ElementName=RootPage, Path=ViewModel.DeleteUserNotableDayCommand}"
-                                                    CommandParameter="{x:Bind}"
+                                                    Click="SocialAction_OnClick"
+                                                Tag="{x:Bind}"
+                                                AutomationProperties.Name="DeleteUserNotableDayCommand"
                                                     Content="删除" />
                                             </Grid>
                                         </DataTemplate>

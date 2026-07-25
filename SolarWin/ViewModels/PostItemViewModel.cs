@@ -15,11 +15,14 @@ public partial class PostItemViewModel : ObservableObject
     /// </summary>
     public const string DefaultLikeSymbol = "thumb_up";
 
-    public PostItemViewModel(SnPost post, DysonFileImageLoader imageLoader)
+    public PostItemViewModel(
+        SnPost post,
+        DysonFileImageLoader imageLoader,
+        bool bindCachedImages = true)
     {
         Post = post;
         Id = post.Id;
-        ApplyPost(post, imageLoader);
+        ApplyPost(post, bindCachedImages ? imageLoader : null);
     }
 
     public SnPost Post { get; private set; }
@@ -95,7 +98,11 @@ public partial class PostItemViewModel : ObservableObject
 
     public string BookmarkLabel => IsBookmarked ? "已收藏" : "收藏";
 
+    /// <summary>List/feed decode URLs (thumbnail preferred).</summary>
     public List<string> ImageUrls { get; private set; } = [];
+
+    /// <summary>Full-resolution attachment URLs for detail / lightbox.</summary>
+    public List<string> FullImageUrls { get; private set; } = [];
 
     public bool HasImages { get; private set; }
 
@@ -263,7 +270,7 @@ public partial class PostItemViewModel : ObservableObject
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
 
         if (imageLoader is not null && HasAvatar && AvatarImage is null &&
-            imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar))
+            imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth))
         {
             AvatarImage = cachedAvatar;
         }
@@ -294,7 +301,14 @@ public partial class PostItemViewModel : ObservableObject
         // Boosted state is not returned on SnPost; UI may set IsBoosted after local action.
         RefreshStatsText();
 
+        // Feed cards prefer thumbnail URLs when the gateway embeds them (faster list paint).
         ImageUrls = (post.Attachments ?? [])
+            .Where(CloudFileUrlHelper.IsLikelyImage)
+            .Select(CloudFileUrlHelper.ResolveListImage)
+            .Where(u => !string.IsNullOrWhiteSpace(u))
+            .Cast<string>()
+            .ToList();
+        FullImageUrls = (post.Attachments ?? [])
             .Where(CloudFileUrlHelper.IsLikelyImage)
             .Select(CloudFileUrlHelper.Resolve)
             .Where(u => !string.IsNullOrWhiteSpace(u))
@@ -302,7 +316,8 @@ public partial class PostItemViewModel : ObservableObject
             .ToList();
         HasImages = ImageUrls.Count > 0;
         if (imageLoader is not null && HasImages && FirstImage is null &&
-            imageLoader.TryGetCached(ImageUrls[0], out var cachedImage))
+            imageLoader.TryGetCached(ImageUrls[0], out var cachedImage, DysonFileImageLoader.FeedImageDecodeWidth)
+            && cachedImage is not null)
         {
             FirstImage = cachedImage;
         }

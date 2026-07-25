@@ -1,4 +1,6 @@
+using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
 using SolarWin.Models;
@@ -20,12 +22,42 @@ public sealed partial class HomePage : Page
         Unloaded += OnUnloaded;
     }
 
-    protected override void OnNavigatedTo(NavigationEventArgs e)
+    /// <summary>
+    /// DataTemplate actions: avoid classic {Binding ElementName=…} reflection.
+    /// Tag = item, AutomationProperties.Name = command property name on ViewModel.
+    /// </summary>
+    private void SocialAction_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement fe
+            || fe.Tag is not SocialListItemViewModel item)
+        {
+            return;
+        }
+
+        var cmdName = Microsoft.UI.Xaml.Automation.AutomationProperties.GetName(fe);
+        if (string.IsNullOrWhiteSpace(cmdName))
+        {
+            return;
+        }
+
+        var prop = typeof(HomeViewModel).GetProperty(cmdName);
+        if (prop?.GetValue(ViewModel) is IRelayCommand cmd && cmd.CanExecute(item))
+        {
+            cmd.Execute(item);
+        }
+    }
+
+    protected override async void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        if (ViewModel.LoadCommand.CanExecute(null))
+        await ViewModel.InitializeAsync();
+    }
+
+    private async void Sections_OnSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is Pivot pivot)
         {
-            ViewModel.LoadCommand.Execute(null);
+            await ViewModel.LoadSectionAsync(pivot.SelectedIndex);
         }
     }
 

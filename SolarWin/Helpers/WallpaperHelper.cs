@@ -29,6 +29,12 @@ public static class WallpaperHelper
     private const string EffectKey = "WallpaperEffect";
     private const string EnabledKey = "WallpaperEnabled";
 
+    // Reused across ApplyToLayers calls (theme switches etc.) so the same wallpaper
+    // is not re-decoded into a fresh full-size BitmapImage every time.
+    private static string? _cachedBitmapPath;
+    private static DateTime _cachedBitmapWriteUtc;
+    private static BitmapImage? _cachedBitmap;
+
     public static event EventHandler? Changed;
 
     public static string WallpaperDirectory => Path.Combine(AppPaths.RootDirectory, "wallpaper");
@@ -85,6 +91,33 @@ public static class WallpaperHelper
 
     public static void NotifyChanged() => Changed?.Invoke(null, EventArgs.Empty);
 
+    private static BitmapImage GetOrCreateBitmap()
+    {
+        var path = ImagePath!;
+        var writeUtc = File.GetLastWriteTimeUtc(path);
+        if (_cachedBitmap is not null
+            && string.Equals(_cachedBitmapPath, path, StringComparison.OrdinalIgnoreCase)
+            && _cachedBitmapWriteUtc == writeUtc)
+        {
+            return _cachedBitmap;
+        }
+
+        var bmp = new BitmapImage();
+        bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
+        bmp.UriSource = new Uri(path, UriKind.Absolute);
+        _cachedBitmap = bmp;
+        _cachedBitmapPath = path;
+        _cachedBitmapWriteUtc = writeUtc;
+        return bmp;
+    }
+
+    private static void ResetBitmapCache()
+    {
+        _cachedBitmap = null;
+        _cachedBitmapPath = null;
+        _cachedBitmapWriteUtc = default;
+    }
+
     /// <summary>
     /// Copy a user-picked file into the app data folder and enable wallpaper.
     /// </summary>
@@ -125,6 +158,7 @@ public static class WallpaperHelper
 
         var dest = Path.Combine(WallpaperDirectory, "current" + ext.ToLowerInvariant());
         File.Copy(sourcePath, dest, overwrite: true);
+        ResetBitmapCache();
         ImagePath = dest;
         IsEnabled = true;
         NotifyChanged();
@@ -136,6 +170,7 @@ public static class WallpaperHelper
         IsEnabled = false;
         var p = ImagePath;
         ImagePath = string.Empty;
+        ResetBitmapCache();
         try
         {
             if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
@@ -172,10 +207,7 @@ public static class WallpaperHelper
             {
                 try
                 {
-                    var bmp = new BitmapImage();
-                    bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                    bmp.UriSource = new Uri(ImagePath!, UriKind.Absolute);
-                    image.Source = bmp;
+                    image.Source = GetOrCreateBitmap();
                     image.Opacity = OpacityPercent / 100.0;
                     image.Visibility = Visibility.Visible;
                 }

@@ -124,6 +124,13 @@
             <ToggleSwitch
                 Header="后台收到聊天消息时弹通知（默认开）"
                 IsOn="{x:Bind ViewModel.ChatMessageNotifications, Mode=TwoWay}" />
+            <NumberBox
+                Width="220"
+                Header="文件缩略图最大并发（重启后生效）"
+                Maximum="16"
+                Minimum="1"
+                SpinButtonPlacementMode="Compact"
+                Value="{x:Bind ViewModel.FileThumbnailMaxConcurrency, Mode=TwoWay}" />
             <TextBlock
                 Opacity="0.7"
                 Style="{StaticResource CaptionTextBlockStyle}"
@@ -195,13 +202,30 @@
 
             <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="离线缓存" />
             <TextBlock>
-                <Run Text="缓存占用 " />
+                <Run Text="JSON 缓存占用 " />
                 <Run Text="{x:Bind ViewModel.CacheSizeText, Mode=OneWay}" />
             </TextBlock>
             <StackPanel Orientation="Horizontal" Spacing="8">
                 <Button Command="{x:Bind ViewModel.RefreshCacheStatsCommand}" Content="刷新统计" />
-                <Button Command="{x:Bind ViewModel.ClearOfflineCacheCommand}" Content="清空离线缓存" />
+                <Button Command="{x:Bind ViewModel.ClearOfflineCacheCommand}" Content="清空 JSON 离线缓存" />
             </StackPanel>
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="本地聊天数据" />
+            <TextBlock
+                Opacity="0.85"
+                Text="{x:Bind ViewModel.LocalChatDbPathText, Mode=OneWay}"
+                TextWrapping="Wrap" />
+            <Button
+                Command="{x:Bind ViewModel.ClearLocalChatDataCommand}"
+                Content="清除本地聊天数据" />
+
+            <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="调试 · 写泵" />
+            <TextBlock
+                FontFamily="Consolas"
+                Opacity="0.9"
+                Text="{x:Bind ViewModel.WritePumpStatsText, Mode=OneWay}"
+                TextWrapping="Wrap" />
+            <Button Command="{x:Bind ViewModel.RefreshWritePumpStatsCommand}" Content="刷新写泵指标" />
 
             <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="账户与安全" />
             <Button Click="Security_OnClick" Content="账号安全（设备 / 会话 / MFA / 密钥）" />

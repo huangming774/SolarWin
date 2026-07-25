@@ -16,10 +16,31 @@ public interface IChatDataCache
 
     void ClearAll();
 
-    // —— Room list ——
+    // —— Room list (Phase 6: SQLite authority; L1 is projection cache) ——
     bool TryGetRooms(out IReadOnlyList<SnChatRoom> rooms);
 
-    void SetRooms(IReadOnlyList<SnChatRoom> rooms, bool persistDisk = true);
+    /// <summary>
+    /// Update L1 room list. When <paramref name="persistSqlite"/>, enqueue full/partial room upsert
+    /// (no Offline JSON rewrite).
+    /// </summary>
+    void SetRooms(
+        IReadOnlyList<SnChatRoom> rooms,
+        bool persistSqlite = true,
+        bool removeMissing = false);
+
+    /// <summary>
+    /// Persist rooms + summary rows to SQLite via write pump (full pull merge).
+    /// </summary>
+    void PersistRoomsFull(
+        IReadOnlyList<SnChatRoom> rooms,
+        IReadOnlyDictionary<string, ChatSummaryResponse>? summary,
+        bool removeMissing);
+
+    /// <summary>Local read mark → single-row SQLite UPDATE.</summary>
+    void MarkRoomReadPersisted(Guid roomId, long lastReadSequence = 0);
+
+    /// <summary>Preview / unread point update (socket or outbound message).</summary>
+    void UpdateRoomPreviewPersisted(Guid roomId, SnChatMessage? lastMessage, int? unreadCount);
 
     bool IsRoomsFresh(TimeSpan? ttl = null);
 
@@ -45,6 +66,10 @@ public interface IChatDataCache
     // —— Per-room messages ——
     bool TryGetRoomMessages(Guid roomId, out ChatRoomMessageCacheEntry entry);
 
+    /// <summary>
+    /// Replace the in-memory message window for a room (L1 only — no SQLite dual-write).
+    /// Persistence is incremental via <see cref="UpsertRoomMessage"/>.
+    /// </summary>
     void SetRoomMessages(
         Guid roomId,
         IReadOnlyList<SnChatMessage> messages,
@@ -53,12 +78,18 @@ public interface IChatDataCache
         bool hasMore,
         int offset);
 
-    /// <summary>Upsert a single message (WS / send). Returns true if newly added.</summary>
+    /// <summary>Upsert a single message (WS / send / API). Dual-writes to SQLite. Returns true if newly added.</summary>
     bool UpsertRoomMessage(Guid roomId, SnChatMessage message);
+
+    /// <summary>Clear all L1 per-room message windows (Phase 7 clear local chat).</summary>
+    void ClearMessageWindows();
 
     void UpdateRoomSyncCursor(Guid roomId, long lastSyncTimestamp, Guid? lastSyncMessageId);
 
     void InvalidateRoomMessages(Guid roomId);
+
+    /// <summary>Remove one message from the in-memory window and dual-write delete to SQLite.</summary>
+    void RemoveRoomMessage(Guid roomId, Guid messageId, string? clientMessageId = null);
 
     // —— Per-room members ——
     bool TryGetRoomMembers(Guid roomId, out IReadOnlyList<SnChatMember> members, out DateTimeOffset loadedAt);
@@ -68,8 +99,11 @@ public interface IChatDataCache
     bool IsRoomMembersFresh(Guid roomId, TimeSpan? ttl = null);
 
     // —— Disk hydrate (offline) ——
-    /// <summary>Try load rooms from disk offline cache into memory.</summary>
-    bool TryHydrateRoomsFromDisk();
+    /// <summary>
+    /// Load rooms from SQLite (and one-shot import legacy JSON) into L1.
+    /// Async only — never call via GetResult/Wait on the UI thread.
+    /// </summary>
+    Task<bool> HydrateRoomsFromDiskAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>Cached message window for one chat room.</summary>

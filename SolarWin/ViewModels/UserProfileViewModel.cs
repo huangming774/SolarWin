@@ -422,7 +422,7 @@ public partial class UserProfileViewModel : ObservableObject
 
         try
         {
-            var img = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            var img = await _imageLoader.LoadAsync(url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
             AvatarImage = img;
             AvatarOpacity = img is null ? 0 : 1;
             InitialsOpacity = img is null ? 1 : 0;
@@ -445,7 +445,7 @@ public partial class UserProfileViewModel : ObservableObject
 
         try
         {
-            BackgroundImage = await _imageLoader.LoadAsync(url).ConfigureAwait(true);
+            BackgroundImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.BannerDecodeWidth).ConfigureAwait(true);
         }
         catch
         {

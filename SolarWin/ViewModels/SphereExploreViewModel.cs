@@ -13,6 +13,8 @@ namespace SolarWin.ViewModels;
 /// </summary>
 public partial class SphereExploreViewModel : ObservableObject
 {
+    private const int MaxInfoMessageLength = 4096;
+
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
@@ -913,5 +915,10 @@ public partial class SphereExploreViewModel : ObservableObject
     }
 
     private static string Append(string? existing, string next)
-        => string.IsNullOrWhiteSpace(existing) ? next : existing + "\n" + next;
+    {
+        var combined = string.IsNullOrWhiteSpace(existing) ? next : existing + "\n" + next;
+        return combined.Length <= MaxInfoMessageLength
+            ? combined
+            : combined[^MaxInfoMessageLength..].TrimStart();
+    }
 }

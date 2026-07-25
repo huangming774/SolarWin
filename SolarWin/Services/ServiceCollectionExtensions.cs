@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.ViewModels;
 
@@ -8,6 +9,12 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddSolarWinServices(this IServiceCollection services)
     {
+        // Local SQLite (per-account) + Phase 2 write pump + Phase 3 local reads.
+        services.AddSingleton<IAccountDbContextFactory, AccountDbContextFactory>();
+        services.AddSingleton<IChatWritePump, ChatWritePump>();
+        services.AddSingleton<IChatLocalStore, ChatLocalStore>();
+        services.AddSingleton<IRoomLocalStore, RoomLocalStore>();
+
         services.AddSingleton<ITokenStorage, PasswordVaultTokenStorage>();
         services.AddSingleton<IAccountSessionService, AccountSessionService>();
         services.AddSingleton<ISystemNotificationService, SystemNotificationService>();
@@ -25,6 +32,14 @@ public static class ServiceCollectionExtensions
             client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
         });
 
+        services.AddHttpClient(AuthService.AnonymousHttpClientName, client =>
+        {
+            client.BaseAddress = new Uri(SolarApiClient.BaseUrl.TrimEnd('/') + "/");
+            client.Timeout = TimeSpan.FromSeconds(30);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
+        });
+
         // Open-Meteo + IP geo (no API key)
         services.AddHttpClient(WeatherService.HttpClientName, client =>
         {
@@ -33,6 +48,15 @@ public static class ServiceCollectionExtensions
             client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
         });
 
+        // User-configured OpenAI-compatible AI endpoint (dynamic base URL; long timeout for stream + 1M context)
+        services.AddHttpClient(AiChatService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromMinutes(30);
+            client.DefaultRequestHeaders.Accept.ParseAdd("application/json");
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
+        });
+
+        services.AddSingleton<IAiChatService, AiChatService>();
         services.AddSingleton<ISolarApiClient, SolarApiClient>();
         services.AddSingleton<SocialLoginService>();
         services.AddSingleton<IAuthService, AuthService>();
@@ -40,11 +64,15 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IToastService, ToastService>();
         services.AddSingleton<IWeatherService, WeatherService>();
         services.AddSingleton<IVoiceRecorderService, VoiceRecorderService>();
+        // LiveKit media for room realtime calls (voice / video)
+        services.AddSingleton<IRealtimeCallService, LiveKitRealtimeCallService>();
+        services.AddSingleton<IIncomingCallService, IncomingCallService>();
         services.AddSingleton<IChatWebSocketService, ChatWebSocketService>();
         services.AddSingleton<IChatMessageNotifier, ChatMessageNotifier>();
         // Messager API response cache (rooms / messages / members) — process-wide
         services.AddSingleton<IChatDataCache, ChatDataCache>();
         services.AddSingleton<DysonFileImageLoader>();
+        services.AddSingleton<FileThumbnailLoader>();
         services.AddSingleton<MainViewModel>();
 
         services.AddTransient<LoginViewModel>();
@@ -61,6 +89,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<PostsViewModel>();
         services.AddTransient<PostDetailViewModel>();
         services.AddSingleton<WeatherViewModel>();
+        // AI chat keeps history across navigations
+        services.AddSingleton<AiViewModel>();
         services.AddTransient<ProfileViewModel>();
         services.AddTransient<UserProfileViewModel>();
         services.AddTransient<RealmDetailViewModel>();
