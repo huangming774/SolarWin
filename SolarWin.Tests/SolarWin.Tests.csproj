@@ -35,6 +35,7 @@
     <Compile Include="..\SolarWin\Helpers\OfflineCache.cs" Link="Helpers\OfflineCache.cs" />
     <Compile Include="..\SolarWin\Helpers\LeasedLruCache.cs" Link="Helpers\LeasedLruCache.cs" />
     <Compile Include="..\SolarWin\Helpers\AppPaths.cs" Link="Helpers\AppPaths.cs" />
+    <Compile Include="..\SolarWin\Helpers\DeviceInfoHelper.cs" Link="Helpers\DeviceInfoHelper.cs" />
     <Compile Include="..\SolarWin\Helpers\AsyncConcurrencyHelper.cs" Link="Helpers\AsyncConcurrencyHelper.cs" />
     <Compile Include="..\SolarWin\ViewModels\PostItemHandleRules.cs" Link="ViewModels\PostItemHandleRules.cs" />
     <Compile Include="..\SolarWin\Data\ChatMessageMapper.cs" Link="Data\ChatMessageMapper.cs" />
@@ -49,6 +50,16 @@
     <Compile Include="..\SolarWin\Models\SnAccountProfile.cs" Link="Models\SnAccountProfile.cs" />
     <Compile Include="..\SolarWin\Models\SnAccountStatus.cs" Link="Models\SnAccountStatus.cs" />
     <Compile Include="..\SolarWin\Models\SnRealm.cs" Link="Models\SnRealm.cs" />
+    <Compile Include="..\SolarWin\Models\MlsModels.cs" Link="Models\MlsModels.cs" />
+    <Compile Include="..\SolarWin\Services\IMlsDeviceIdProvider.cs" Link="Services\IMlsDeviceIdProvider.cs" />
+    <Compile Include="..\SolarWin\Services\PersistentMlsDeviceIdProvider.cs" Link="Services\PersistentMlsDeviceIdProvider.cs" />
+    <Compile Include="..\SolarWin\Services\MlsApiRoutes.cs" Link="Services\MlsApiRoutes.cs" />
+    <Compile Include="..\SolarWin\Services\MlsRequestHeaders.cs" Link="Services\MlsRequestHeaders.cs" />
+    <Compile Include="..\SolarWin\Services\MlsRequestFactory.cs" Link="Services\MlsRequestFactory.cs" />
+    <Compile Include="..\SolarWin\Services\MlsRoomSendPolicy.cs" Link="Services\MlsRoomSendPolicy.cs" />
+    <Compile Include="..\SolarWin\Services\MlsNativeModels.cs" Link="Services\MlsNativeModels.cs" />
+    <Compile Include="..\SolarWin\Services\IMlsNativeEngine.cs" Link="Services\IMlsNativeEngine.cs" />
+    <Compile Include="..\SolarWin\Services\MlsNativeEngine.cs" Link="Services\MlsNativeEngine.cs" />
     <Compile Include="..\SolarWin\Models\Analytics\AnalyticsFilter.cs" Link="Models\Analytics\AnalyticsFilter.cs" />
     <Compile Include="..\SolarWin\Models\Analytics\ActivityHeatmapCell.cs" Link="Models\Analytics\ActivityHeatmapCell.cs" />
     <Compile Include="..\SolarWin\Models\Analytics\MessageTrendPoint.cs" Link="Models\Analytics\MessageTrendPoint.cs" />
@@ -65,6 +76,12 @@
     <Compile Include="..\SolarWin\Services\IWordCloudLayoutService.cs" Link="Services\IWordCloudLayoutService.cs" />
     <Compile Include="..\SolarWin\Services\IChatAnalyticsService.cs" Link="Services\IChatAnalyticsService.cs" />
     <Compile Include="..\SolarWin\Services\ChatAnalyticsService.cs" Link="Services\ChatAnalyticsService.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="Exists('..\SolarWin.Mls.Native\runtimes\win-x64\native\SolarWin.Mls.Native.dll')">
+    <Content Include="..\SolarWin.Mls.Native\runtimes\win-x64\native\SolarWin.Mls.Native.dll" Link="SolarWin.Mls.Native.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
   <ItemGroup>

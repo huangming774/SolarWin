@@ -45,7 +45,7 @@ public sealed partial class ChatDetailPage : Page
 
         if (e.Parameter is ChatRoomListItem item)
         {
-            ViewModel.Initialize(item.RoomId, item.Name);
+            ViewModel.Initialize(item.Room);
         }
         else if (e.Parameter is Guid roomId)
         {

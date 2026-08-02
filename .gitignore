@@ -359,5 +359,9 @@ MigrationBackup/
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
 
+# Restored/built by SolarWin.Mls.Native/restore-openmls.ps1
+SolarWin.Mls.Native/vendor/
+SolarWin.Mls.Native/target/
+
 # Fody - auto-generated XML schema
 FodyWeavers.xsd

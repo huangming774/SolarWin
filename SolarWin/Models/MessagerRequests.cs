@@ -31,6 +31,9 @@ public sealed class ChatRoomRequest
 
     [JsonPropertyName("encryption_mode")]
     public int? EncryptionMode { get; set; }
+
+    [JsonPropertyName("e2ee_policy")]
+    public Dictionary<string, JsonElement>? E2eePolicy { get; set; }
 }
 
 /// <summary>POST /messager/chat/direct (OpenAPI DirectMessageRequest).</summary>
@@ -50,6 +53,9 @@ public sealed class DeleteMessageRequest
 {
     [JsonPropertyName("client_message_id")]
     public string? ClientMessageId { get; set; }
+
+    [JsonPropertyName("encryption_meta")]
+    public SnChatEncryptionMeta? EncryptionMeta { get; set; }
 }
 
 /// <summary>DELETE /messager/chat/rooms/{roomId}/messages/{messageId} (moderation).</summary>
@@ -478,20 +484,6 @@ public sealed class ChatBotCommandParameter
 
     [JsonPropertyName("type")]
     public string? Type { get; set; }
-}
-
-// —— E2EE / MLS ——
-
-public sealed class EnableE2eeRequest
-{
-    [JsonPropertyName("encryption_mode")]
-    public int EncryptionMode { get; set; } = 3;
-}
-
-public sealed class EnableMlsRequest
-{
-    [JsonPropertyName("mls_group_id")]
-    public string? MlsGroupId { get; set; }
 }
 
 // —— Realtime voice ——

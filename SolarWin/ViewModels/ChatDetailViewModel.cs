@@ -36,6 +36,7 @@ public partial class ChatDetailViewModel : ObservableObject
     private readonly IChatMessageNotifier _messageNotifier;
     private readonly IChatDataCache _cache;
     private readonly IChatLocalStore _localStore;
+    private readonly IMlsClientService _mls;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly ChatViewModel _chatList;
     private readonly SemaphoreSlim _syncGate = new(1, 1);
@@ -73,6 +74,10 @@ public partial class ChatDetailViewModel : ObservableObject
     private Task _mediaStopTask = Task.CompletedTask;
     /// <summary>Generation stamp so cancelled / superseded loads never mutate the active room.</summary>
     private int _loadGeneration;
+    private bool _roomEncryptionStateKnown;
+    private bool _requiresUnavailableMlsState;
+    private bool _mlsReady;
+    private SnChatRoom? _room;
 
     // Stored delegates so transient VMs can detach from singleton services (see Unhook).
     private readonly EventHandler _callStateHandler;
@@ -91,6 +96,7 @@ public partial class ChatDetailViewModel : ObservableObject
         IChatMessageNotifier messageNotifier,
         IChatDataCache cache,
         IChatLocalStore localStore,
+        IMlsClientService mls,
         DysonFileImageLoader imageLoader,
         ChatViewModel chatList)
     {
@@ -104,6 +110,7 @@ public partial class ChatDetailViewModel : ObservableObject
         _messageNotifier = messageNotifier;
         _cache = cache;
         _localStore = localStore;
+        _mls = mls;
         _imageLoader = imageLoader;
         _chatList = chatList;
         _callStateHandler = (_, _) => EnqueueUi(SyncCallUiFromService);
@@ -383,6 +390,11 @@ public partial class ChatDetailViewModel : ObservableObject
     public partial string E2eeStatusText { get; set; } = "E2EE: 未知";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(EnableMlsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RecoverMlsCommand))]
+    public partial bool IsEncryptionBusy { get; set; }
+
+    [ObservableProperty]
     public partial string RedirectMessageIdsText { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -415,6 +427,8 @@ public partial class ChatDetailViewModel : ObservableObject
 
         // Abort any in-flight load for the previous room before swapping identity.
         CancelMessageLoad();
+        _roomEncryptionStateKnown = false;
+        _requiresUnavailableMlsState = false;
         RoomId = roomId;
         _messageNotifier.ActiveRoomId = roomId != Guid.Empty ? roomId : null;
         _messageNotifier.Start();
@@ -458,10 +472,19 @@ public partial class ChatDetailViewModel : ObservableObject
         _markedRead = false;
         _voiceLimitStopRequested = 0;
         RecordingElapsedText = "0:00";
+        E2eeStatusText = "加密状态：正在确认（确认前已禁用发送）";
         UpdateCanSend();
 
         // Clear unread badge immediately when opening room
         _chatList.MarkRoomReadLocal(roomId);
+    }
+
+    public void Initialize(SnChatRoom room)
+    {
+        ArgumentNullException.ThrowIfNull(room);
+        _room = room;
+        Initialize(room.Id, room.Name);
+        ApplyRoomEncryptionState(room);
     }
 
     private void CancelMessageLoad()
@@ -504,15 +527,111 @@ public partial class ChatDetailViewModel : ObservableObject
 
     private void UpdateCanSend()
     {
-        CanSend = !IsSending
+        var sendAllowed = _roomEncryptionStateKnown && (!_requiresUnavailableMlsState || _mlsReady);
+        CanSend = sendAllowed
+            && !IsSending
             && !IsUploadingImage
             && !IsRecording
             && !IsSendingVoice
             && (!string.IsNullOrWhiteSpace(Draft) || !string.IsNullOrWhiteSpace(PendingImageFileId));
-        IsComposerEnabled = !IsSending && !IsUploadingImage && !IsRecording && !IsSendingVoice;
+        IsComposerEnabled = sendAllowed
+            && !IsSending
+            && !IsUploadingImage
+            && !IsRecording
+            && !IsSendingVoice;
         PendingImagePanelOpacity = string.IsNullOrWhiteSpace(PendingImageFileId) && string.IsNullOrWhiteSpace(PendingImageName)
             ? 0.0
             : 1.0;
+    }
+
+    private void ApplyRoomEncryptionState(SnChatRoom room)
+    {
+        _room = room;
+        _roomEncryptionStateKnown = true;
+        _requiresUnavailableMlsState = MlsRoomSendPolicy.RequiresLocalMlsState(room);
+        _mlsReady = !_requiresUnavailableMlsState;
+        if (_requiresUnavailableMlsState && IsRecording)
+        {
+            _ = _voiceRecorder.CancelAsync();
+            IsRecording = false;
+            RecordingElapsedText = "0:00";
+        }
+        E2eeStatusText = _requiresUnavailableMlsState ? "MLS: 正在加载本机加密群组状态…" : "E2EE: 未启用";
+        UpdateCanSend();
+        EnableMlsCommand.NotifyCanExecuteChanged();
+        RecoverMlsCommand.NotifyCanExecuteChanged();
+        if (_requiresUnavailableMlsState) _ = PrepareMlsRoomAsync(room);
+    }
+
+    private bool RejectPlaintextSendWhenEncrypted(bool mlsSupported = false)
+    {
+        if (_roomEncryptionStateKnown && !_requiresUnavailableMlsState)
+        {
+            return false;
+        }
+
+        if (_roomEncryptionStateKnown && _requiresUnavailableMlsState && _mlsReady && mlsSupported)
+        {
+            return false;
+        }
+
+        var message = _requiresUnavailableMlsState && _mlsReady
+            ? "此操作尚未定义 MLS 密文载荷，已拒绝执行以防明文降级。"
+            : _requiresUnavailableMlsState
+                ? "此房间已启用 MLS，但本机群组状态尚未就绪，已拒绝发送以防明文降级。"
+            : "尚未确认房间加密状态，暂不能发送。";
+        ErrorMessage = message;
+        _toast.Error(message);
+        return true;
+    }
+
+    private async Task PrepareMlsRoomAsync(SnChatRoom room)
+    {
+        try
+        {
+            await _mls.EnsureRoomAsync(room).ConfigureAwait(false);
+            await RunOnUiAsync(() =>
+            {
+                if (RoomId != room.Id) return;
+                _mlsReady = true;
+                _requiresUnavailableMlsState = true;
+                E2eeStatusText = $"MLS E2EE: 已就绪 · {room.MlsGroupId}";
+                UpdateCanSend();
+            }).ConfigureAwait(false);
+            await RefreshEncryptedBubblesAsync(room).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is MlsClientException or MlsNativeException or SolarApiException)
+        {
+            await RunOnUiAsync(() =>
+            {
+                if (RoomId != room.Id) return;
+                _mlsReady = false;
+                E2eeStatusText = $"MLS E2EE: 不可用 · {ex.Message}";
+                UpdateCanSend();
+            }).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RefreshEncryptedBubblesAsync(SnChatRoom room)
+    {
+        List<SnChatMessage> snapshot = [];
+        await RunOnUiAsync(() =>
+        {
+            if (RoomId == room.Id) snapshot = Messages.Select(x => x.Message).Where(x => x.GetEncryptionMeta() is not null).ToList();
+        }).ConfigureAwait(false);
+        if (snapshot.Count == 0) return;
+        await DecryptMessagesAsync(snapshot, CancellationToken.None).ConfigureAwait(false);
+        await RunOnUiAsync(() =>
+        {
+            if (RoomId != room.Id) return;
+            var currentId = _authService.CurrentAccount?.Id;
+            foreach (var message in snapshot)
+            {
+                var index = Messages.ToList().FindIndex(x => ReferenceEquals(x.Message, message) || (message.Id != Guid.Empty && x.Message.Id == message.Id));
+                if (index >= 0) Messages[index] = new MessageItemViewModel(message, currentId, _imageLoader);
+                try { _cache.UpsertRoomMessage(room.Id, message); } catch { }
+            }
+        }).ConfigureAwait(false);
     }
 
     private void OnVoiceElapsedChanged(object? sender, TimeSpan elapsed)
@@ -569,6 +688,11 @@ public partial class ChatDetailViewModel : ObservableObject
             _hasDetachedNewer = false;
             _detachedAfter = null;
 
+            if (_room?.EncryptionMode == ChatRoomEncryptionMode.Mls)
+            {
+                await PrepareMlsRoomAsync(_room).ConfigureAwait(false);
+            }
+
             // Phase 4: L1 → SQLite newest page → instant paint; REST soft-refresh calibrates.
             var paintedLocal = TryPaintMessagesFromCache();
             if (!paintedLocal)
@@ -603,6 +727,7 @@ public partial class ChatDetailViewModel : ObservableObject
                 }
 
                 var ordered = NormalizeOrder(batch);
+                await DecryptMessagesAsync(ordered, ct).ConfigureAwait(false);
 
                 if (IsStaleLoad(generation, roomId, ct))
                 {
@@ -966,6 +1091,38 @@ public partial class ChatDetailViewModel : ObservableObject
 
         try
         {
+            var room = await _api.GetChatRoomAsync(roomId, cancellationToken).ConfigureAwait(false);
+            if (IsStaleLoad(generation, roomId, cancellationToken))
+            {
+                return;
+            }
+
+            await RunOnUiAsync(() =>
+            {
+                if (!IsStaleLoad(generation, roomId, cancellationToken))
+                {
+                    ApplyRoomEncryptionState(room);
+                }
+            }).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch
+        {
+            await RunOnUiAsync(() =>
+            {
+                if (!IsStaleLoad(generation, roomId, cancellationToken) && !_roomEncryptionStateKnown)
+                {
+                    E2eeStatusText = "加密状态：无法确认；为防止明文降级，发送保持禁用";
+                    UpdateCanSend();
+                }
+            }).ConfigureAwait(false);
+        }
+
+        try
+        {
             var online = await _api.GetOnlineMembersAsync(roomId, cancellationToken).ConfigureAwait(false);
             if (IsStaleLoad(generation, roomId, cancellationToken))
             {
@@ -1106,16 +1263,27 @@ public partial class ChatDetailViewModel : ObservableObject
 
         try
         {
-            await _api.DeleteMessageAsync(RoomId, item.Message.Id).ConfigureAwait(true);
+            DeleteMessageRequest? request = null;
+            if (_requiresUnavailableMlsState)
+            {
+                if (!_mlsReady || _room is null) throw new MlsClientException("MLS 群组状态尚未就绪。", recoverable: true);
+                var encrypted = await _mls.EncryptMessageAsync(_room, string.Empty, [], null).ConfigureAwait(true);
+                request = new DeleteMessageRequest
+                {
+                    ClientMessageId = encrypted.ClientMessageId,
+                    EncryptionMeta = encrypted.Request.EncryptionMeta,
+                };
+            }
+            await _api.DeleteMessageAsync(RoomId, item.Message.Id, request).ConfigureAwait(true);
             Messages.Remove(item);
             _knownMessageIds.Remove(item.Message.Id);
             // Dual-write delete to L1 + SQLite (Phase 2); UI already updated.
             _cache.RemoveRoomMessage(RoomId, item.Message.Id, item.Message.ClientMessageId);
             _toast.Success("已删除");
         }
-        catch (SolarApiException ex)
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
         {
-            _toast.Error($"删除失败：{ex.ApiMessage ?? ex.Message}");
+            _toast.Error($"删除失败：{(ex as SolarApiException)?.ApiMessage ?? ex.Message}");
         }
     }
 
@@ -1137,18 +1305,30 @@ public partial class ChatDetailViewModel : ObservableObject
 
         try
         {
-            await _api.EditMessageAsync(RoomId, item.Message.Id, new SendMessageRequest
+            SendMessageRequest request;
+            if (_requiresUnavailableMlsState)
             {
-                Content = text,
-            }).ConfigureAwait(true);
+                if (!_mlsReady || _room is null) throw new MlsClientException("MLS 群组状态尚未就绪。", recoverable: true);
+                request = (await _mls.EncryptMessageAsync(
+                    _room,
+                    text,
+                    item.Message.Attachments?.Select(x => x.Id).Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).ToList() ?? [],
+                    item.Message.RepliedMessageId,
+                    item.Message.ForwardedMessageId).ConfigureAwait(true)).Request;
+            }
+            else
+            {
+                request = new SendMessageRequest { Content = text };
+            }
+            await _api.EditMessageAsync(RoomId, item.Message.Id, request).ConfigureAwait(true);
 
             item.ApplyEditedContent(text);
             Draft = string.Empty;
             _toast.Success("已修改");
         }
-        catch (SolarApiException ex)
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
         {
-            _toast.Error($"修改失败：{ex.ApiMessage ?? ex.Message}");
+            _toast.Error($"修改失败：{(ex as SolarApiException)?.ApiMessage ?? ex.Message}");
         }
     }
 
@@ -2039,27 +2219,13 @@ public partial class ChatDetailViewModel : ObservableObject
         }
     }
 
-    [RelayCommand]
-    private async Task EnableE2eeAsync()
-    {
-        if (RoomId == Guid.Empty)
-        {
-            return;
-        }
+    private bool CanChangeEncryption() => RoomId != Guid.Empty && !IsEncryptionBusy;
 
-        try
-        {
-            await _api.EnableRoomE2eeAsync(RoomId).ConfigureAwait(true);
-            E2eeStatusText = "E2EE: 已请求启用（本地密钥交换未实现，加密内容仍可能无法解密）";
-            _toast.Success("已调用 E2EE enable");
-        }
-        catch (SolarApiException ex)
-        {
-            _toast.Error($"E2EE 失败：{ex.ApiMessage ?? ex.Message}");
-        }
-    }
+    private bool CanEnableMls() => CanChangeEncryption() && _room?.EncryptionMode != ChatRoomEncryptionMode.Mls;
 
-    [RelayCommand]
+    private bool CanRecoverMls() => CanChangeEncryption() && _room?.EncryptionMode == ChatRoomEncryptionMode.Mls;
+
+    [RelayCommand(CanExecute = nameof(CanEnableMls))]
     private async Task EnableMlsAsync()
     {
         if (RoomId == Guid.Empty)
@@ -2069,20 +2235,57 @@ public partial class ChatDetailViewModel : ObservableObject
 
         try
         {
-            await _api.EnableRoomMlsAsync(RoomId).ConfigureAwait(true);
-            E2eeStatusText = "MLS: 已请求启用（本地 MLS 状态机未实现）";
-            _toast.Success("已调用 MLS enable");
+            IsEncryptionBusy = true;
+            E2eeStatusText = "MLS E2EE: 正在启用…";
+            var room = await _mls.EnableRoomAsync(RoomId).ConfigureAwait(true);
+            ApplyRoomEncryptionState(room);
+            _mlsReady = true;
+            E2eeStatusText = $"MLS E2EE: 已就绪 · {room.MlsGroupId}";
+            UpdateCanSend();
+            _toast.Success("已启用 MLS 端到端加密");
         }
-        catch (SolarApiException ex)
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
         {
-            _toast.Error($"MLS 失败：{ex.ApiMessage ?? ex.Message}");
+            E2eeStatusText = $"MLS E2EE: 启用失败 · {ex.Message}";
+            _toast.Error($"MLS 失败：{ex.Message}");
+        }
+        finally
+        {
+            IsEncryptionBusy = false;
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRecoverMls))]
+    private async Task RecoverMlsAsync()
+    {
+        if (_room?.EncryptionMode != ChatRoomEncryptionMode.Mls || IsEncryptionBusy) return;
+        try
+        {
+            IsEncryptionBusy = true;
+            _mlsReady = false;
+            E2eeStatusText = "MLS E2EE: 正在恢复 / 重建…";
+            UpdateCanSend();
+            await _mls.ResetAndRebootstrapAsync(_room).ConfigureAwait(true);
+            _mlsReady = true;
+            E2eeStatusText = $"MLS E2EE: 已恢复 · {_room.MlsGroupId}";
+            UpdateCanSend();
+            _toast.Success("MLS 群组已重建并请求成员重新共享");
+        }
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
+        {
+            E2eeStatusText = $"MLS E2EE: 恢复失败 · {ex.Message}";
+            _toast.Error($"MLS 恢复失败：{ex.Message}");
+        }
+        finally
+        {
+            IsEncryptionBusy = false;
         }
     }
 
     [RelayCommand]
     private async Task SendTypingPlaceholderAsync()
     {
-        if (RoomId == Guid.Empty)
+        if (RoomId == Guid.Empty || RejectPlaintextSendWhenEncrypted())
         {
             return;
         }
@@ -2103,7 +2306,7 @@ public partial class ChatDetailViewModel : ObservableObject
     [RelayCommand]
     private async Task RedirectMessagesAsync()
     {
-        if (RoomId == Guid.Empty)
+        if (RoomId == Guid.Empty || RejectPlaintextSendWhenEncrypted())
         {
             return;
         }
@@ -2212,7 +2415,12 @@ public partial class ChatDetailViewModel : ObservableObject
         {
             if (string.Equals(packet.Type, "system.e2ee.enabled", StringComparison.OrdinalIgnoreCase))
             {
-                E2eeStatusText = "E2EE: 服务端已启用";
+                _roomEncryptionStateKnown = true;
+                _requiresUnavailableMlsState = true;
+                _mlsReady = false;
+                E2eeStatusText = "MLS E2EE: 服务端已启用，正在同步 Welcome/Commit…";
+                UpdateCanSend();
+                _ = LoadRoomMetaAsync();
                 return;
             }
 
@@ -2240,6 +2448,12 @@ public partial class ChatDetailViewModel : ObservableObject
                 if (msg.ChatRoomId == Guid.Empty)
                 {
                     msg.ChatRoomId = RoomId;
+                }
+
+                if (msg.GetEncryptionMeta() is not null)
+                {
+                    _ = HandleEncryptedRealtimeMessageAsync(msg);
+                    return;
                 }
 
                 var type = msg.Type ?? t;
@@ -2295,10 +2509,51 @@ public partial class ChatDetailViewModel : ObservableObject
         Handle();
     }
 
+    private async Task HandleEncryptedRealtimeMessageAsync(SnChatMessage message)
+    {
+        var room = _room;
+        if (room is null || room.Id != RoomId) return;
+        try
+        {
+            var decrypted = await _mls.TryDecryptMessageAsync(room, message).ConfigureAwait(false);
+            if (!decrypted && string.IsNullOrEmpty(message.Content)) message.Content = "🔒 无法解密的 MLS 消息";
+        }
+        catch (Exception ex) when (ex is MlsClientException or MlsNativeException or SolarApiException)
+        {
+            if (string.IsNullOrEmpty(message.Content)) message.Content = "🔒 MLS 解密失败（可在加密设置中恢复）";
+        }
+
+        await RunOnUiAsync(() =>
+        {
+            if (room.Id != RoomId) return;
+            var type = message.Type ?? string.Empty;
+            if (type.Contains("delete", StringComparison.OrdinalIgnoreCase))
+            {
+                var deleted = Messages.FirstOrDefault(x => x.Message.Id == message.Id);
+                deleted?.ApplyEditedContent("（已删除）");
+                return;
+            }
+            if (type.Contains("update", StringComparison.OrdinalIgnoreCase))
+            {
+                var updated = Messages.FirstOrDefault(x => x.Message.Id == message.Id);
+                if (updated is not null && !string.IsNullOrEmpty(message.Content))
+                {
+                    updated.ApplyEditedContent(message.Content);
+                    return;
+                }
+            }
+            if (AddMessageInternal(message, append: true))
+            {
+                ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
+                _ = LoadMediaAsync();
+            }
+        }).ConfigureAwait(false);
+    }
+
     [RelayCommand]
     private async Task ToggleVoiceRecordAsync()
     {
-        if (RoomId == Guid.Empty || IsSendingVoice)
+        if (RoomId == Guid.Empty || IsSendingVoice || RejectPlaintextSendWhenEncrypted())
         {
             return;
         }
@@ -2529,7 +2784,7 @@ public partial class ChatDetailViewModel : ObservableObject
     [RelayCommand]
     private async Task SendStickerAsync(StickerPickItem? item)
     {
-        if (item is null || RoomId == Guid.Empty)
+        if (item is null || RoomId == Guid.Empty || RejectPlaintextSendWhenEncrypted())
         {
             return;
         }
@@ -3162,7 +3417,8 @@ public partial class ChatDetailViewModel : ObservableObject
             }
 
             // 3) Normalize + paint (dedupe by id; no duplicate bubbles).
-            var ordered = NormalizeOrder(merged);
+                var ordered = NormalizeOrder(merged);
+                await DecryptMessagesAsync(ordered, ct).ConfigureAwait(false);
 
             if (IsStaleLoad(generation, roomId, ct))
             {
@@ -3447,6 +3703,7 @@ public partial class ChatDetailViewModel : ObservableObject
                 }
 
                 var ordered = NormalizeOrder(newer as List<SnChatMessage> ?? newer.ToList());
+                await DecryptMessagesAsync(ordered, ct).ConfigureAwait(false);
 
                 await RunOnUiAsync(() =>
                 {
@@ -3551,7 +3808,7 @@ public partial class ChatDetailViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
-        if (RoomId == Guid.Empty || IsSending)
+        if (RoomId == Guid.Empty || IsSending || RejectPlaintextSendWhenEncrypted(mlsSupported: true))
         {
             return;
         }
@@ -3576,15 +3833,28 @@ public partial class ChatDetailViewModel : ObservableObject
                 replyId = null;
             }
 
-            var clientMessageId = Guid.NewGuid().ToString("N");
-            var request = new SendMessageRequest
+            var attachmentIds = string.IsNullOrWhiteSpace(attachmentId) ? Array.Empty<string>() : new[] { attachmentId! };
+            SendMessageRequest request;
+            string clientMessageId;
+            if (_requiresUnavailableMlsState)
             {
-                Content = string.IsNullOrWhiteSpace(text) ? null : text,
-                ClientMessageId = clientMessageId,
-                Nonce = Guid.NewGuid().ToString("N")[..16],
-                AttachmentsId = string.IsNullOrWhiteSpace(attachmentId) ? null : [attachmentId!],
-                RepliedMessageId = replyId,
-            };
+                var room = _room ?? throw new MlsClientException("当前房间 MLS 元数据不可用。", recoverable: true);
+                var outgoing = await _mls.EncryptMessageAsync(room, text, attachmentIds, replyId).ConfigureAwait(true);
+                request = outgoing.Request;
+                clientMessageId = outgoing.ClientMessageId;
+            }
+            else
+            {
+                clientMessageId = Guid.NewGuid().ToString("N");
+                request = new SendMessageRequest
+                {
+                    Content = string.IsNullOrWhiteSpace(text) ? null : text,
+                    ClientMessageId = clientMessageId,
+                    Nonce = Guid.NewGuid().ToString("N")[..16],
+                    AttachmentsId = attachmentIds.Length == 0 ? null : attachmentIds.ToList(),
+                    RepliedMessageId = replyId,
+                };
+            }
 
             await _api.SendMessageAsync(RoomId.ToString(), request).ConfigureAwait(true);
             Draft = string.Empty;
@@ -3604,7 +3874,7 @@ public partial class ChatDetailViewModel : ObservableObject
             _ = LoadMediaAsync();
             _ = ReconcileAfterSendAsync();
         }
-        catch (SolarApiException ex)
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
         {
             ErrorMessage = ex.Message;
         }
@@ -3690,6 +3960,13 @@ public partial class ChatDetailViewModel : ObservableObject
     {
         if (RoomId == Guid.Empty)
         {
+            return;
+        }
+
+        if (_requiresUnavailableMlsState)
+        {
+            ErrorMessage = "当前 DysonFS C# 上传契约没有 Solian 的 encryptPassword 参数；已阻止在 MLS 房间上传未加密附件。";
+            _toast.Error(ErrorMessage);
             return;
         }
 
@@ -3924,6 +4201,7 @@ public partial class ChatDetailViewModel : ObservableObject
         var incoming = response.Messages ?? [];
         // Pure data sort only — BitmapImage/WinRT VMs must be created on the UI thread.
         var ordered = incoming.Count <= 1 ? incoming : NormalizeOrder(incoming);
+        await DecryptMessagesAsync(ordered, cancellationToken).ConfigureAwait(false);
         var currentAccountId = _authService.CurrentAccount?.Id;
 
         if (cancellationToken.IsCancellationRequested || roomId != RoomId)
@@ -3986,6 +4264,12 @@ public partial class ChatDetailViewModel : ObservableObject
                 if (existing.Id == Guid.Empty
                     && string.Equals(existing.ClientMessageId, message.ClientMessageId, StringComparison.Ordinal))
                 {
+                    // RFC 9420 senders cannot decrypt their own application message. Preserve the
+                    // locally-held plaintext when replacing the optimistic echo with the server row.
+                    if (message.GetEncryptionMeta() is not null && string.IsNullOrEmpty(message.Content))
+                    {
+                        message.Content = existing.Content;
+                    }
                     if (message.Id != Guid.Empty)
                     {
                         _knownMessageIds.Add(message.Id);
@@ -4300,6 +4584,26 @@ public partial class ChatDetailViewModel : ObservableObject
         finally
         {
             _mediaLoading = false;
+        }
+    }
+
+    private async Task DecryptMessagesAsync(IEnumerable<SnChatMessage> messages, CancellationToken cancellationToken)
+    {
+        var room = _room;
+        if (room?.EncryptionMode != ChatRoomEncryptionMode.Mls || !_mlsReady) return;
+        foreach (var message in messages)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (message.GetEncryptionMeta() is null) continue;
+            try
+            {
+                var decrypted = await _mls.TryDecryptMessageAsync(room, message, cancellationToken).ConfigureAwait(false);
+                if (!decrypted && string.IsNullOrEmpty(message.Content)) message.Content = "🔒 无法解密的 MLS 消息";
+            }
+            catch (Exception ex) when (ex is MlsClientException or MlsNativeException or SolarApiException)
+            {
+                if (string.IsNullOrEmpty(message.Content)) message.Content = "🔒 MLS 解密失败（可在加密设置中恢复）";
+            }
         }
     }
 

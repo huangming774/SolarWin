@@ -20,14 +20,19 @@ public sealed class SolarApiClient : ISolarApiClient
 
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ITokenStorage _tokenStorage;
+    private readonly IMlsDeviceIdProvider _mlsDeviceIdProvider;
     private readonly SemaphoreSlim _refreshLock = new(1, 1);
     private string? _overrideBearer;
     private bool _refreshing;
 
-    public SolarApiClient(IHttpClientFactory httpClientFactory, ITokenStorage tokenStorage)
+    public SolarApiClient(
+        IHttpClientFactory httpClientFactory,
+        ITokenStorage tokenStorage,
+        IMlsDeviceIdProvider mlsDeviceIdProvider)
     {
         _httpClientFactory = httpClientFactory;
         _tokenStorage = tokenStorage;
+        _mlsDeviceIdProvider = mlsDeviceIdProvider;
     }
 
     public Task SetBearerTokenAsync(string? accessToken, CancellationToken cancellationToken = default)
@@ -775,16 +780,194 @@ public sealed class SolarApiClient : ISolarApiClient
     public Task MarkDeviceJoinedRoomAsync(Guid roomId, CancellationToken cancellationToken = default)
         => PostAsync($"/messager/chat/{roomId:D}/devices/me/joined", cancellationToken);
 
-    public Task EnableRoomE2eeAsync(Guid roomId, int encryptionMode = 3, CancellationToken cancellationToken = default)
+    public Task EnableRoomMlsAsync(
+        Guid roomId,
+        string? mlsGroupId = null,
+        Dictionary<string, JsonElement>? e2eePolicy = null,
+        CancellationToken cancellationToken = default)
     {
-        var body = new EnableE2eeRequest { EncryptionMode = encryptionMode };
-        return PostAsync($"/messager/chat/{roomId:D}/e2ee/enable", body, cancellationToken);
+        var body = new EnableMlsRequest
+        {
+            MlsGroupId = mlsGroupId,
+            E2eePolicy = e2eePolicy,
+        };
+        return PostAsync($"/messager/chat/{roomId:D}/mls/enable", body, cancellationToken);
     }
 
-    public Task EnableRoomMlsAsync(Guid roomId, string? mlsGroupId = null, CancellationToken cancellationToken = default)
+    public async Task<SnMlsKeyPackage> PublishMlsKeyPackageAsync(
+        PublishMlsKeyPackageBody request,
+        CancellationToken cancellationToken = default)
     {
-        var body = new EnableMlsRequest { MlsGroupId = mlsGroupId };
-        return PostAsync($"/messager/chat/{roomId:D}/mls/enable", body, cancellationToken);
+        ArgumentNullException.ThrowIfNull(request);
+        var deviceId = await _mlsDeviceIdProvider.GetDeviceIdAsync(cancellationToken).ConfigureAwait(false);
+        var body = MlsRequestFactory.BindDeviceId(request, deviceId);
+        return await SendMlsWithBodyAsync<PublishMlsKeyPackageBody, SnMlsKeyPackage>(
+                MlsApiRoutes.PublishKeyPackage(), body, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    public Task<MlsKeyPackageStatusResponse> GetMlsKeyPackageStatusAsync(CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<MlsKeyPackageStatusResponse>(MlsApiRoutes.KeyPackageStatus(), cancellationToken);
+
+    public Task<List<MlsDeviceKeyPackageResponse>> GetMlsDeviceKeyPackagesAsync(
+        Guid accountId,
+        bool? consume = null,
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<List<MlsDeviceKeyPackageResponse>>(
+            MlsApiRoutes.AccountDeviceKeys(accountId, consume), cancellationToken);
+
+    public Task<BatchCheckMlsReadyResponse> CheckMlsUsersReadyAsync(
+        BatchCheckMlsReadyRequest request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<BatchCheckMlsReadyRequest, BatchCheckMlsReadyResponse>(
+            MlsApiRoutes.UsersReadyBatch(), request, cancellationToken);
+
+    public Task<CheckMlsReadyResponse> CheckMlsUserReadyAsync(
+        Guid accountId,
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<CheckMlsReadyResponse>(MlsApiRoutes.UserReady(accountId), cancellationToken);
+
+    public Task<List<MlsDeviceKeyPackageResponse>> GetMlsCapableDevicesAsync(
+        string groupId,
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<List<MlsDeviceKeyPackageResponse>>(
+            MlsApiRoutes.GroupCapableDevices(groupId), cancellationToken);
+
+    public Task<SnMlsGroupState> BootstrapMlsGroupAsync(
+        string groupId,
+        BootstrapMlsGroupBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<BootstrapMlsGroupBody, SnMlsGroupState>(
+            MlsApiRoutes.BootstrapGroup(groupId), request, cancellationToken);
+
+    public Task<SnMlsGroupState> CommitMlsGroupAsync(
+        string groupId,
+        CommitMlsGroupBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<CommitMlsGroupBody, SnMlsGroupState>(
+            MlsApiRoutes.CommitGroup(groupId), request, cancellationToken);
+
+    public Task<List<SnE2eeEnvelope>> FanoutMlsWelcomeAsync(
+        string groupId,
+        FanoutMlsWelcomeBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<FanoutMlsWelcomeBody, List<SnE2eeEnvelope>>(
+            MlsApiRoutes.FanoutWelcome(groupId), request, cancellationToken);
+
+    public Task<SnMlsDeviceMembership> MarkMlsReshareRequiredAsync(
+        string groupId,
+        MarkMlsReshareRequiredBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<MarkMlsReshareRequiredBody, SnMlsDeviceMembership>(
+            MlsApiRoutes.MarkReshareRequired(groupId), request, cancellationToken);
+
+    public Task<List<SnMlsDeviceMembership>> GetMyMlsReshareRequiredAsync(
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<List<SnMlsDeviceMembership>>(
+            MlsApiRoutes.MyReshareRequired(), cancellationToken);
+
+    public Task CompleteMlsReshareAsync(string groupId, CancellationToken cancellationToken = default)
+        => SendMlsNoResponseAsync(MlsApiRoutes.CompleteReshare(groupId), content: null, cancellationToken);
+
+    public Task UploadMlsGroupInfoAsync(
+        string groupId,
+        UploadGroupInfoBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyNoResponseAsync(MlsApiRoutes.UploadGroupInfo(groupId), request, cancellationToken);
+
+    public Task<MlsGroupInfoResponse> GetMlsGroupInfoAsync(string groupId, CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<MlsGroupInfoResponse>(MlsApiRoutes.GetGroupInfo(groupId), cancellationToken);
+
+    public Task<List<SnE2eeEnvelope>> FanoutMlsMessageAsync(
+        FanoutEnvelopeBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<FanoutEnvelopeBody, List<SnE2eeEnvelope>>(
+            MlsApiRoutes.FanoutMessage(), request, cancellationToken);
+
+    public Task<List<SnE2eeEnvelope>> FanoutMlsCommitAsync(
+        string groupId,
+        FanoutMlsCommitBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<FanoutMlsCommitBody, List<SnE2eeEnvelope>>(
+            MlsApiRoutes.FanoutCommit(groupId), request, cancellationToken);
+
+    public Task<List<SnE2eeEnvelope>> FanoutMlsGroupMessageAsync(
+        string groupId,
+        FanoutMlsGroupMessageBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<FanoutMlsGroupMessageBody, List<SnE2eeEnvelope>>(
+            MlsApiRoutes.FanoutGroupMessage(groupId), request, cancellationToken);
+
+    public Task<List<SnE2eeEnvelope>> GetPendingMlsEnvelopesAsync(
+        int take = 100,
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<List<SnE2eeEnvelope>>(MlsApiRoutes.PendingEnvelopes(take), cancellationToken);
+
+    public Task<SnE2eeEnvelope> AckMlsEnvelopeAsync(
+        Guid envelopeId,
+        CancellationToken cancellationToken = default)
+        => SendMlsForResponseAsync<SnE2eeEnvelope>(MlsApiRoutes.AckEnvelope(envelopeId), cancellationToken);
+
+    public Task RevokeMlsDeviceAsync(string deviceId, CancellationToken cancellationToken = default)
+        => SendMlsNoResponseAsync(MlsApiRoutes.RevokeDevice(deviceId), content: null, cancellationToken);
+
+    public Task<SnMlsDeviceMembership> AddMlsDeviceMembershipAsync(
+        string deviceId,
+        AddMlsDeviceMembershipBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<AddMlsDeviceMembershipBody, SnMlsDeviceMembership>(
+            MlsApiRoutes.AddDeviceMembership(deviceId), request, cancellationToken);
+
+    public Task<SnMlsGroupState> ResetMlsGroupAsync(
+        string groupId,
+        ResetMlsGroupBody request,
+        CancellationToken cancellationToken = default)
+        => SendMlsWithBodyAsync<ResetMlsGroupBody, SnMlsGroupState>(
+            MlsApiRoutes.ResetGroup(groupId), request, cancellationToken);
+
+    private Task<TResponse> SendMlsForResponseAsync<TResponse>(
+        MlsApiEndpoint endpoint,
+        CancellationToken cancellationToken)
+        => SendAsync<TResponse>(endpoint.Method, endpoint.Path, content: null, cancellationToken);
+
+    private Task<TResponse> SendMlsWithBodyAsync<TRequest, TResponse>(
+        MlsApiEndpoint endpoint,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return SendAsync<TResponse>(
+            endpoint.Method,
+            endpoint.Path,
+            JsonContent.Create(request, options: JsonDefaults.Options),
+            cancellationToken);
+    }
+
+    private Task SendMlsWithBodyNoResponseAsync<TRequest>(
+        MlsApiEndpoint endpoint,
+        TRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return SendMlsNoResponseAsync(
+            endpoint,
+            JsonContent.Create(request, options: JsonDefaults.Options),
+            cancellationToken);
+    }
+
+    private async Task SendMlsNoResponseAsync(
+        MlsApiEndpoint endpoint,
+        HttpContent? content,
+        CancellationToken cancellationToken)
+    {
+        using var response = await SendCoreAsync(
+                endpoint.Method,
+                endpoint.Path,
+                content,
+                allowRefresh: true,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await EnsureSuccessAsync(response).ConfigureAwait(false);
     }
 
     public async Task<List<SnChatRoom>> GetRealmChatRoomsAsync(string slug, CancellationToken cancellationToken = default)
@@ -3867,6 +4050,9 @@ public sealed class SolarApiClient : ISolarApiClient
             }
 
             await AttachBearerAsync(request, cancellationToken).ConfigureAwait(false);
+            await MlsRequestHeaders
+                .AttachDeviceIdAsync(request, relativePath, _mlsDeviceIdProvider, cancellationToken)
+                .ConfigureAwait(false);
 
             try
             {
@@ -4093,8 +4279,11 @@ public sealed class SolarApiClient : ISolarApiClient
         }
 
         var body = await SafeReadBodyAsync(response, CancellationToken.None).ConfigureAwait(false);
+        var target = response.RequestMessage is { } req
+            ? $" [{req.Method.Method} {req.RequestUri?.AbsolutePath}]"
+            : string.Empty;
         throw new SolarApiException(
-            $"API request failed with {(int)response.StatusCode} ({response.StatusCode}).",
+            $"API request failed with {(int)response.StatusCode} ({response.StatusCode}).{target}",
             response.StatusCode,
             body);
     }

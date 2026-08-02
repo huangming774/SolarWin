@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
+using System.Text;
 using Windows.Security.ExchangeActiveSyncProvisioning;
 using Windows.System.Profile;
 
@@ -36,9 +38,8 @@ public static class DeviceInfoHelper
             // Fall through to a stable local fallback.
         }
 
-        _deviceId = $"solarwin-{Environment.MachineName}-{Environment.UserName}"
-            .GetHashCode(StringComparison.Ordinal)
-            .ToString("X8");
+        var source = Encoding.UTF8.GetBytes($"solarwin-{Environment.MachineName}-{Environment.UserName}");
+        _deviceId = Convert.ToHexString(SHA256.HashData(source));
         return _deviceId;
     }
 

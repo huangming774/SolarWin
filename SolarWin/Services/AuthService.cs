@@ -26,6 +26,7 @@ public sealed class AuthService : IAuthService
     private readonly IAccountSessionService _sessions;
     private readonly IAccountDbContextFactory _accountDb;
     private readonly IChatWritePump _writePump;
+    private readonly IMlsClientService _mls;
     private readonly IHttpClientFactory _httpClientFactory;
     private DateTimeOffset? _accessExpiresAt;
 
@@ -36,6 +37,7 @@ public sealed class AuthService : IAuthService
         IAccountSessionService sessions,
         IAccountDbContextFactory accountDb,
         IChatWritePump writePump,
+        IMlsClientService mls,
         IHttpClientFactory httpClientFactory)
     {
         _api = api;
@@ -44,6 +46,7 @@ public sealed class AuthService : IAuthService
         _sessions = sessions;
         _accountDb = accountDb;
         _writePump = writePump;
+        _mls = mls;
         _httpClientFactory = httpClientFactory;
     }
 
@@ -76,6 +79,7 @@ public sealed class AuthService : IAuthService
             }
 
             BindLocalDatabaseIfPossible();
+            await InitializeMlsBestEffortAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
@@ -672,6 +676,15 @@ public sealed class AuthService : IAuthService
             // Best-effort server logout.
         }
 
+        try
+        {
+            await _mls.ResetAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is MlsClientException or MlsNativeException)
+        {
+            System.Diagnostics.Debug.WriteLine($"[MLS] reset on logout failed: {ex.GetType().Name}");
+        }
+
         await _sessions.OnLoggedOutAsync(removeProfile: false, cancellationToken).ConfigureAwait(false);
         await _api.SetBearerTokenAsync(null, cancellationToken).ConfigureAwait(false);
         _accessExpiresAt = null;
@@ -734,6 +747,7 @@ public sealed class AuthService : IAuthService
     {
         var tokens = await ExchangeTokenAsync(challengeId, cancellationToken).ConfigureAwait(false);
         await LoadCurrentAccountBestEffortAsync(cancellationToken).ConfigureAwait(false);
+        await InitializeMlsBestEffortAsync(cancellationToken).ConfigureAwait(false);
         IsAuthenticated = true;
         RaiseAuthChanged();
         return tokens;
@@ -792,6 +806,24 @@ public sealed class AuthService : IAuthService
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"[Auth] Local DB bind failed: {ex.Message}");
+        }
+    }
+
+    private async Task InitializeMlsBestEffortAsync(CancellationToken cancellationToken)
+    {
+        if (_sessions.ActiveAccountId is null) return;
+        try
+        {
+            await _mls.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException or DllNotFoundException or BadImageFormatException)
+        {
+            // Authentication remains valid; MLS rooms themselves stay fail-closed and surface the error.
+            System.Diagnostics.Debug.WriteLine($"[MLS] initialization unavailable: {ex.GetType().Name}");
         }
     }
 

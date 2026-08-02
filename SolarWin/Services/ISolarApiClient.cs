@@ -179,9 +179,95 @@ public interface ISolarApiClient
 
     Task MarkDeviceJoinedRoomAsync(Guid roomId, CancellationToken cancellationToken = default);
 
-    Task EnableRoomE2eeAsync(Guid roomId, int encryptionMode = 3, CancellationToken cancellationToken = default);
+    Task EnableRoomMlsAsync(
+        Guid roomId,
+        string? mlsGroupId = null,
+        Dictionary<string, System.Text.Json.JsonElement>? e2eePolicy = null,
+        CancellationToken cancellationToken = default);
 
-    Task EnableRoomMlsAsync(Guid roomId, string? mlsGroupId = null, CancellationToken cancellationToken = default);
+    // —— Padlock E2EE / MLS delivery API ——
+
+    Task<SnMlsKeyPackage> PublishMlsKeyPackageAsync(PublishMlsKeyPackageBody request, CancellationToken cancellationToken = default);
+
+    Task<MlsKeyPackageStatusResponse> GetMlsKeyPackageStatusAsync(CancellationToken cancellationToken = default);
+
+    Task<List<MlsDeviceKeyPackageResponse>> GetMlsDeviceKeyPackagesAsync(
+        Guid accountId,
+        bool? consume = null,
+        CancellationToken cancellationToken = default);
+
+    Task<BatchCheckMlsReadyResponse> CheckMlsUsersReadyAsync(
+        BatchCheckMlsReadyRequest request,
+        CancellationToken cancellationToken = default);
+
+    Task<CheckMlsReadyResponse> CheckMlsUserReadyAsync(Guid accountId, CancellationToken cancellationToken = default);
+
+    Task<List<MlsDeviceKeyPackageResponse>> GetMlsCapableDevicesAsync(
+        string groupId,
+        CancellationToken cancellationToken = default);
+
+    Task<SnMlsGroupState> BootstrapMlsGroupAsync(
+        string groupId,
+        BootstrapMlsGroupBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<SnMlsGroupState> CommitMlsGroupAsync(
+        string groupId,
+        CommitMlsGroupBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SnE2eeEnvelope>> FanoutMlsWelcomeAsync(
+        string groupId,
+        FanoutMlsWelcomeBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<SnMlsDeviceMembership> MarkMlsReshareRequiredAsync(
+        string groupId,
+        MarkMlsReshareRequiredBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SnMlsDeviceMembership>> GetMyMlsReshareRequiredAsync(CancellationToken cancellationToken = default);
+
+    Task CompleteMlsReshareAsync(string groupId, CancellationToken cancellationToken = default);
+
+    Task UploadMlsGroupInfoAsync(
+        string groupId,
+        UploadGroupInfoBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<MlsGroupInfoResponse> GetMlsGroupInfoAsync(string groupId, CancellationToken cancellationToken = default);
+
+    Task<List<SnE2eeEnvelope>> FanoutMlsMessageAsync(
+        FanoutEnvelopeBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SnE2eeEnvelope>> FanoutMlsCommitAsync(
+        string groupId,
+        FanoutMlsCommitBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SnE2eeEnvelope>> FanoutMlsGroupMessageAsync(
+        string groupId,
+        FanoutMlsGroupMessageBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<List<SnE2eeEnvelope>> GetPendingMlsEnvelopesAsync(
+        int take = 100,
+        CancellationToken cancellationToken = default);
+
+    Task<SnE2eeEnvelope> AckMlsEnvelopeAsync(Guid envelopeId, CancellationToken cancellationToken = default);
+
+    Task RevokeMlsDeviceAsync(string deviceId, CancellationToken cancellationToken = default);
+
+    Task<SnMlsDeviceMembership> AddMlsDeviceMembershipAsync(
+        string deviceId,
+        AddMlsDeviceMembershipBody request,
+        CancellationToken cancellationToken = default);
+
+    Task<SnMlsGroupState> ResetMlsGroupAsync(
+        string groupId,
+        ResetMlsGroupBody request,
+        CancellationToken cancellationToken = default);
 
     Task<List<SnChatRoom>> GetRealmChatRoomsAsync(string slug, CancellationToken cancellationToken = default);
 

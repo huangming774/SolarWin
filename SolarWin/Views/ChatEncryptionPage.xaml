@@ -68,7 +68,7 @@
                             TextWrapping="Wrap" />
                         <TextBlock
                             Opacity="0.65"
-                            Text="状态来自服务端会话元数据，不代表本机已经持有完整解密密钥。"
+                            Text="状态同时校验服务端房间元数据、本机 SQLCipher 群组状态和当前 epoch。"
                             TextWrapping="Wrap" />
                     </StackPanel>
                 </Grid>
@@ -76,26 +76,33 @@
 
             <Border Style="{StaticResource SecurityCardStyle}">
                 <StackPanel Spacing="16">
-                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="端到端加密" />
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="MLS 端到端加密" />
                     <TextBlock
                         Opacity="0.7"
-                        Text="为当前会话请求启用 E2EE 或 MLS。启用属于会话级变更，可能影响其他成员和旧客户端。"
+                        Text="启用后消息内容由 RFC 9420 MLS 加密；DysonNetwork 当前协议不允许把已加密房间恢复为明文。恢复操作会重建群组并要求所有设备重新共享，不是关闭加密。"
                         TextWrapping="WrapWholeWords" />
                     <Grid ColumnSpacing="10">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Button
                             HorizontalAlignment="Stretch"
-                            Command="{x:Bind ViewModel.EnableE2eeCommand}"
-                            Content="启用 E2EE"
+                            Command="{x:Bind ViewModel.EnableMlsCommand}"
+                            Content="启用 MLS E2EE"
                             Style="{StaticResource AccentButtonStyle}" />
                         <Button
                             Grid.Column="1"
                             HorizontalAlignment="Stretch"
-                            Command="{x:Bind ViewModel.EnableMlsCommand}"
-                            Content="启用 MLS" />
+                            Command="{x:Bind ViewModel.RecoverMlsCommand}"
+                            Content="恢复 / 重建 MLS" />
+                        <Button
+                            Grid.Column="2"
+                            HorizontalAlignment="Stretch"
+                            Content="关闭 MLS（不支持）"
+                            IsEnabled="False"
+                            ToolTipService.ToolTip="DysonNetwork 禁止关闭已启用的 MLS 房间" />
                     </Grid>
                 </StackPanel>
             </Border>
@@ -103,9 +110,9 @@
             <InfoBar
                 IsClosable="False"
                 IsOpen="True"
-                Message="当前版本尚未接入本地密钥交换、密钥持久化与 MLS 状态机。无法解密的密文仍会显示为“加密消息”，不会伪装成已解密。"
-                Severity="Warning"
-                Title="客户端解密能力尚未完成" />
+                Message="身份签名密钥和 SQLCipher 数据库密钥由 Windows DPAPI（当前用户）保护；消息正文只以 chat.mls.v2 密文发送到服务端。无法解密时客户端会失败关闭，不会回退为明文。"
+                Severity="Success"
+                Title="本机 MLS 已接入" />
 
             <Expander Header="高级消息工具">
                 <Border

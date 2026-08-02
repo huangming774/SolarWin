@@ -30,6 +30,9 @@ public sealed class SnChatMessage
     [JsonPropertyName("is_encrypted")]
     public bool IsEncrypted { get; set; }
 
+    [JsonPropertyName("encryption_meta")]
+    public SnChatEncryptionMeta? EncryptionMeta { get; set; }
+
     [JsonPropertyName("ciphertext")]
     public byte[]? Ciphertext { get; set; }
 
@@ -101,6 +104,39 @@ public sealed class SnChatMessage
 
     [JsonPropertyName("resource_identifier")]
     public string? ResourceIdentifier { get; set; }
+
+    /// <summary>Normalize the current nested Dyson contract and the legacy flattened fields.</summary>
+    public SnChatEncryptionMeta? GetEncryptionMeta()
+    {
+        if (EncryptionMeta is not null) return EncryptionMeta;
+        if (Ciphertext is null || Ciphertext.Length == 0) return null;
+        return new SnChatEncryptionMeta
+        {
+            Ciphertext = Ciphertext,
+            Header = EncryptionHeader,
+            Signature = EncryptionSignature,
+            Scheme = EncryptionScheme ?? string.Empty,
+            Epoch = EncryptionEpoch,
+        };
+    }
+}
+
+public sealed class SnChatEncryptionMeta
+{
+    [JsonPropertyName("ciphertext")]
+    public byte[] Ciphertext { get; set; } = [];
+
+    [JsonPropertyName("header")]
+    public byte[]? Header { get; set; }
+
+    [JsonPropertyName("signature")]
+    public byte[]? Signature { get; set; }
+
+    [JsonPropertyName("scheme")]
+    public string Scheme { get; set; } = string.Empty;
+
+    [JsonPropertyName("epoch")]
+    public long? Epoch { get; set; }
 }
 
 public sealed class SnChatReaction

@@ -122,6 +122,26 @@
     <!-- Voice message capture (WASAPI) -->
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="QRCoder" Version="1.6.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(Platform)' == 'x64'">
+    <MlsNativeProject>$(MSBuildProjectDirectory)\..\SolarWin.Mls.Native</MlsNativeProject>
+    <MlsNativeBinary>$(MlsNativeProject)\runtimes\win-x64\native\SolarWin.Mls.Native.dll</MlsNativeBinary>
+  </PropertyGroup>
+
+  <Target Name="BuildSolarWinMlsNative" BeforeTargets="Build" Condition="'$(Platform)' == 'x64' and !Exists('$(MlsNativeBinary)')">
+    <Exec Command="powershell -NoProfile -ExecutionPolicy Bypass -File &quot;$(MlsNativeProject)\restore-openmls.ps1&quot;" />
+    <Exec Command="cargo build --manifest-path &quot;$(MlsNativeProject)\Cargo.toml&quot; --release" />
+    <Copy SourceFiles="$(MlsNativeProject)\target\release\solarwin_mls_native.dll" DestinationFiles="$(MlsNativeBinary)" />
+  </Target>
+
+  <ItemGroup Condition="'$(Platform)' == 'x64'">
+    <Content Include="$(MlsNativeBinary)" Link="SolarWin.Mls.Native.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
   </ItemGroup>
 
   <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">

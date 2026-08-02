@@ -17,8 +17,17 @@ public sealed class SendMessageRequest
     [JsonPropertyName("replied_message_id")]
     public Guid? RepliedMessageId { get; set; }
 
+    [JsonPropertyName("forwarded_message_id")]
+    public Guid? ForwardedMessageId { get; set; }
+
     [JsonPropertyName("attachments_id")]
     public List<string>? AttachmentsId { get; set; }
+
+    [JsonPropertyName("meta")]
+    public Dictionary<string, object?>? Meta { get; set; }
+
+    [JsonPropertyName("encryption_meta")]
+    public SnChatEncryptionMeta? EncryptionMeta { get; set; }
 }
 
 /// <summary>POST /messager/chat/{roomId}/sync body (OpenAPI SyncRequest).</summary>

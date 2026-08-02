@@ -23,6 +23,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChatAnalyticsService, ChatAnalyticsService>();
 
         services.AddSingleton<ITokenStorage, PasswordVaultTokenStorage>();
+        services.AddSingleton<IMlsDeviceIdProvider, PersistentMlsDeviceIdProvider>();
+        services.AddSingleton<IMlsSecureStore, MlsSecureStore>();
+        services.AddSingleton<IMlsClientService, MlsClientService>();
         services.AddSingleton<IAccountSessionService, AccountSessionService>();
         services.AddSingleton<ISystemNotificationService, SystemNotificationService>();
         services.AddSingleton<ITrayService, TrayService>();
