@@ -1,115 +1,279 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# This workflow will build, test, sign and package a WPF or Windows Forms desktop application
-# built on .NET Core.
-# To learn how to migrate your existing application to .NET Core,
-# refer to https://docs.microsoft.com/en-us/dotnet/desktop-wpf/migration/convert-project-from-net-framework
-#
-# To configure this workflow:
-#
-# 1. Configure environment variables
-# GitHub sets default environment variables for every workflow run.
-# Replace the variables relative to your project in the "env" section below.
-#
-# 2. Signing
-# Generate a signing certificate in the Windows Application
-# Packaging Project or add an existing signing certificate to the project.
-# Next, use PowerShell to encode the .pfx file using Base64 encoding
-# by running the following Powershell script to generate the output string:
-#
-# $pfx_cert = Get-Content '.\SigningCertificate.pfx' -Encoding Byte
-# [System.Convert]::ToBase64String($pfx_cert) | Out-File 'SigningCertificate_Encoded.txt'
-#
-# Open the output file, SigningCertificate_Encoded.txt, and copy the
-# string inside. Then, add the string to the repo as a GitHub secret
-# and name it "Base64_Encoded_Pfx."
-# For more information on how to configure your signing certificate for
-# this workflow, refer to https://github.com/microsoft/github-actions-for-desktop-apps#signing
-#
-# Finally, add the signing certificate password to the repo as a secret and name it "Pfx_Key".
-# See "Build the Windows Application Packaging project" below to see how the secret is used.
-#
-# For more information on GitHub Actions, refer to https://github.com/features/actions
-# For a complete CI/CD sample to get started with GitHub Action workflows for Desktop Applications,
-# refer to https://github.com/microsoft/github-actions-for-desktop-apps
-
-name: .NET Core Desktop
+name: Build SolarWin packages
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [master]
+    tags: ["v*"]
   pull_request:
-    branches: [ "master" ]
+    branches: [master]
+  workflow_dispatch:
+
+concurrency:
+  group: solarwin-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_VERSION: 10.0.x
+  PROJECT_PATH: SolarWin\SolarWin.csproj
+  TEST_PROJECT_PATH: SolarWin.Tests\SolarWin.Tests.csproj
+  CONFIGURATION: Release
+  PLATFORM: x64
+  RUNTIME_IDENTIFIER: win-x64
 
 jobs:
-
   build:
-
-    strategy:
-      matrix:
-        configuration: [Debug, Release]
-
-    runs-on: windows-latest  # For a list of available runner types, refer to
-                             # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
-
-    env:
-      Solution_Name: your-solution-name                         # Replace with your solution name, i.e. MyWpfApp.sln.
-      Test_Project_Path: your-test-project-path                 # Replace with the path to your test project, i.e. MyWpfApp.Tests\MyWpfApp.Tests.csproj.
-      Wap_Project_Directory: your-wap-project-directory-name    # Replace with the Wap project directory relative to the solution, i.e. MyWpfApp.Package.
-      Wap_Project_Path: your-wap-project-path                   # Replace with the path to your Wap project, i.e. MyWpf.App.Package\MyWpfApp.Package.wapproj.
+    name: Build, test and package x64
+    runs-on: windows-2025-vs2026
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    permissions:
+      contents: read
 
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
 
-    # Install the .NET Core workload
-    - name: Install .NET Core
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: 8.0.x
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    # Add  MSBuild to the PATH: https://github.com/microsoft/setup-msbuild
-    - name: Setup MSBuild.exe
-      uses: microsoft/setup-msbuild@v2
+      - name: Add Visual Studio MSBuild to PATH
+        uses: microsoft/setup-msbuild@v3
 
-    # Execute all unit tests in the solution
-    - name: Execute unit tests
-      run: dotnet test
+      - name: Show build environment
+        shell: pwsh
+        run: |
+          dotnet --version
+          msbuild -version
 
-    # Restore the application to populate the obj folder with RuntimeIdentifiers
-    - name: Restore the application
-      run: msbuild $env:Solution_Name /t:Restore /p:Configuration=$env:Configuration
-      env:
-        Configuration: ${{ matrix.configuration }}
+      - name: Read and validate application version
+        id: version
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath $env:PROJECT_PATH -Encoding UTF8
+          $version = @($project.Project.PropertyGroup.Version)[0].Trim()
+          if ([string]::IsNullOrWhiteSpace($version)) {
+            throw "SolarWin.csproj does not contain a Version value."
+          }
 
-    # Decode the base 64 encoded pfx and save the Signing_Certificate
-    - name: Decode the pfx
-      run: |
-        $pfx_cert_byte = [System.Convert]::FromBase64String("${{ secrets.Base64_Encoded_Pfx }}")
-        $certificatePath = Join-Path -Path $env:Wap_Project_Directory -ChildPath GitHubActionsWorkflow.pfx
-        [IO.File]::WriteAllBytes("$certificatePath", $pfx_cert_byte)
+          if ($env:GITHUB_REF -like "refs/tags/v*") {
+            $tagVersion = $env:GITHUB_REF_NAME.TrimStart("v")
+            if ($tagVersion -ne $version) {
+              throw "Tag $env:GITHUB_REF_NAME does not match SolarWin.csproj version $version."
+            }
+          }
 
-    # Create the app package by building and packaging the Windows Application Packaging project
-    - name: Create the app package
-      run: msbuild $env:Wap_Project_Path /p:Configuration=$env:Configuration /p:UapAppxPackageBuildMode=$env:Appx_Package_Build_Mode /p:AppxBundle=$env:Appx_Bundle /p:PackageCertificateKeyFile=GitHubActionsWorkflow.pfx /p:PackageCertificatePassword=${{ secrets.Pfx_Key }}
-      env:
-        Appx_Bundle: Always
-        Appx_Bundle_Platforms: x86|x64
-        Appx_Package_Build_Mode: StoreUpload
-        Configuration: ${{ matrix.configuration }}
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "SolarWin version: $version"
 
-    # Remove the pfx
-    - name: Remove the pfx
-      run: Remove-Item -path $env:Wap_Project_Directory\GitHubActionsWorkflow.pfx
+      - name: Restore application
+        shell: pwsh
+        run: >-
+          msbuild $env:PROJECT_PATH
+          /t:Restore
+          /p:Configuration=$env:CONFIGURATION
+          /p:Platform=$env:PLATFORM
+          /p:RuntimeIdentifier=$env:RUNTIME_IDENTIFIER
+          /m
+          /nologo
 
-    # Upload the MSIX package: https://github.com/marketplace/actions/upload-a-build-artifact
-    - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: MSIX Package
-        path: ${{ env.Wap_Project_Directory }}\AppPackages
+      - name: Restore tests
+        shell: pwsh
+        run: dotnet restore $env:TEST_PROJECT_PATH --nologo
+
+      - name: Run tests
+        shell: pwsh
+        run: dotnet test $env:TEST_PROJECT_PATH --configuration $env:CONFIGURATION --no-restore --nologo
+
+      - name: Build portable package
+        shell: pwsh
+        run: |
+          $portableDirectory = Join-Path $env:RUNNER_TEMP "solarwin-portable"
+          $distDirectory = Join-Path $env:GITHUB_WORKSPACE "dist"
+          New-Item -ItemType Directory -Force -Path $portableDirectory, $distDirectory | Out-Null
+
+          $arguments = @(
+            $env:PROJECT_PATH
+            "/t:Publish"
+            "/p:Configuration=$env:CONFIGURATION"
+            "/p:Platform=$env:PLATFORM"
+            "/p:RuntimeIdentifier=$env:RUNTIME_IDENTIFIER"
+            "/p:WindowsPackageType=None"
+            "/p:GenerateAppxPackageOnBuild=false"
+            "/p:AppxPackageSigningEnabled=false"
+            "/p:SelfContained=true"
+            "/p:PublishSingleFile=true"
+            "/p:PublishDir=$portableDirectory\"
+            "/m"
+            "/nologo"
+            "/nodeReuse:false"
+          )
+          & msbuild @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Portable publish failed with exit code $LASTEXITCODE."
+          }
+
+          $requiredFiles = @("SolarWin.exe", "SolarWin.Native.dll")
+          foreach ($requiredFile in $requiredFiles) {
+            $requiredPath = Join-Path $portableDirectory $requiredFile
+            if (-not (Test-Path -LiteralPath $requiredPath)) {
+              throw "Portable publish is missing $requiredFile."
+            }
+          }
+
+          $archivePath = Join-Path $distDirectory "SolarWin-${{ steps.version.outputs.version }}-win-x64-portable.zip"
+          Compress-Archive -Path (Join-Path $portableDirectory "*") -DestinationPath $archivePath -CompressionLevel Optimal
+
+      - name: Prepare MSIX signing certificate
+        id: signing
+        shell: pwsh
+        env:
+          MSIX_PFX_BASE64: ${{ secrets.MSIX_PFX_BASE64 }}
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
+        run: |
+          $hasCertificate = -not [string]::IsNullOrWhiteSpace($env:MSIX_PFX_BASE64)
+          $hasPassword = -not [string]::IsNullOrWhiteSpace($env:MSIX_PFX_PASSWORD)
+
+          if ($hasCertificate -xor $hasPassword) {
+            throw "Configure both MSIX_PFX_BASE64 and MSIX_PFX_PASSWORD, or leave both unset."
+          }
+          if ($env:GITHUB_REF -like "refs/tags/v*" -and -not $hasCertificate) {
+            throw "A v* release tag requires the MSIX_PFX_BASE64 and MSIX_PFX_PASSWORD repository secrets."
+          }
+
+          if ($hasCertificate) {
+            $certificatePath = Join-Path $env:RUNNER_TEMP "SolarWin.GitHubActions.pfx"
+            [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:MSIX_PFX_BASE64))
+            "certificate_path=$certificatePath" >> $env:GITHUB_OUTPUT
+            "signed=true" >> $env:GITHUB_OUTPUT
+
+            $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::new(
+              $certificatePath,
+              $env:MSIX_PFX_PASSWORD,
+              [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+            )
+            [xml]$manifest = Get-Content -LiteralPath "SolarWin\Package.appxmanifest" -Encoding UTF8
+            $publisher = $manifest.Package.Identity.Publisher
+            if ($certificate.Subject -ne $publisher) {
+              throw "Certificate subject '$($certificate.Subject)' does not match Package.appxmanifest publisher '$publisher'."
+            }
+            $publicCertificatePath = Join-Path $env:GITHUB_WORKSPACE "dist\SolarWin-${{ steps.version.outputs.version }}-install.cer"
+            [IO.File]::WriteAllBytes(
+              $publicCertificatePath,
+              $certificate.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+            )
+            $certificate.Dispose()
+          }
+          else {
+            "signed=false" >> $env:GITHUB_OUTPUT
+            "No signing secrets were supplied; this run will produce an unsigned MSIX."
+          }
+
+      - name: Build MSIX package
+        shell: pwsh
+        env:
+          MSIX_PFX_PASSWORD: ${{ secrets.MSIX_PFX_PASSWORD }}
+          CERTIFICATE_PATH: ${{ steps.signing.outputs.certificate_path }}
+          IS_SIGNED: ${{ steps.signing.outputs.signed }}
+        run: |
+          $msixOutputDirectory = Join-Path $env:RUNNER_TEMP "solarwin-msix"
+          $distDirectory = Join-Path $env:GITHUB_WORKSPACE "dist"
+          New-Item -ItemType Directory -Force -Path $msixOutputDirectory | Out-Null
+
+          $arguments = @(
+            $env:PROJECT_PATH
+            "/t:Build"
+            "/p:Configuration=$env:CONFIGURATION"
+            "/p:Platform=$env:PLATFORM"
+            "/p:RuntimeIdentifier=$env:RUNTIME_IDENTIFIER"
+            "/p:WindowsPackageType=MSIX"
+            "/p:GenerateAppxPackageOnBuild=true"
+            "/p:PublishSingleFile=false"
+            "/p:BuildProjectReferences=false"
+            "/p:AppxPackageDir=$msixOutputDirectory\"
+            "/p:UapAppxPackageBuildMode=SideloadOnly"
+            "/p:AppxBundle=Never"
+            "/m"
+            "/nologo"
+            "/nodeReuse:false"
+          )
+
+          if ($env:IS_SIGNED -eq "true") {
+            $arguments += "/p:AppxPackageSigningEnabled=true"
+            $arguments += "/p:PackageCertificateKeyFile=$env:CERTIFICATE_PATH"
+            $arguments += "/p:PackageCertificatePassword=$env:MSIX_PFX_PASSWORD"
+          }
+          else {
+            $arguments += "/p:AppxPackageSigningEnabled=false"
+          }
+
+          & msbuild @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSIX build failed with exit code $LASTEXITCODE."
+          }
+
+          $package = Get-ChildItem -LiteralPath $msixOutputDirectory -Recurse -File |
+            Where-Object { $_.Extension -in ".msix", ".appx" } |
+            Select-Object -First 1
+          if ($null -eq $package) {
+            throw "MSBuild completed without producing an MSIX package."
+          }
+
+          $signatureSuffix = if ($env:IS_SIGNED -eq "true") { "" } else { "-unsigned" }
+          $destination = Join-Path $distDirectory "SolarWin-${{ steps.version.outputs.version }}-win-x64$signatureSuffix.msix"
+          Copy-Item -LiteralPath $package.FullName -Destination $destination
+
+      - name: Create SHA-256 checksums
+        shell: pwsh
+        run: |
+          $distDirectory = Join-Path $env:GITHUB_WORKSPACE "dist"
+          $checksumPath = Join-Path $distDirectory "SHA256SUMS.txt"
+          Get-ChildItem -LiteralPath $distDirectory -File |
+            Where-Object { $_.Name -ne "SHA256SUMS.txt" } |
+            Sort-Object Name |
+            ForEach-Object {
+              $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+              "$hash *$($_.Name)"
+            } | Set-Content -LiteralPath $checksumPath -Encoding UTF8
+          Get-Content -LiteralPath $checksumPath
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: SolarWin-${{ steps.version.outputs.version }}-packages
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v7
+        with:
+          name: SolarWin-${{ needs.build.outputs.version }}-packages
+          path: release-assets
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" release-assets/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" release-assets/* \
+              --verify-tag \
+              --generate-notes \
+              --title "SolarWin $GITHUB_REF_NAME"
+          fi

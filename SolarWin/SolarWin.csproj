@@ -41,18 +41,20 @@
                       Condition="'$(Platform)' != 'ARM64'" />
   </ItemGroup>
 
-  <Target Name="CopySolarWinNative" AfterTargets="Build" Condition="'$(Platform)' != 'ARM64'">
-    <PropertyGroup>
-      <NativePlatform Condition="'$(Platform)' == 'x86'">Win32</NativePlatform>
-      <NativePlatform Condition="'$(Platform)' != 'x86'">$(Platform)</NativePlatform>
-      <NativeBinary>$(MSBuildProjectDirectory)\..\SolarWin.Native\bin\$(NativePlatform)\$(Configuration)\SolarWin.Native.dll</NativeBinary>
-    </PropertyGroup>
-    <Copy SourceFiles="$(NativeBinary)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(NativeBinary)')" />
-  </Target>
+  <PropertyGroup Condition="'$(Platform)' != 'ARM64'">
+    <NativePlatform Condition="'$(Platform)' == 'x86'">Win32</NativePlatform>
+    <NativePlatform Condition="'$(Platform)' != 'x86'">$(Platform)</NativePlatform>
+    <NativeBinary>$(MSBuildProjectDirectory)\..\SolarWin.Native\bin\$(NativePlatform)\$(Configuration)\SolarWin.Native.dll</NativeBinary>
+  </PropertyGroup>
 
-  <Target Name="CopySolarWinNativeToPublish" AfterTargets="Publish" Condition="'$(Platform)' != 'ARM64' and Exists('$(NativeBinary)')">
-    <Copy SourceFiles="$(NativeBinary)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" />
-  </Target>
+  <!-- Treat the native helper as application content so Build, Publish and MSIX all include it. -->
+  <ItemGroup Condition="'$(Platform)' != 'ARM64'">
+    <Content Include="$(NativeBinary)" Link="SolarWin.Native.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+    </Content>
+  </ItemGroup>
 
   <ItemGroup>
     <!-- App / window / tray icon (.ico must land next to exe for unpackaged tray) -->

@@ -301,7 +301,13 @@ public sealed class TrayService : ITrayService
 
             if (App.DispatcherQueue is { } dq && !dq.HasThreadAccess)
             {
-                dq.TryEnqueue(DoQuit);
+                if (!dq.TryEnqueue(DoQuit))
+                {
+                    // The main UI dispatcher is already gone, so no managed
+                    // window shutdown path remains. Guarantee that Exit means Exit.
+                    Environment.Exit(0);
+                }
+
                 return;
             }
 

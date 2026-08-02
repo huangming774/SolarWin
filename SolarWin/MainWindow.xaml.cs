@@ -197,6 +197,11 @@ public sealed partial class MainWindow : Window
         _isInTray = false;
         DisposeBackgroundServices();
         Close();
+
+        // H.NotifyIcon's second-window menu owns a helper HWND. Closing only the
+        // main window can therefore leave the WinUI dispatcher (and process)
+        // alive. Explicitly end the application after disposing that helper.
+        Application.Current.Exit();
     }
 
     private void AppWindow_OnClosing(AppWindow sender, AppWindowClosingEventArgs args)
@@ -210,7 +215,17 @@ public sealed partial class MainWindow : Window
         {
             args.Cancel = true;
             // Defer hide so Closing completes cancel first
-            App.DispatcherQueue?.TryEnqueue(() => HideToTray());
+            if (App.DispatcherQueue?.TryEnqueue(() => HideToTray()) == true)
+            {
+                return;
+            }
+
+            // The dispatcher is already unavailable. Do not leave a cancelled,
+            // invisible close operation holding the process open.
+            args.Cancel = false;
+            _forceClose = true;
+            _isInTray = false;
+            DisposeBackgroundServices();
             return;
         }
 
@@ -262,7 +277,10 @@ public sealed partial class MainWindow : Window
             && !_isInTray
             && AppWindow.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized })
         {
-            App.DispatcherQueue?.TryEnqueue(() => HideToTray());
+            if (App.DispatcherQueue?.TryEnqueue(() => HideToTray()) != true)
+            {
+                HideToTray();
+            }
         }
     }
 

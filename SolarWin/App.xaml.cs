@@ -32,8 +32,22 @@ public partial class App : Application
         Services = _services;
         UnhandledException += (_, e) =>
         {
-            // Keep process alive for tray if possible
-            e.Handled = true;
+            // A corrupted UI dispatcher must not be kept alive as a headless tray
+            // process. Record the failure, notify best-effort, then let WinUI apply
+            // its normal fatal-exception shutdown behavior.
+            try
+            {
+                var logPath = Path.Combine(AppPaths.RootDirectory, "unhandled-exceptions.log");
+                var details = e.Exception?.ToString() ?? e.Message ?? "Unknown unhandled exception.";
+                File.AppendAllText(
+                    logPath,
+                    $"[{DateTimeOffset.Now:O}]{Environment.NewLine}{details}{Environment.NewLine}{Environment.NewLine}");
+            }
+            catch
+            {
+                // Logging must not replace the original failure.
+            }
+
             try
             {
                 _services.GetService<ISystemNotificationService>()
@@ -43,6 +57,8 @@ public partial class App : Application
             {
                 // ignore
             }
+
+            e.Handled = false;
         };
     }
 
