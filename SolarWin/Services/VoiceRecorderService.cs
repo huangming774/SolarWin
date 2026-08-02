@@ -277,24 +277,26 @@ public sealed class VoiceRecorderService : IVoiceRecorderService, IDisposable
         {
             _cts = new CancellationTokenSource();
             var token = _cts.Token;
-            _ = Task.Run(async () =>
+            _ = RunAsync(token);
+        }
+
+        private async Task RunAsync(CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
             {
-                while (!token.IsCancellationRequested)
+                try
                 {
-                    try
+                    await Task.Delay(_interval, token).ConfigureAwait(false);
+                    if (!token.IsCancellationRequested)
                     {
-                        await Task.Delay(_interval, token).ConfigureAwait(false);
-                        if (!token.IsCancellationRequested)
-                        {
-                            _callback();
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        break;
+                        _callback();
                     }
                 }
-            }, token);
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+            }
         }
 
         public void Stop()

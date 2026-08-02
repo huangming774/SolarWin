@@ -2,7 +2,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
 using SolarWin.Models;
-using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
 
@@ -18,7 +17,7 @@ public partial class StickerPackItemViewModel : ObservableObject
             ? (pack.Description ?? "")
             : $"/{pack.Prefix}";
         IconFileId = ResolveCoverFileId(pack);
-        _images = images;
+        _ = images;
     }
 
     public StickerPackItemViewModel(StickerPackOwnership ownership, DysonFileImageLoader images)
@@ -31,8 +30,6 @@ public partial class StickerPackItemViewModel : ObservableObject
         }
     }
 
-    private readonly DysonFileImageLoader _images;
-
     public StickerPack Pack { get; }
 
     public StickerPackOwnership? Ownership { get; }
@@ -43,31 +40,18 @@ public partial class StickerPackItemViewModel : ObservableObject
 
     public string Subtitle { get; }
 
+    /// <summary>GPU source for <c>FastWin2DImage</c> pack cover.</summary>
     public string? IconFileId { get; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? IconImage { get; set; }
 
     [ObservableProperty]
     public partial bool IsLoadingIcon { get; set; }
 
-    public async Task LoadIconAsync()
-    {
-        if (string.IsNullOrWhiteSpace(IconFileId))
-        {
-            return;
-        }
-
-        IsLoadingIcon = true;
-        try
-        {
-            IconImage = await _images.LoadSafeAsync(IconFileId, DysonFileImageLoader.StickerThumbDecodeWidth).ConfigureAwait(true);
-        }
-        finally
-        {
-            IsLoadingIcon = false;
-        }
-    }
+    /// <summary>No-op: cover paints via FastWin2DImage + IconFileId.</summary>
+    public Task LoadIconAsync() => Task.CompletedTask;
 
     /// <summary>
     /// Prefer pack.icon; if missing, try first embedded sticker.image
@@ -99,7 +83,7 @@ public partial class StickerPackItemViewModel : ObservableObject
     }
 }
 
-/// <summary>Single sticker tile with bitmap.</summary>
+/// <summary>Single sticker tile — GPU via ImageFileId + FastWin2DImage.</summary>
 public partial class StickerItemViewModel : ObservableObject
 {
     public StickerItemViewModel(SnSticker sticker, DysonFileImageLoader images)
@@ -110,10 +94,8 @@ public partial class StickerItemViewModel : ObservableObject
         Title = sticker.DisplayName;
         ImageFileId = CloudFileUrlHelper.ResolveFileId(sticker.Image)
             ?? CloudFileUrlHelper.Resolve(sticker.Image);
-        _images = images;
+        _ = images;
     }
-
-    private readonly DysonFileImageLoader _images;
 
     public SnSticker Sticker { get; }
 
@@ -123,29 +105,16 @@ public partial class StickerItemViewModel : ObservableObject
 
     public string Title { get; }
 
+    /// <summary>GPU source for <c>FastWin2DImage</c>.</summary>
     public string? ImageFileId { get; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? Image { get; set; }
 
     [ObservableProperty]
     public partial bool IsLoading { get; set; }
 
-    public async Task LoadImageAsync()
-    {
-        if (string.IsNullOrWhiteSpace(ImageFileId))
-        {
-            return;
-        }
-
-        IsLoading = true;
-        try
-        {
-            Image = await _images.LoadSafeAsync(ImageFileId, DysonFileImageLoader.StickerDecodeWidth).ConfigureAwait(true);
-        }
-        finally
-        {
-            IsLoading = false;
-        }
-    }
+    /// <summary>No-op: image paints via FastWin2DImage + ImageFileId.</summary>
+    public Task LoadImageAsync() => Task.CompletedTask;
 }

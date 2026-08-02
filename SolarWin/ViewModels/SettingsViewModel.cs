@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Data;
 using SolarWin.Helpers;
@@ -22,12 +23,13 @@ public partial class SettingsViewModel : ObservableObject
     private readonly IDeepLinkService _deepLinks;
     private readonly ISystemNotificationService _systemNotifications;
     private readonly ITrayService _tray;
+    private readonly IMcpBridgeService _mcp;
     private readonly IAccountDbContextFactory _accountDb;
     private readonly IChatWritePump _writePump;
     private readonly IChatDataCache _chatCache;
     private readonly DysonFileImageLoader _imageLoader;
-    private readonly FileThumbnailLoader _thumbnailLoader;
     private bool _wallpaperReady;
+    private bool _mcpReady;
 
     public SettingsViewModel(
         IAuthService authService,
@@ -36,11 +38,11 @@ public partial class SettingsViewModel : ObservableObject
         IDeepLinkService deepLinks,
         ISystemNotificationService systemNotifications,
         ITrayService tray,
+        IMcpBridgeService mcp,
         IAccountDbContextFactory accountDb,
         IChatWritePump writePump,
         IChatDataCache chatCache,
-        DysonFileImageLoader imageLoader,
-        FileThumbnailLoader thumbnailLoader)
+        DysonFileImageLoader imageLoader)
     {
         _authService = authService;
         _toast = toast;
@@ -48,11 +50,11 @@ public partial class SettingsViewModel : ObservableObject
         _deepLinks = deepLinks;
         _systemNotifications = systemNotifications;
         _tray = tray;
+        _mcp = mcp;
         _accountDb = accountDb;
         _writePump = writePump;
         _chatCache = chatCache;
         _imageLoader = imageLoader;
-        _thumbnailLoader = thumbnailLoader;
         VersionText = ResolveVersion();
         SelectedThemeIndex = ThemeHelper.GetSavedTheme() switch
         {
@@ -66,18 +68,23 @@ public partial class SettingsViewModel : ObservableObject
         UseSystemNotifications = AppSettings.UseSystemNotifications;
         ChatMessageNotifications = AppSettings.ChatMessageNotifications;
         FileThumbnailMaxConcurrency = AppSettings.FileThumbnailMaxConcurrency;
+        McpEnabled = AppSettings.McpEnabled;
+        McpEndpoint = _mcp.Endpoint;
+        McpAccessToken = AppSettings.McpAccessToken;
+        RefreshMcpStatus();
         LoadWallpaperState();
         RefreshAccounts();
         RefreshCacheStats();
         RefreshWritePumpStats();
         RefreshTrayStatus();
         _wallpaperReady = true;
+        _mcpReady = true;
     }
 
     public ObservableCollection<SavedAccountProfile> SavedAccounts { get; } = [];
 
     [ObservableProperty]
-    public partial string VersionText { get; set; } = "1.1.2";
+    public partial string VersionText { get; set; } = "1.1.6";
 
     [ObservableProperty]
     public partial string ThemeLabel { get; set; } = "跟随系统";
@@ -102,6 +109,18 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial double FileThumbnailMaxConcurrency { get; set; } = 4;
+
+    [ObservableProperty]
+    public partial bool McpEnabled { get; set; }
+
+    [ObservableProperty]
+    public partial string McpEndpoint { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string McpAccessToken { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string McpStatusText { get; set; } = "MCP 服务未启用";
 
     [ObservableProperty]
     public partial string CacheSizeText { get; set; } = "—";
@@ -130,7 +149,8 @@ public partial class SettingsViewModel : ObservableObject
     public partial string WallpaperPathText { get; set; } = "未选择图片";
 
     [ObservableProperty]
-    public partial BitmapImage? WallpaperPreview { get; set; }
+    /// <summary>GPU-backed wallpaper preview (CanvasImageSource) or null.</summary>
+    public partial ImageSource? WallpaperPreview { get; set; }
 
     /// <summary>0–100.</summary>
     [ObservableProperty]
@@ -200,6 +220,49 @@ public partial class SettingsViewModel : ObservableObject
     partial void OnUseSystemNotificationsChanged(bool value) => AppSettings.UseSystemNotifications = value;
 
     partial void OnChatMessageNotificationsChanged(bool value) => AppSettings.ChatMessageNotifications = value;
+
+    partial void OnMcpEnabledChanged(bool value)
+    {
+        AppSettings.McpEnabled = value;
+        if (_mcpReady)
+        {
+            _ = ApplyMcpStateAsync(value);
+        }
+    }
+
+    private async Task ApplyMcpStateAsync(bool enabled)
+    {
+        try
+        {
+            if (enabled)
+            {
+                await _mcp.StartAsync().ConfigureAwait(true);
+            }
+            else
+            {
+                await _mcp.StopAsync().ConfigureAwait(true);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusMessage = "MCP 服务切换失败：" + ex.Message;
+            _toast.Error(StatusMessage);
+        }
+        finally
+        {
+            RefreshMcpStatus();
+        }
+    }
+
+    private void RefreshMcpStatus()
+    {
+        McpEndpoint = _mcp.Endpoint;
+        McpStatusText = _mcp.IsRunning
+            ? "MCP 服务运行中 · 仅允许本机令牌访问"
+            : string.IsNullOrWhiteSpace(_mcp.LastError)
+                ? "MCP 服务已关闭，不占用监听端口"
+                : "MCP 启动失败：" + _mcp.LastError;
+    }
 
     partial void OnFileThumbnailMaxConcurrencyChanged(double value)
     {
@@ -287,23 +350,27 @@ public partial class SettingsViewModel : ObservableObject
         if (WallpaperHelper.HasImage)
         {
             WallpaperPathText = WallpaperHelper.ImagePath!;
-            try
-            {
-                var bmp = new BitmapImage();
-                bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-                // Preview thumbnail only — a full-res decode of a 4K wallpaper is ~32MB.
-                bmp.DecodePixelWidth = 480;
-                bmp.UriSource = new Uri(WallpaperHelper.ImagePath!, UriKind.Absolute);
-                WallpaperPreview = bmp;
-            }
-            catch
-            {
-                WallpaperPreview = null;
-            }
+            _ = RefreshWallpaperPreviewAsync();
         }
         else
         {
             WallpaperPathText = "未选择图片";
+            WallpaperPreview = null;
+        }
+
+        OnPropertyChanged(nameof(WallpaperStatusText));
+    }
+
+    private async Task RefreshWallpaperPreviewAsync()
+    {
+        try
+        {
+            // GPU surface, long edge 480 — avoids full-res BitmapImage (~32MB for 4K).
+            WallpaperPreview = await WallpaperHelper.CreatePreviewImageSourceAsync(480)
+                .ConfigureAwait(true);
+        }
+        catch
+        {
             WallpaperPreview = null;
         }
 
@@ -556,7 +623,6 @@ public partial class SettingsViewModel : ObservableObject
 
             _chatCache.ClearMessageWindows();
             _imageLoader.Clear();
-            _thumbnailLoader.Clear();
 
             if (_accountDb.BoundAccountId == id)
             {
@@ -721,7 +787,7 @@ public partial class SettingsViewModel : ObservableObject
             var av = Assembly.GetExecutingAssembly().GetName().Version;
             if (av is null)
             {
-                return "1.1.2";
+                return "1.1.6";
             }
 
             return av.Revision == 0

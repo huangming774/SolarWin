@@ -1,22 +1,38 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using LiveKit.Proto;
 using LiveKit.Rtc;
+using Microsoft.Graphics.Canvas;
+using Windows.Foundation;
+using Windows.Graphics.Capture;
+using Windows.Graphics.DirectX;
+using Windows.Graphics.DirectX.Direct3D11;
+using WinRT;
 
 namespace SolarWin.Services;
 
 /// <summary>
-/// GDI primary-monitor capture → LiveKit VideoSource (screenshare). ~12 fps scaled.
+/// Windows.Graphics.Capture publisher backed by D3D11. Capture and scaling stay on GPU;
+/// the final BGRA readback is required by LiveKit .NET 0.1.3's byte-only VideoFrame API.
 /// </summary>
 internal sealed class ScreenCapturePublisher : IAsyncDisposable
 {
-    private const uint SrcCopy = 0x00CC0020;
-    private const int ColorOnColor = 3;
-
+    private const int TargetFrameIntervalMs = 80;
     private readonly VideoSource _source;
     private readonly int _outW;
     private readonly int _outH;
-    private CancellationTokenSource? _cts;
-    private Task? _loop;
+    private readonly object _resourceGate = new();
+    private IDirect3DDevice? _direct3DDevice;
+    private CanvasDevice? _canvasDevice;
+    private CanvasRenderTarget? _scaledFrame;
+    private GraphicsCaptureItem? _item;
+    private Direct3D11CaptureFramePool? _framePool;
+    private GraphicsCaptureSession? _session;
+    private byte[]? _pixelBytes;
+    private Windows.Storage.Streams.IBuffer? _pixelBuffer;
+    private VideoFrame? _videoFrame;
+    private long _lastFrameTick;
+    private int _processingFrame;
 
     public ScreenCapturePublisher(VideoSource source, int outWidth = 960, int outHeight = 540)
     {
@@ -25,216 +41,243 @@ internal sealed class ScreenCapturePublisher : IAsyncDisposable
         _outH = outHeight;
     }
 
-    public async Task StartAsync()
+    public Task StartAsync()
     {
-        await StopAsync().ConfigureAwait(false);
-        _cts = new CancellationTokenSource();
-        _loop = Task.Run(() => LoopAsync(_cts.Token), _cts.Token);
+        lock (_resourceGate)
+        {
+            StopCore();
+            if (!GraphicsCaptureSession.IsSupported())
+            {
+                throw new NotSupportedException("Windows.Graphics.Capture is unavailable on this system.");
+            }
+
+            _direct3DDevice = CreateDirect3DDevice();
+            _canvasDevice = CanvasDevice.CreateFromDirect3D11Device(_direct3DDevice);
+            _scaledFrame = new CanvasRenderTarget(_canvasDevice, _outW, _outH, 96);
+            _pixelBytes = new byte[checked(_outW * _outH * 4)];
+            _pixelBuffer = _pixelBytes.AsBuffer();
+            _videoFrame = new VideoFrame(_outW, _outH, VideoBufferType.Bgra, _pixelBytes);
+            _item = CreatePrimaryMonitorItem();
+            _framePool = Direct3D11CaptureFramePool.CreateFreeThreaded(
+                _direct3DDevice,
+                DirectXPixelFormat.B8G8R8A8UIntNormalized,
+                2,
+                _item.Size);
+            _framePool.FrameArrived += OnFrameArrived;
+            _session = _framePool.CreateCaptureSession(_item);
+            if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041))
+            {
+                _session.IsCursorCaptureEnabled = true;
+            }
+            _session.StartCapture();
+        }
+
+        return Task.CompletedTask;
     }
 
-    public async Task StopAsync()
+    public Task StopAsync()
     {
-        var cts = _cts;
-        var loop = _loop;
-        _cts = null;
-        _loop = null;
+        lock (_resourceGate)
+        {
+            StopCore();
+        }
 
+        return Task.CompletedTask;
+    }
+
+    private void OnFrameArrived(Direct3D11CaptureFramePool sender, object args)
+    {
+        Direct3D11CaptureFrame? frame = null;
+        var ownsProcessingGate = false;
         try
         {
-            cts?.Cancel();
+            frame = sender.TryGetNextFrame();
+            var now = Environment.TickCount64;
+            if (frame is null
+                || now - Interlocked.Read(ref _lastFrameTick) < TargetFrameIntervalMs
+                || Interlocked.CompareExchange(ref _processingFrame, 1, 0) != 0)
+            {
+                return;
+            }
+
+            ownsProcessingGate = true;
+            lock (_resourceGate)
+            {
+                if (_canvasDevice is null
+                    || _scaledFrame is null
+                    || _pixelBuffer is null
+                    || _videoFrame is null)
+                {
+                    return;
+                }
+
+                using var captured = CanvasBitmap.CreateFromDirect3D11Surface(_canvasDevice, frame.Surface);
+                using (var drawing = _scaledFrame.CreateDrawingSession())
+                {
+                    drawing.Clear(Microsoft.UI.Colors.Black);
+                    var sourceSize = captured.SizeInPixels;
+                    var scale = Math.Min((double)_outW / sourceSize.Width, (double)_outH / sourceSize.Height);
+                    var width = sourceSize.Width * scale;
+                    var height = sourceSize.Height * scale;
+                    var destination = new Rect((_outW - width) / 2, (_outH - height) / 2, width, height);
+                    drawing.DrawImage(captured, destination);
+                }
+
+                // LiveKit's current FFI has no texture-handle input, so this is the sole GPU -> CPU boundary.
+                // Read into one reusable WinRT buffer and reuse the VideoFrame wrapper instead
+                // of allocating a 960 x 540 x 4 byte array (~2 MiB) for every callback.
+                _scaledFrame.GetPixelBytes(_pixelBuffer);
+                _source.CaptureFrame(_videoFrame);
+                Interlocked.Exchange(ref _lastFrameTick, now);
+            }
         }
         catch
         {
-            // ignore
-        }
-
-        if (loop is not null)
-        {
-            try
-            {
-                await loop.ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                // expected
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
-        cts?.Dispose();
-    }
-
-    private async Task LoopAsync(CancellationToken ct)
-    {
-        var screenW = GetSystemMetrics(0);
-        var screenH = GetSystemMetrics(1);
-        if (screenW <= 0 || screenH <= 0)
-        {
-            return;
-        }
-
-        var hdcScreen = GetDC(IntPtr.Zero);
-        var hdcMem = CreateCompatibleDC(hdcScreen);
-        var hBitmap = CreateCompatibleBitmap(hdcScreen, _outW, _outH);
-        var old = SelectObject(hdcMem, hBitmap);
-        SetStretchBltMode(hdcMem, ColorOnColor);
-
-        var bmi = new BITMAPINFO
-        {
-            bmiHeader = new BITMAPINFOHEADER
-            {
-                biSize = (uint)Marshal.SizeOf<BITMAPINFOHEADER>(),
-                biWidth = _outW,
-                biHeight = -_outH,
-                biPlanes = 1,
-                biBitCount = 32,
-                biCompression = 0,
-            },
-        };
-
-        var frameBytes = new byte[_outW * _outH * 4];
-        var handle = GCHandle.Alloc(frameBytes, GCHandleType.Pinned);
-
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                StretchBlt(
-                    hdcMem,
-                    0,
-                    0,
-                    _outW,
-                    _outH,
-                    hdcScreen,
-                    0,
-                    0,
-                    screenW,
-                    screenH,
-                    SrcCopy);
-                GetDIBits(
-                    hdcMem,
-                    hBitmap,
-                    0,
-                    (uint)_outH,
-                    handle.AddrOfPinnedObject(),
-                    ref bmi,
-                    0);
-
-                SwapRedBlue(frameBytes);
-                try
-                {
-                    _source.CaptureFrame(new VideoFrame(_outW, _outH, VideoBufferType.Rgba, frameBytes));
-                }
-                catch
-                {
-                    // drop
-                }
-
-                try
-                {
-                    await Task.Delay(80, ct).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-            }
+            // Capture is best effort; a transient device/frame failure drops only this frame.
         }
         finally
         {
-            handle.Free();
-            SelectObject(hdcMem, old);
-            DeleteObject(hBitmap);
-            DeleteDC(hdcMem);
-            ReleaseDC(IntPtr.Zero, hdcScreen);
+            frame?.Dispose();
+            if (ownsProcessingGate) Interlocked.Exchange(ref _processingFrame, 0);
         }
     }
 
-    private static void SwapRedBlue(byte[] pixels)
+    private void StopCore()
     {
-        for (var i = 0; i < pixels.Length; i += 4)
+        if (_framePool is not null)
         {
-            (pixels[i], pixels[i + 2]) = (pixels[i + 2], pixels[i]);
+            _framePool.FrameArrived -= OnFrameArrived;
         }
+
+        _session?.Dispose();
+        _framePool?.Dispose();
+        _scaledFrame?.Dispose();
+        _canvasDevice?.Dispose();
+        _direct3DDevice?.Dispose();
+        _session = null;
+        _framePool = null;
+        _item = null;
+        _scaledFrame = null;
+        _canvasDevice = null;
+        _direct3DDevice = null;
+        _pixelBuffer = null;
+        _pixelBytes = null;
+        _videoFrame = null;
+        Interlocked.Exchange(ref _processingFrame, 0);
     }
 
     public ValueTask DisposeAsync()
-        => new(StopAsync());
-
-    [DllImport("user32.dll")]
-    private static extern int GetSystemMetrics(int nIndex);
-
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetDC(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteDC(IntPtr hdc);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
-
-    [DllImport("gdi32.dll")]
-    private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool DeleteObject(IntPtr hObject);
-
-    [DllImport("gdi32.dll")]
-    private static extern int SetStretchBltMode(IntPtr hdc, int mode);
-
-    [DllImport("gdi32.dll")]
-    private static extern bool StretchBlt(
-        IntPtr hdcDest,
-        int xDest,
-        int yDest,
-        int widthDest,
-        int heightDest,
-        IntPtr hdcSrc,
-        int xSrc,
-        int ySrc,
-        int widthSrc,
-        int heightSrc,
-        uint rop);
-
-    [DllImport("gdi32.dll")]
-    private static extern int GetDIBits(
-        IntPtr hdc,
-        IntPtr hbmp,
-        uint uStartScan,
-        uint cScanLines,
-        IntPtr lpvBits,
-        ref BITMAPINFO lpbi,
-        uint uUsage);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAPINFOHEADER
     {
-        public uint biSize;
-        public int biWidth;
-        public int biHeight;
-        public ushort biPlanes;
-        public ushort biBitCount;
-        public uint biCompression;
-        public uint biSizeImage;
-        public int biXPelsPerMeter;
-        public int biYPelsPerMeter;
-        public uint biClrUsed;
-        public uint biClrImportant;
+        lock (_resourceGate)
+        {
+            StopCore();
+        }
+
+        return ValueTask.CompletedTask;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct BITMAPINFO
+    private static GraphicsCaptureItem CreatePrimaryMonitorItem()
     {
-        public BITMAPINFOHEADER bmiHeader;
-        public uint bmiColors;
+        var monitor = MonitorFromWindow(IntPtr.Zero, 1);
+        var className = "Windows.Graphics.Capture.GraphicsCaptureItem";
+        CheckHr(WindowsCreateString(className, className.Length, out var hstring));
+        IntPtr factoryPointer = IntPtr.Zero;
+        IntPtr itemPointer = IntPtr.Zero;
+        try
+        {
+            var interopId = typeof(IGraphicsCaptureItemInterop).GUID;
+            CheckHr(RoGetActivationFactory(hstring, ref interopId, out factoryPointer));
+            var factory = (IGraphicsCaptureItemInterop)Marshal.GetObjectForIUnknown(factoryPointer);
+            var itemId = typeof(GraphicsCaptureItem).GUID;
+            CheckHr(factory.CreateForMonitor(monitor, ref itemId, out itemPointer));
+            return MarshalInterface<GraphicsCaptureItem>.FromAbi(itemPointer);
+        }
+        finally
+        {
+            if (itemPointer != IntPtr.Zero) Marshal.Release(itemPointer);
+            if (factoryPointer != IntPtr.Zero) Marshal.Release(factoryPointer);
+            CheckHr(WindowsDeleteString(hstring));
+        }
     }
+
+    private static IDirect3DDevice CreateDirect3DDevice()
+    {
+        IntPtr d3dDevice = IntPtr.Zero;
+        IntPtr context = IntPtr.Zero;
+        IntPtr dxgiDevice = IntPtr.Zero;
+        IntPtr inspectable = IntPtr.Zero;
+        try
+        {
+            var hr = D3D11CreateDevice(
+                IntPtr.Zero, 1, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7,
+                out d3dDevice, out _, out context);
+            if (hr < 0)
+            {
+                hr = D3D11CreateDevice(
+                    IntPtr.Zero, 5, IntPtr.Zero, 0x20, IntPtr.Zero, 0, 7,
+                    out d3dDevice, out _, out context);
+            }
+
+            CheckHr(hr);
+            var dxgiId = new Guid("54EC77FA-1377-44E6-8C32-88FD5F44C84C");
+            CheckHr(Marshal.QueryInterface(d3dDevice, in dxgiId, out dxgiDevice));
+            CheckHr(CreateDirect3D11DeviceFromDXGIDevice(dxgiDevice, out inspectable));
+            return MarshalInterface<IDirect3DDevice>.FromAbi(inspectable);
+        }
+        finally
+        {
+            if (inspectable != IntPtr.Zero) Marshal.Release(inspectable);
+            if (dxgiDevice != IntPtr.Zero) Marshal.Release(dxgiDevice);
+            if (context != IntPtr.Zero) Marshal.Release(context);
+            if (d3dDevice != IntPtr.Zero) Marshal.Release(d3dDevice);
+        }
+    }
+
+    private static void CheckHr(int hr)
+    {
+        if (hr < 0) Marshal.ThrowExceptionForHR(hr);
+    }
+
+    [ComImport]
+    [Guid("3628E81B-3CAC-4C60-B7F4-23CE0E0C3356")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IGraphicsCaptureItemInterop
+    {
+        [PreserveSig]
+        int CreateForWindow(IntPtr window, ref Guid iid, out IntPtr result);
+
+        [PreserveSig]
+        int CreateForMonitor(IntPtr monitor, ref Guid iid, out IntPtr result);
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
+
+    [DllImport("combase.dll")]
+    private static extern int WindowsCreateString(
+        [MarshalAs(UnmanagedType.LPWStr)] string sourceString,
+        int length,
+        out IntPtr hstring);
+
+    [DllImport("combase.dll")]
+    private static extern int WindowsDeleteString(IntPtr hstring);
+
+    [DllImport("combase.dll")]
+    private static extern int RoGetActivationFactory(IntPtr hstring, ref Guid iid, out IntPtr factory);
+
+    [DllImport("d3d11.dll")]
+    private static extern int D3D11CreateDevice(
+        IntPtr adapter,
+        int driverType,
+        IntPtr software,
+        uint flags,
+        IntPtr featureLevels,
+        uint featureLevelsCount,
+        uint sdkVersion,
+        out IntPtr device,
+        out int featureLevel,
+        out IntPtr immediateContext);
+
+    [DllImport("d3d11.dll")]
+    private static extern int CreateDirect3D11DeviceFromDXGIDevice(IntPtr dxgiDevice, out IntPtr graphicsDevice);
 }

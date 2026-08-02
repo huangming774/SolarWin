@@ -1,6 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using System.Net;
 using SolarWin.Data;
 using SolarWin.Helpers;
+using SolarWin.Repositories;
 using SolarWin.ViewModels;
 
 namespace SolarWin.Services;
@@ -14,11 +16,17 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IChatWritePump, ChatWritePump>();
         services.AddSingleton<IChatLocalStore, ChatLocalStore>();
         services.AddSingleton<IRoomLocalStore, RoomLocalStore>();
+        services.AddSingleton<IDbConnectionFactory, SqliteConnectionFactory>();
+        services.AddSingleton<IChatAnalyticsRepository, ChatAnalyticsRepository>();
+        services.AddSingleton<ITextTokenizer, LocalTextTokenizer>();
+        services.AddSingleton<IWordCloudLayoutService, WordCloudLayoutService>();
+        services.AddSingleton<IChatAnalyticsService, ChatAnalyticsService>();
 
         services.AddSingleton<ITokenStorage, PasswordVaultTokenStorage>();
         services.AddSingleton<IAccountSessionService, AccountSessionService>();
         services.AddSingleton<ISystemNotificationService, SystemNotificationService>();
         services.AddSingleton<ITrayService, TrayService>();
+        services.AddSingleton<IMcpBridgeService, McpBridgeService>();
         services.AddSingleton<IDeepLinkService, DeepLinkService>();
 
         // Named HttpClient used by SolarApiClient via IHttpClientFactory (safe for Singleton).
@@ -56,6 +64,16 @@ public static class ServiceCollectionExtensions
             client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1");
         });
 
+        services.AddHttpClient(LinkPreviewService.HttpClientName, client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(8);
+            client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "SolarWin/1.1 LinkPreview");
+        }).ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler
+        {
+            AllowAutoRedirect = false,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate | DecompressionMethods.Brotli,
+        });
+
         services.AddSingleton<IAiChatService, AiChatService>();
         services.AddSingleton<ISolarApiClient, SolarApiClient>();
         services.AddSingleton<SocialLoginService>();
@@ -72,7 +90,8 @@ public static class ServiceCollectionExtensions
         // Messager API response cache (rooms / messages / members) — process-wide
         services.AddSingleton<IChatDataCache, ChatDataCache>();
         services.AddSingleton<DysonFileImageLoader>();
-        services.AddSingleton<FileThumbnailLoader>();
+        services.AddSingleton<VideoMediaCache>();
+        services.AddSingleton<LinkPreviewService>();
         services.AddSingleton<MainViewModel>();
 
         services.AddTransient<LoginViewModel>();
@@ -82,6 +101,7 @@ public static class ServiceCollectionExtensions
         // Chat list UI keeps room items across navigations; data lives in IChatDataCache
         services.AddSingleton<ChatViewModel>();
         services.AddTransient<ChatDetailViewModel>();
+        services.AddTransient<ChatDataCenterViewModel>();
         services.AddTransient<FilesViewModel>();
         services.AddTransient<NotificationsViewModel>();
         services.AddTransient<WalletViewModel>();

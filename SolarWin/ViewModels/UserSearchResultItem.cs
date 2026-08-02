@@ -8,7 +8,7 @@ namespace SolarWin.ViewModels;
 /// <summary>One row from Passport account search, used for one-tap DM.</summary>
 public partial class UserSearchResultItem : ObservableObject
 {
-    public UserSearchResultItem(SnAccount account, DysonFileImageLoader imageLoader)
+    public UserSearchResultItem(SnAccount account)
     {
         Account = account;
         AccountId = account.Id;
@@ -23,10 +23,6 @@ public partial class UserSearchResultItem : ObservableObject
         AvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(account)
             ?? CloudFileUrlHelper.Resolve(account.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cached, DysonFileImageLoader.AvatarDecodeWidth) && cached is not null)
-        {
-            AvatarImage = cached;
-        }
     }
 
     public SnAccount Account { get; }

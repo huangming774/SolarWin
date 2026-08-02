@@ -4,6 +4,7 @@
     x:Name="RootPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SolarWin.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:SolarWin.ViewModels"
@@ -39,11 +40,15 @@
                     </Grid.ColumnDefinitions>
                     <Grid Width="72" Height="72">
                         <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="12" />
-                        <Border CornerRadius="12">
-                            <Border.Background>
-                                <ImageBrush ImageSource="{x:Bind ViewModel.PictureImage, Mode=OneWay}" Stretch="UniformToFill" />
-                            </Border.Background>
-                        </Border>
+                        <controls:FastWin2DImage
+                            Width="72"
+                            Height="72"
+                            CornerRadius="12"
+                            DecodeWidth="640"
+                            EnableFadeIn="True"
+                            ShowPlaceholder="False"
+                            Source="{x:Bind ViewModel.PictureUrl, Mode=OneWay}"
+                            Stretch="UniformToFill" />
                     </Grid>
                     <StackPanel Grid.Column="1" Spacing="4">
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />

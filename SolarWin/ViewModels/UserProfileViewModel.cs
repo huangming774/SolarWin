@@ -63,6 +63,13 @@ public partial class UserProfileViewModel : ObservableObject
     public partial string Initials { get; set; } = "?";
 
     [ObservableProperty]
+    public partial string? AvatarUrl { get; set; }
+
+    [ObservableProperty]
+    public partial string? BackgroundUrl { get; set; }
+
+    /// <summary>Legacy BitmapImage slots (unused on GPU path).</summary>
+    [ObservableProperty]
     public partial BitmapImage? AvatarImage { get; set; }
 
     [ObservableProperty]
@@ -165,68 +172,33 @@ public partial class UserProfileViewModel : ObservableObject
             _account = acc;
             _accountId = acc.Id;
             ApplyAccount(acc);
-
-            await LoadAvatarAsync(acc.Profile?.Picture).ConfigureAwait(true);
-            await LoadBackgroundAsync(acc.Profile?.Background).ConfigureAwait(true);
-
-            try
-            {
-                var status = await _api.GetAccountStatusAsync(accountName).ConfigureAwait(true);
-                StatusText = status is null
-                    ? "状态未知"
-                    : $"{status.Attitude}" +
-                      (string.IsNullOrWhiteSpace(status.Label) ? "" : $" · {status.Label}") +
-                      (status.IsOnline ? " · 在线" : "");
-            }
-            catch (SolarApiException)
-            {
-                StatusText = "状态未知";
-            }
-
-            try
-            {
-                var rel = await _api.GetRelationshipAsync(acc.Id).ConfigureAwait(true);
-                RelationshipText = rel is null
-                    ? "尚无关系"
-                    : $"关系：{rel.Status}" +
-                      (string.IsNullOrWhiteSpace(rel.Alias) ? "" : $"（备注 {rel.Alias}）");
-            }
-            catch (SolarApiException)
-            {
-                RelationshipText = "关系未知";
-            }
-
+            accountName = string.IsNullOrWhiteSpace(acc.Name) ? accountName : acc.Name;
             CanMessage = acc.Id != Guid.Empty && acc.Id != _authService.CurrentAccount?.Id;
 
-            await FillOptionalAsync(
-                () => _api.GetAccountBadgesAsync(accountName),
-                Badges,
-                b => new SocialListItemViewModel(
-                    b.Id.ToString("D"),
-                    b.Label ?? b.Type ?? "徽章",
-                    b.Caption ?? "",
-                    b.ActivatedAt is null ? "" : "已激活",
-                    b)).ConfigureAwait(true);
-
-            await FillOptionalAsync(
-                () => _api.GetAccountBoardAsync(accountName),
-                BoardItems,
-                b => new SocialListItemViewModel(
-                    b.Id.ToString("D"),
-                    b.WidgetKey ?? b.Kind.ToString(),
-                    b.IsEnabled ? "启用" : "禁用",
-                    $"#{b.Order}",
-                    b)).ConfigureAwait(true);
-
-            await FillOptionalAsync(
-                () => _api.GetAccountConnectionsAsync(accountName),
-                Connections,
-                c => new SocialListItemViewModel(
-                    c.Provider ?? Guid.NewGuid().ToString("N"),
-                    c.Provider ?? "连接",
-                    c.ProvidedIdentifier ?? "",
-                    c.Url ?? "",
-                    c)).ConfigureAwait(true);
+            await AsyncConcurrencyHelper.RunAsync(
+                4,
+                () => LoadAvatarAsync(acc.Profile?.Picture),
+                () => LoadBackgroundAsync(acc.Profile?.Background),
+                () => LoadStatusAsync(accountName),
+                () => LoadRelationshipAsync(acc.Id),
+                () => FillOptionalAsync(
+                    () => _api.GetAccountBadgesAsync(accountName),
+                    Badges,
+                    b => new SocialListItemViewModel(
+                        b.Id.ToString("D"), b.Label ?? b.Type ?? "徽章", b.Caption ?? "",
+                        b.ActivatedAt is null ? "" : "已激活", b)),
+                () => FillOptionalAsync(
+                    () => _api.GetAccountBoardAsync(accountName),
+                    BoardItems,
+                    b => new SocialListItemViewModel(
+                        b.Id.ToString("D"), b.WidgetKey ?? b.Kind.ToString(),
+                        b.IsEnabled ? "启用" : "禁用", $"#{b.Order}", b)),
+                () => FillOptionalAsync(
+                    () => _api.GetAccountConnectionsAsync(accountName),
+                    Connections,
+                    c => new SocialListItemViewModel(
+                        c.Provider ?? Guid.NewGuid().ToString("N"), c.Provider ?? "连接",
+                        c.ProvidedIdentifier ?? "", c.Url ?? "", c))).ConfigureAwait(true);
         }
         catch (SolarApiException ex)
         {
@@ -236,6 +208,39 @@ public partial class UserProfileViewModel : ObservableObject
         finally
         {
             IsBusy = false;
+        }
+    }
+
+    private async Task LoadStatusAsync(string accountName)
+    {
+        try
+        {
+            var status = await _api.GetAccountStatusAsync(accountName).ConfigureAwait(true);
+            StatusText = status is null
+                ? "状态未知"
+                : $"{status.Attitude}" +
+                  (string.IsNullOrWhiteSpace(status.Label) ? "" : $" · {status.Label}") +
+                  (status.IsOnline ? " · 在线" : "");
+        }
+        catch (SolarApiException)
+        {
+            StatusText = "状态未知";
+        }
+    }
+
+    private async Task LoadRelationshipAsync(Guid accountId)
+    {
+        try
+        {
+            var rel = await _api.GetRelationshipAsync(accountId).ConfigureAwait(true);
+            RelationshipText = rel is null
+                ? "尚无关系"
+                : $"关系：{rel.Status}" +
+                  (string.IsNullOrWhiteSpace(rel.Alias) ? "" : $"（备注 {rel.Alias}）");
+        }
+        catch (SolarApiException)
+        {
+            RelationshipText = "关系未知";
         }
     }
 
@@ -409,48 +414,25 @@ public partial class UserProfileViewModel : ObservableObject
         Initials = DisplayName.Length > 0 ? DisplayName[..1].ToUpperInvariant() : "?";
     }
 
-    private async Task LoadAvatarAsync(SnCloudFile? picture)
+    private Task LoadAvatarAsync(SnCloudFile? picture)
     {
-        var url = CloudFileUrlHelper.Resolve(picture);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            AvatarImage = null;
-            AvatarOpacity = 0;
-            InitialsOpacity = 1;
-            return;
-        }
-
-        try
-        {
-            var img = await _imageLoader.LoadAsync(url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
-            AvatarImage = img;
-            AvatarOpacity = img is null ? 0 : 1;
-            InitialsOpacity = img is null ? 1 : 0;
-        }
-        catch
-        {
-            AvatarOpacity = 0;
-            InitialsOpacity = 1;
-        }
+        var id = CloudFileUrlHelper.ResolveFileId(picture);
+        var url = CloudFileUrlHelper.Resolve(picture) ?? (id is null ? null : CloudFileUrlHelper.DriveFileUrl(id));
+        AvatarUrl = url ?? id;
+        AvatarImage = null;
+        AvatarOpacity = 0;
+        InitialsOpacity = 1;
+        _ = _imageLoader;
+        return Task.CompletedTask;
     }
 
-    private async Task LoadBackgroundAsync(SnCloudFile? background)
+    private Task LoadBackgroundAsync(SnCloudFile? background)
     {
-        var url = CloudFileUrlHelper.Resolve(background);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            BackgroundImage = null;
-            return;
-        }
-
-        try
-        {
-            BackgroundImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.BannerDecodeWidth).ConfigureAwait(true);
-        }
-        catch
-        {
-            BackgroundImage = null;
-        }
+        var id = CloudFileUrlHelper.ResolveFileId(background);
+        var url = CloudFileUrlHelper.Resolve(background) ?? (id is null ? null : CloudFileUrlHelper.DriveFileUrl(id));
+        BackgroundUrl = url ?? id;
+        BackgroundImage = null;
+        return Task.CompletedTask;
     }
 
     private static async Task FillOptionalAsync<T>(

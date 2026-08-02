@@ -8,218 +8,519 @@
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="16" RowSpacing="12">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="AiHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#FFF6E8" />
+                        <GradientStop Offset="0.48" Color="#EEF8F4" />
+                        <GradientStop Offset="1" Color="#EDF3FF" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="AiComposerBrush" Color="#F8FAFC" />
+                    <SolidColorBrush x:Key="AiAvatarBrush" Color="#E7F1FF" />
+                    <SolidColorBrush x:Key="AiReasoningBrush" Color="#F2F4F7" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <LinearGradientBrush x:Key="AiHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#403522" />
+                        <GradientStop Offset="0.48" Color="#203A34" />
+                        <GradientStop Offset="1" Color="#24344E" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="AiComposerBrush" Color="#202226" />
+                    <SolidColorBrush x:Key="AiAvatarBrush" Color="#263B58" />
+                    <SolidColorBrush x:Key="AiReasoningBrush" Color="#292C31" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="AiHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#403522" />
+                        <GradientStop Offset="0.48" Color="#203A34" />
+                        <GradientStop Offset="1" Color="#24344E" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="AiComposerBrush" Color="#202226" />
+                    <SolidColorBrush x:Key="AiAvatarBrush" Color="#263B58" />
+                    <SolidColorBrush x:Key="AiReasoningBrush" Color="#292C31" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <Style x:Key="AiCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="18" />
+            </Style>
+            <Style x:Key="AiActionButtonStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="38" />
+                <Setter Property="Padding" Value="14,8" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+            <Style x:Key="AiPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="42" />
+                <Setter Property="Padding" Value="18,9" />
+                <Setter Property="CornerRadius" Value="12" />
+            </Style>
+            <Style x:Key="AiFieldStyle" TargetType="TextBox">
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid x:Name="LayoutRoot" Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="2">
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="AI" />
-                <TextBlock
-                    Opacity="0.7"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                    TextWrapping="WrapWholeWords" />
-            </StackPanel>
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="8"
-                VerticalAlignment="Top">
-                <ToggleButton
-                    Content="{x:Bind ViewModel.Context1MLabel, Mode=OneWay}"
-                    IsChecked="{x:Bind ViewModel.Use1MContext, Mode=TwoWay}"
-                    ToolTipService.ToolTip="1M 上下文：保留完整对话历史，并请求更大 max_tokens（适合长上下文模型）" />
-                <Button
-                    Command="{x:Bind ViewModel.ToggleSettingsCommand}"
-                    Content="配置"
-                    ToolTipService.ToolTip="API URL / Key / 模型" />
-                <Button Command="{x:Bind ViewModel.NewChatCommand}" Content="新对话" />
-                <ProgressRing
-                    Width="28"
-                    Height="28"
-                    IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" />
-            </StackPanel>
-        </Grid>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="WindowWidthStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Padding" Value="12" />
+                        <Setter Target="HeroCard.Padding" Value="16" />
+                        <Setter Target="HeroActions.(Grid.Row)" Value="1" />
+                        <Setter Target="HeroActions.(Grid.Column)" Value="0" />
+                        <Setter Target="HeroActions.Margin" Value="0,14,0,0" />
+                        <Setter Target="HeroActions.HorizontalAlignment" Value="Left" />
+                        <Setter Target="SettingsCard.Padding" Value="14" />
+                        <Setter Target="ApiKeyBox.(Grid.Row)" Value="1" />
+                        <Setter Target="ApiKeyBox.(Grid.Column)" Value="0" />
+                        <Setter Target="ApiKeyBox.Margin" Value="0,10,0,0" />
+                        <Setter Target="ModelField.(Grid.Row)" Value="2" />
+                        <Setter Target="ModelField.(Grid.Column)" Value="0" />
+                        <Setter Target="ModelField.Margin" Value="0,10,0,0" />
+                        <Setter Target="SettingsSaveRow.(Grid.Row)" Value="3" />
+                        <Setter Target="ComposerEffort.(Grid.ColumnSpan)" Value="3" />
+                        <Setter Target="ComposerDraft.(Grid.Row)" Value="1" />
+                        <Setter Target="ComposerDraft.(Grid.Column)" Value="0" />
+                        <Setter Target="ComposerDraft.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="ComposerActions.(Grid.Row)" Value="1" />
+                        <Setter Target="ComposerActions.(Grid.Column)" Value="2" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-        <!-- Settings card -->
+        <!-- Warm, compact hero keeps the primary actions visible. -->
         <Border
-            Grid.Row="1"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="14"
-            Visibility="{x:Bind ViewModel.SettingsVisibility, Mode=OneWay}">
-            <StackPanel Spacing="10">
-                <StackPanel Orientation="Horizontal" Spacing="8">
-                    <FontIcon FontSize="14" Glyph="&#xE713;" />
-                    <TextBlock FontWeight="SemiBold" Text="API 配置" />
+            x:Name="HeroCard"
+            Padding="22,18"
+            Background="{ThemeResource AiHeroBrush}"
+            CornerRadius="20">
+            <Grid ColumnSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <Border
+                            Width="34"
+                            Height="34"
+                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                            CornerRadius="10">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="20"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                Text="✦" />
+                        </Border>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="26"
+                            FontWeight="SemiBold"
+                            Text="Solar AI" />
+                        <Border
+                            Padding="8,3"
+                            VerticalAlignment="Center"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            CornerRadius="10">
+                            <TextBlock
+                                FontSize="10"
+                                FontWeight="SemiBold"
+                                Opacity="0.72"
+                                Text="STREAMING" />
+                        </Border>
+                    </StackPanel>
                     <TextBlock
-                        Opacity="0.55"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        VerticalAlignment="Center"
-                        Text="OpenAI 兼容 · 流式 SSE · 无默认模型" />
+                        MaxWidth="660"
+                        Opacity="0.68"
+                        Text="连接你自己的 OpenAI 兼容模型，在本地保留配置与对话体验。"
+                        TextWrapping="WrapWholeWords" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Ellipse
+                            Width="7"
+                            Height="7"
+                            VerticalAlignment="Center"
+                            Fill="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Opacity="0.72"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                            TextWrapping="WrapWholeWords" />
+                        <ProgressRing
+                            Width="16"
+                            Height="16"
+                            IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" />
+                    </StackPanel>
                 </StackPanel>
 
-                <TextBox
-                    Header="API URL"
-                    PlaceholderText="https://api.example.com/v1 或完整 …/chat/completions"
-                    Text="{x:Bind ViewModel.ApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                <PasswordBox
-                    x:Name="ApiKeyBox"
-                    Header="API Key"
-                    PasswordChanged="ApiKeyBox_OnPasswordChanged"
-                    PlaceholderText="sk-… / 网关 Key" />
-
-                <TextBox
-                    Header="模型名称（必填，无默认）"
-                    PlaceholderText="自行填写，例如 gpt-4o / claude-… / grok-…"
-                    Text="{x:Bind ViewModel.ModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-
-                <StackPanel Orientation="Horizontal" Spacing="8">
+                <StackPanel
+                    x:Name="HeroActions"
+                    Grid.Column="1"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <ToggleButton
+                        MinHeight="38"
+                        Padding="12,8"
+                        CornerRadius="10"
+                        Content="{x:Bind ViewModel.Context1MLabel, Mode=OneWay}"
+                        IsChecked="{x:Bind ViewModel.Use1MContext, Mode=TwoWay}"
+                        ToolTipService.ToolTip="保留完整对话历史，适合长上下文模型" />
                     <Button
-                        Command="{x:Bind ViewModel.SaveSettingsCommand}"
-                        Content="保存配置"
-                        Style="{StaticResource AccentButtonStyle}" />
-                    <TextBlock
-                        VerticalAlignment="Center"
-                        Opacity="0.6"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="本地保存，仅本机可读" />
+                        Command="{x:Bind ViewModel.ToggleSettingsCommand}"
+                        Style="{StaticResource AiActionButtonStyle}"
+                        ToolTipService.ToolTip="API URL、Key 与模型配置">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE713;" />
+                            <TextBlock Text="配置" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.NewChatCommand}"
+                        Style="{StaticResource AiActionButtonStyle}"
+                        ToolTipService.ToolTip="清空当前对话">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE710;" />
+                            <TextBlock Text="新对话" />
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
-            </StackPanel>
-        </Border>
-
-        <!-- Messages -->
-        <Border
-            Grid.Row="2"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="14">
-            <Grid>
-                <ListView
-                    x:Name="MessageList"
-                    Padding="12"
-                    ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
-                    SelectionMode="None">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:AiBubbleItem">
-                            <Grid Margin="0,6" HorizontalAlignment="{x:Bind Alignment}">
-                                <Border
-                                    MaxWidth="640"
-                                    Padding="12,10"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="12">
-                                    <StackPanel Spacing="6">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
-                                            <TextBlock
-                                                FontSize="12"
-                                                FontWeight="SemiBold"
-                                                Opacity="0.75"
-                                                Text="{x:Bind RoleLabel, Mode=OneWay}" />
-                                            <TextBlock
-                                                FontSize="11"
-                                                Opacity="0.5"
-                                                Text="{x:Bind TimeText, Mode=OneWay}" />
-                                            <TextBlock
-                                                FontSize="11"
-                                                Opacity="0.45"
-                                                Text="{x:Bind ModelHint, Mode=OneWay}" />
-                                        </StackPanel>
-                                        <TextBlock
-                                            IsTextSelectionEnabled="True"
-                                            Opacity="0.65"
-                                            FontSize="12"
-                                            Text="{x:Bind ReasoningText, Mode=OneWay}"
-                                            TextWrapping="WrapWholeWords"
-                                            Visibility="{x:Bind ReasoningVisibility, Mode=OneWay}" />
-                                        <TextBlock
-                                            IsTextSelectionEnabled="True"
-                                            Text="{x:Bind Content, Mode=OneWay}"
-                                            TextWrapping="WrapWholeWords" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-
-                <TextBlock
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Center"
-                    Opacity="0.45"
-                    Text="在下方输入消息开始对话"
-                    Visibility="{x:Bind EmptyHintVisibility, Mode=OneWay}" />
             </Grid>
         </Border>
 
-        <!-- Composer: reasoning effort + input + send -->
-        <Grid
-            Grid.Row="3"
-            ColumnSpacing="10"
-            Padding="4,0,4,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Configuration stays discoverable, but reads as a secondary task. -->
+        <Border
+            x:Name="SettingsCard"
+            Grid.Row="1"
+            Padding="18"
+            Style="{StaticResource AiCardStyle}"
+            Visibility="{x:Bind ViewModel.SettingsVisibility, Mode=OneWay}">
+            <StackPanel Spacing="14">
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <FontIcon
+                            VerticalAlignment="Center"
+                            FontSize="15"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Glyph="&#xE713;" />
+                        <StackPanel Spacing="1">
+                            <TextBlock FontWeight="SemiBold" Text="模型连接" />
+                            <TextBlock
+                                Opacity="0.58"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="OpenAI 兼容 · 流式 SSE · 无默认模型" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Border
+                        Grid.Column="1"
+                        Padding="9,4"
+                        Background="{ThemeResource AiComposerBrush}"
+                        CornerRadius="10">
+                        <TextBlock
+                            Opacity="0.62"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="仅保存在本机" />
+                    </Border>
+                </Grid>
 
-            <ComboBox
-                x:Name="EffortBox"
-                MinWidth="140"
-                VerticalAlignment="Bottom"
-                Header="推理强度"
-                ItemsSource="{x:Bind ViewModel.EffortLabels}"
-                SelectedIndex="{x:Bind ViewModel.SelectedEffortIndex, Mode=TwoWay}"
-                ToolTipService.ToolTip="对应 API 的 reasoning_effort（low / medium / high）；关闭则不传该参数" />
+                <Grid x:Name="SettingsFields" ColumnSpacing="10" RowSpacing="0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="1.25*" />
+                        <ColumnDefinition Width="1*" />
+                        <ColumnDefinition Width="1*" />
+                    </Grid.ColumnDefinitions>
 
-            <TextBox
-                x:Name="DraftBox"
-                Grid.Column="1"
-                AcceptsReturn="True"
-                MinHeight="44"
-                MaxHeight="140"
-                PlaceholderText="输入消息… Ctrl+Enter 发送"
-                Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                TextWrapping="Wrap"
-                KeyDown="DraftBox_OnKeyDown" />
+                    <TextBox
+                        x:Name="ApiUrlField"
+                        Header="API URL"
+                        PlaceholderText="https://api.example.com/v1"
+                        Style="{StaticResource AiFieldStyle}"
+                        Text="{x:Bind ViewModel.ApiUrl, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <PasswordBox
+                        x:Name="ApiKeyBox"
+                        Grid.Column="1"
+                        Header="API Key"
+                        PasswordChanged="ApiKeyBox_OnPasswordChanged"
+                        PlaceholderText="sk-… / 网关 Key"
+                        CornerRadius="10" />
+                    <TextBox
+                        x:Name="ModelField"
+                        Grid.Column="2"
+                        Header="模型名称"
+                        PlaceholderText="例如 gpt-4o / claude-…"
+                        Style="{StaticResource AiFieldStyle}"
+                        Text="{x:Bind ViewModel.ModelName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-            <StackPanel
-                Grid.Column="2"
-                VerticalAlignment="Bottom"
-                Spacing="6">
-                <Button
-                    MinWidth="72"
-                    Command="{x:Bind ViewModel.CancelSendCommand}"
-                    Content="停止"
-                    Visibility="{x:Bind ViewModel.CancelVisibility, Mode=OneWay}" />
-                <Button
-                    MinWidth="88"
-                    Command="{x:Bind ViewModel.SendCommand}"
-                    Content="发送"
-                    Style="{StaticResource AccentButtonStyle}" />
+                    <StackPanel
+                        x:Name="SettingsSaveRow"
+                        Grid.Row="1"
+                        Grid.ColumnSpan="3"
+                        Margin="0,12,0,0"
+                        Orientation="Horizontal"
+                        Spacing="10">
+                        <Button
+                            Command="{x:Bind ViewModel.SaveSettingsCommand}"
+                            Content="保存连接"
+                            Style="{StaticResource AiPrimaryButtonStyle}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Opacity="0.55"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="保存后即可开始对话" />
+                    </StackPanel>
+                </Grid>
             </StackPanel>
-        </Grid>
+        </Border>
+
+        <!-- Conversation canvas and composer are one cohesive surface. -->
+        <Border
+            Grid.Row="2"
+            MinHeight="280"
+            Style="{StaticResource AiCardStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <ListView
+                        x:Name="MessageList"
+                        Padding="16,12"
+                        Background="Transparent"
+                        ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
+                        SelectionMode="None">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AiBubbleItem">
+                                <Grid Margin="0,7" HorizontalAlignment="{x:Bind Alignment}">
+                                    <Border
+                                        MaxWidth="720"
+                                        Padding="14,12"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Border
+                                                    Width="24"
+                                                    Height="24"
+                                                    Background="{ThemeResource AiAvatarBrush}"
+                                                    CornerRadius="8">
+                                                    <TextBlock
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="12"
+                                                        FontWeight="SemiBold"
+                                                        Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                        Text="{x:Bind RoleLabel, Mode=OneWay}" />
+                                                </Border>
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="12"
+                                                    FontWeight="SemiBold"
+                                                    Opacity="0.78"
+                                                    Text="{x:Bind RoleLabel, Mode=OneWay}" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Opacity="0.45"
+                                                    Text="{x:Bind ModelHint, Mode=OneWay}" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Opacity="0.42"
+                                                    Text="{x:Bind TimeText, Mode=OneWay}" />
+                                            </StackPanel>
+                                            <Border
+                                                Padding="10,8"
+                                                Background="{ThemeResource AiReasoningBrush}"
+                                                CornerRadius="9"
+                                                Visibility="{x:Bind ReasoningVisibility, Mode=OneWay}">
+                                                <StackPanel Spacing="4">
+                                                    <TextBlock
+                                                        FontSize="11"
+                                                        FontWeight="SemiBold"
+                                                        Opacity="0.55"
+                                                        Text="思考过程" />
+                                                    <TextBlock
+                                                        FontSize="12"
+                                                        IsTextSelectionEnabled="True"
+                                                        Opacity="0.65"
+                                                        Text="{x:Bind ReasoningText, Mode=OneWay}"
+                                                        TextWrapping="WrapWholeWords" />
+                                                </StackPanel>
+                                            </Border>
+                                            <TextBlock
+                                                FontSize="14"
+                                                IsTextSelectionEnabled="True"
+                                                LineHeight="22"
+                                                Text="{x:Bind Content, Mode=OneWay}"
+                                                TextWrapping="WrapWholeWords" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <StackPanel
+                        x:Name="EmptyState"
+                        MaxWidth="520"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="12">
+                        <Border
+                            Width="68"
+                            Height="68"
+                            HorizontalAlignment="Center"
+                            Background="{ThemeResource AiHeroBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="22">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="34"
+                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                Text="✦" />
+                        </Border>
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="22"
+                            FontWeight="SemiBold"
+                            Text="今天想聊点什么？" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Opacity="0.58"
+                            Text="输入问题、整理想法，或让你的模型一起完成一项工作。"
+                            TextAlignment="Center"
+                            TextWrapping="WrapWholeWords" />
+                        <StackPanel
+                            HorizontalAlignment="Center"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                            <Border Padding="10,6" Background="{ThemeResource AiComposerBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.65" Text="总结内容" />
+                            </Border>
+                            <Border Padding="10,6" Background="{ThemeResource AiComposerBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.65" Text="辅助写作" />
+                            </Border>
+                            <Border Padding="10,6" Background="{ThemeResource AiComposerBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.65" Text="分析问题" />
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <Border
+                    Grid.Row="1"
+                    Padding="14"
+                    Background="{ThemeResource AiComposerBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,18,18">
+                    <Grid x:Name="ComposerGrid" ColumnSpacing="10" RowSpacing="8">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <ComboBox
+                            x:Name="ComposerEffort"
+                            MinWidth="148"
+                            VerticalAlignment="Bottom"
+                            Header="推理强度"
+                            ItemsSource="{x:Bind ViewModel.EffortLabels}"
+                            SelectedIndex="{x:Bind ViewModel.SelectedEffortIndex, Mode=TwoWay}"
+                            ToolTipService.ToolTip="对应 API 的 reasoning_effort；关闭则不传该参数" />
+                        <TextBox
+                            x:Name="ComposerDraft"
+                            Grid.Column="1"
+                            AcceptsReturn="True"
+                            MinHeight="46"
+                            MaxHeight="150"
+                            CornerRadius="12"
+                            KeyDown="DraftBox_OnKeyDown"
+                            PlaceholderText="给 AI 发消息…   Ctrl + Enter 发送"
+                            Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            TextWrapping="Wrap" />
+                        <StackPanel
+                            x:Name="ComposerActions"
+                            Grid.Column="2"
+                            VerticalAlignment="Bottom"
+                            Orientation="Horizontal"
+                            Spacing="7">
+                            <Button
+                                MinWidth="72"
+                                Command="{x:Bind ViewModel.CancelSendCommand}"
+                                Content="停止"
+                                CornerRadius="12"
+                                Visibility="{x:Bind ViewModel.CancelVisibility, Mode=OneWay}" />
+                            <Button
+                                MinWidth="92"
+                                Command="{x:Bind ViewModel.SendCommand}"
+                                Style="{StaticResource AiPrimaryButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <TextBlock Text="发送" />
+                                    <FontIcon FontSize="14" Glyph="&#xE724;" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
     </Grid>
 </Page>

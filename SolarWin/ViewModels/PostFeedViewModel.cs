@@ -8,7 +8,11 @@ using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
 
-/// <summary>Filtered post list: tag / category / collection / publisher.</summary>
+/// <summary>
+/// Filtered post list: tag / category / collection / publisher.
+/// Page must call <see cref="Cleanup"/> from <c>OnNavigatedFrom</c> so in-flight fetches
+/// are cancelled and list items (URL bindings for any GpuImage) are released.
+/// </summary>
 public partial class PostFeedViewModel : ObservableObject
 {
     private const int PageSize = 20;
@@ -17,6 +21,9 @@ public partial class PostFeedViewModel : ObservableObject
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
+
+    /// <summary>One CTS per page session; cancelled in <see cref="Cleanup"/>.</summary>
+    private CancellationTokenSource? _sessionCts;
 
     private PostFeedNavArgs? _args;
     private int _offset;
@@ -73,6 +80,7 @@ public partial class PostFeedViewModel : ObservableObject
 
     public void Initialize(PostFeedNavArgs? args)
     {
+        BeginSession();
         _args = args;
         if (args is null || string.IsNullOrWhiteSpace(args.Key))
         {
@@ -105,6 +113,61 @@ public partial class PostFeedViewModel : ObservableObject
         _ = LoadAsync();
     }
 
+    /// <summary>
+    /// Cancel load/load-more, drop list items and legacy image slots so nothing keeps running off-page.
+    /// </summary>
+    public void Cleanup()
+    {
+        CancelSession();
+        ReleaseMediaBindings();
+        IsBusy = false;
+        IsLoadingMore = false;
+        OnPropertyChanged(nameof(IsEmpty));
+        OnPropertyChanged(nameof(EmptyVisibility));
+        OnPropertyChanged(nameof(LoadMoreVisibility));
+    }
+
+    private void BeginSession()
+    {
+        CancelSession();
+        _sessionCts = new CancellationTokenSource();
+    }
+
+    private void CancelSession()
+    {
+        var cts = Interlocked.Exchange(ref _sessionCts, null);
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
+    }
+
+    private CancellationToken SessionToken
+        => _sessionCts?.Token ?? CancellationToken.None;
+
+    private void ReleaseMediaBindings()
+    {
+        foreach (var item in Items)
+        {
+            item.AvatarImage = null;
+            item.FirstImage = null;
+        }
+
+        Items.Clear();
+        _offset = 0;
+        _hasMore = false;
+    }
+
     [RelayCommand]
     private async Task LoadAsync()
     {
@@ -113,6 +176,7 @@ public partial class PostFeedViewModel : ObservableObject
             return;
         }
 
+        var ct = SessionToken;
         try
         {
             IsBusy = true;
@@ -123,29 +187,41 @@ public partial class PostFeedViewModel : ObservableObject
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(EmptyVisibility));
             OnPropertyChanged(nameof(LoadMoreVisibility));
+            ct.ThrowIfCancellationRequested();
 
-            var list = await FetchPageAsync().ConfigureAwait(true);
+            var list = await FetchPageAsync(ct).ConfigureAwait(true);
+            ct.ThrowIfCancellationRequested();
             foreach (var post in list)
             {
                 Items.Add(new PostItemViewModel(post, _imageLoader));
             }
 
             StatusText = $"{Items.Count} 条";
-            await RefreshSubscribeStateAsync().ConfigureAwait(true);
-            _ = LoadImagesAsync();
+            await RefreshSubscribeStateAsync(ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (SolarApiException ex)
         {
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
             ErrorMessage = ex.Message;
             StatusText = "加载失败";
             _toast.Error(ex.Message);
         }
         finally
         {
-            IsBusy = false;
-            OnPropertyChanged(nameof(IsEmpty));
-            OnPropertyChanged(nameof(EmptyVisibility));
-            OnPropertyChanged(nameof(LoadMoreVisibility));
+            if (!ct.IsCancellationRequested)
+            {
+                IsBusy = false;
+                OnPropertyChanged(nameof(IsEmpty));
+                OnPropertyChanged(nameof(EmptyVisibility));
+                OnPropertyChanged(nameof(LoadMoreVisibility));
+            }
         }
     }
 
@@ -157,10 +233,12 @@ public partial class PostFeedViewModel : ObservableObject
             return;
         }
 
+        var ct = SessionToken;
         try
         {
             IsLoadingMore = true;
-            var list = await FetchPageAsync().ConfigureAwait(true);
+            var list = await FetchPageAsync(ct).ConfigureAwait(true);
+            ct.ThrowIfCancellationRequested();
             foreach (var post in list)
             {
                 Items.Add(new PostItemViewModel(post, _imageLoader));
@@ -168,16 +246,24 @@ public partial class PostFeedViewModel : ObservableObject
 
             TrimFeedWindow();
             StatusText = $"{Items.Count} 条";
-            _ = LoadImagesAsync();
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (SolarApiException ex)
         {
-            _toast.Error(ex.Message);
+            if (!ct.IsCancellationRequested)
+            {
+                _toast.Error(ex.Message);
+            }
         }
         finally
         {
-            IsLoadingMore = false;
-            OnPropertyChanged(nameof(LoadMoreVisibility));
+            if (!ct.IsCancellationRequested)
+            {
+                IsLoadingMore = false;
+                OnPropertyChanged(nameof(LoadMoreVisibility));
+            }
         }
     }
 
@@ -196,8 +282,8 @@ public partial class PostFeedViewModel : ObservableObject
         while (Items.Count > MaxFeedItems)
         {
             var old = Items[0];
-            old.FirstImage = null;
             old.AvatarImage = null;
+            old.FirstImage = null;
             Items.RemoveAt(0);
         }
     }
@@ -210,31 +296,49 @@ public partial class PostFeedViewModel : ObservableObject
             return;
         }
 
+        var ct = SessionToken;
         try
         {
             if (IsSubscribed)
             {
-                await UnsubscribeCurrentAsync().ConfigureAwait(true);
+                await UnsubscribeCurrentAsync(ct).ConfigureAwait(true);
+                if (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 IsSubscribed = false;
                 SubscribeButtonText = "订阅";
                 _toast.Success("已取消订阅");
             }
             else
             {
-                await SubscribeCurrentAsync().ConfigureAwait(true);
+                await SubscribeCurrentAsync(ct).ConfigureAwait(true);
+                if (ct.IsCancellationRequested)
+                {
+                    return;
+                }
+
                 IsSubscribed = true;
                 SubscribeButtonText = "已订阅";
                 _toast.Success("已订阅");
             }
         }
+        catch (OperationCanceledException)
+        {
+        }
         catch (SolarApiException ex)
         {
-            _toast.Error(ex.Message);
+            if (!ct.IsCancellationRequested)
+            {
+                _toast.Error(ex.Message);
+            }
         }
     }
 
-    private async Task<List<SnPost>> FetchPageAsync()
+    private async Task<List<SnPost>> FetchPageAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var args = _args!;
         List<SnPost> list;
         switch (args.Kind)
@@ -248,7 +352,9 @@ public partial class PostFeedViewModel : ObservableObject
                 // Collection endpoint typically returns all items; page client-side.
                 if (_offset == 0)
                 {
-                    list = await _api.GetCollectionPostsAsync(args.PublisherName, args.Key).ConfigureAwait(true);
+                    list = await _api
+                        .GetCollectionPostsAsync(args.PublisherName, args.Key, cancellationToken)
+                        .ConfigureAwait(true);
                     _hasMore = false;
                 }
                 else
@@ -263,6 +369,7 @@ public partial class PostFeedViewModel : ObservableObject
                 list = await _api.GetPostsAsync(
                     _offset,
                     PageSize,
+                    cancellationToken,
                     tag: args.Key).ConfigureAwait(true);
                 _hasMore = list.Count >= PageSize;
                 _offset += list.Count;
@@ -272,6 +379,7 @@ public partial class PostFeedViewModel : ObservableObject
                 list = await _api.GetPostsAsync(
                     _offset,
                     PageSize,
+                    cancellationToken,
                     category: args.Key).ConfigureAwait(true);
                 _hasMore = list.Count >= PageSize;
                 _offset += list.Count;
@@ -281,6 +389,7 @@ public partial class PostFeedViewModel : ObservableObject
                 list = await _api.GetPostsAsync(
                     _offset,
                     PageSize,
+                    cancellationToken,
                     pub: args.Key).ConfigureAwait(true);
                 _hasMore = list.Count >= PageSize;
                 _offset += list.Count;
@@ -292,11 +401,13 @@ public partial class PostFeedViewModel : ObservableObject
                 break;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         return list;
     }
 
-    private async Task RefreshSubscribeStateAsync()
+    private async Task RefreshSubscribeStateAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_args is null || !CanSubscribe)
         {
             IsSubscribed = false;
@@ -305,57 +416,36 @@ public partial class PostFeedViewModel : ObservableObject
         }
 
         // Best-effort: subscription GET is not always available for all kinds.
-        // Keep button default; user can toggle.
         IsSubscribed = false;
         SubscribeButtonText = "订阅";
         await Task.CompletedTask.ConfigureAwait(true);
     }
 
-    private Task SubscribeCurrentAsync()
+    private Task SubscribeCurrentAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var args = _args!;
         return args.Kind switch
         {
-            PostFeedKind.Tag => _api.SubscribeTagAsync(args.Key),
-            PostFeedKind.Category => _api.SubscribeCategoryAsync(args.Key),
-            PostFeedKind.Collection => _api.SubscribeCollectionAsync(args.PublisherName!, args.Key),
-            PostFeedKind.Publisher => _api.SubscribePublisherAsync(args.Key),
+            PostFeedKind.Tag => _api.SubscribeTagAsync(args.Key, cancellationToken),
+            PostFeedKind.Category => _api.SubscribeCategoryAsync(args.Key, cancellationToken),
+            PostFeedKind.Collection => _api.SubscribeCollectionAsync(args.PublisherName!, args.Key, cancellationToken),
+            PostFeedKind.Publisher => _api.SubscribePublisherAsync(args.Key, cancellationToken),
             _ => Task.CompletedTask,
         };
     }
 
-    private Task UnsubscribeCurrentAsync()
+    private Task UnsubscribeCurrentAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var args = _args!;
         return args.Kind switch
         {
-            PostFeedKind.Tag => _api.UnsubscribeTagAsync(args.Key),
-            PostFeedKind.Category => _api.UnsubscribeCategoryAsync(args.Key),
-            PostFeedKind.Collection => _api.UnsubscribeCollectionAsync(args.PublisherName!, args.Key),
-            PostFeedKind.Publisher => _api.UnsubscribePublisherAsync(args.Key),
+            PostFeedKind.Tag => _api.UnsubscribeTagAsync(args.Key, cancellationToken),
+            PostFeedKind.Category => _api.UnsubscribeCategoryAsync(args.Key, cancellationToken),
+            PostFeedKind.Collection => _api.UnsubscribeCollectionAsync(args.PublisherName!, args.Key, cancellationToken),
+            PostFeedKind.Publisher => _api.UnsubscribePublisherAsync(args.Key, cancellationToken),
             _ => Task.CompletedTask,
         };
-    }
-
-    private async Task LoadImagesAsync()
-    {
-        foreach (var item in Items.ToList())
-        {
-            if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
-            {
-                try
-                {
-                    var bmp = await _imageLoader.LoadAsync(item.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
-                    if (bmp is not null)
-                    {
-                        item.AvatarImage = bmp;
-                    }
-                }
-                catch
-                {
-                    // ignore image errors
-                }
-            }
-        }
     }
 }

@@ -358,9 +358,26 @@ public sealed class PostAwardRequest
     public string? Message { get; set; }
 }
 
+/// <summary>POST /sphere/posts/{id}/awards response.</summary>
+public sealed class PostAwardResponse
+{
+    [JsonPropertyName("order_id")]
+    public Guid OrderId { get; set; }
+}
+
 /// <summary>POST /sphere/posts/{id}/sponsor.</summary>
 public sealed class PostSponsorRequest
 {
+    [JsonPropertyName("amount")]
+    public double Amount { get; set; }
+}
+
+/// <summary>POST /sphere/posts/{id}/sponsor response.</summary>
+public sealed class PostSponsorResponse
+{
+    [JsonPropertyName("order_id")]
+    public Guid OrderId { get; set; }
+
     [JsonPropertyName("amount")]
     public double Amount { get; set; }
 }

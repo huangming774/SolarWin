@@ -64,6 +64,11 @@ public partial class PublisherDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial string NewFeatureFlag { get; set; } = string.Empty;
 
+    /// <summary>GPU source for publisher cover (FastWin2DImage).</summary>
+    [ObservableProperty]
+    public partial string? PictureUrl { get; set; }
+
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? PictureImage { get; set; }
 
@@ -408,22 +413,13 @@ public partial class PublisherDetailViewModel : ObservableObject
         }
     }
 
-    private async Task LoadPictureAsync(SnCloudFile? picture)
+    private Task LoadPictureAsync(SnCloudFile? picture)
     {
-        var url = CloudFileUrlHelper.Resolve(picture);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            PictureImage = null;
-            return;
-        }
-
-        try
-        {
-            PictureImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
-        }
-        catch
-        {
-            PictureImage = null;
-        }
+        var id = CloudFileUrlHelper.ResolveFileId(picture);
+        var url = CloudFileUrlHelper.Resolve(picture) ?? (id is null ? null : CloudFileUrlHelper.DriveFileUrl(id));
+        PictureUrl = url ?? id;
+        PictureImage = null;
+        _ = _imageLoader;
+        return Task.CompletedTask;
     }
 }

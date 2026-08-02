@@ -87,6 +87,9 @@ public partial class SphereExploreViewModel : ObservableObject
     public partial string AwardPostIdText { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial PostItemViewModel? SelectedAwardPost { get; set; }
+
+    [ObservableProperty]
     public partial string AwardAmountText { get; set; } = "1";
 
     [ObservableProperty]
@@ -96,11 +99,25 @@ public partial class SphereExploreViewModel : ObservableObject
     public partial string SponsorAmountText { get; set; } = "1";
 
     [ObservableProperty]
+    public partial string MonetizeStatus { get; set; } = "选择一篇精选帖子，或粘贴帖子 ID";
+
+    [ObservableProperty]
     public partial string StatusText { get; set; } = string.Empty;
 
     public event EventHandler<PublisherNavArgs>? NavigateToPublisher;
     public event EventHandler<PostItemViewModel>? NavigateToPost;
     public event EventHandler<PostFeedNavArgs>? NavigateToFeed;
+
+    partial void OnSelectedAwardPostChanged(PostItemViewModel? value)
+    {
+        if (value is null || value.Id == Guid.Empty)
+        {
+            return;
+        }
+
+        AwardPostIdText = value.Id.ToString("D");
+        MonetizeStatus = $"已选择：{(string.IsNullOrWhiteSpace(value.Title) ? value.AuthorName : value.Title)}";
+    }
 
     [RelayCommand]
     private async Task LoadAsync()
@@ -110,12 +127,14 @@ public partial class SphereExploreViewModel : ObservableObject
             IsBusy = true;
             ErrorMessage = null;
             InfoMessage = null;
-            await Safe(LoadPublishersAsync).ConfigureAwait(true);
-            await Safe(LoadSubscriptionsAsync).ConfigureAwait(true);
-            await Safe(LoadBookmarksAsync).ConfigureAwait(true);
-            await Safe(LoadDraftsAndFeaturedAsync).ConfigureAwait(true);
-            await Safe(LoadTagsCategoriesAsync).ConfigureAwait(true);
-            await Safe(LoadStickersAsync).ConfigureAwait(true);
+            await AsyncConcurrencyHelper.RunAsync(
+                4,
+                () => Safe(LoadPublishersAsync),
+                () => Safe(LoadSubscriptionsAsync),
+                () => Safe(LoadBookmarksAsync),
+                () => Safe(LoadDraftsAndFeaturedAsync),
+                () => Safe(LoadTagsCategoriesAsync),
+                () => Safe(LoadStickersAsync)).ConfigureAwait(true);
             StatusText = "已刷新";
         }
         catch (SolarApiException ex)
@@ -303,7 +322,7 @@ public partial class SphereExploreViewModel : ObservableObject
             {
                 var item = new StickerPackItemViewModel(o, _imageLoader);
                 StickerPacks.Add(item);
-                _ = item.LoadIconAsync();
+                // Icons: FastWin2DImage binds IconFileId (GPU).
             }
 
             if (packs.Count == 0)
@@ -677,7 +696,7 @@ public partial class SphereExploreViewModel : ObservableObject
             {
                 var item = new StickerPackItemViewModel(pack, _imageLoader);
                 StickerSearch.Add(item);
-                _ = item.LoadIconAsync();
+                // Icons: FastWin2DImage binds IconFileId (GPU).
             }
 
             // Stickers: GET /sphere/stickers/search (image on each sticker)
@@ -688,7 +707,7 @@ public partial class SphereExploreViewModel : ObservableObject
                 {
                     var vm = new StickerItemViewModel(s, _imageLoader);
                     StickerSearchHits.Add(vm);
-                    _ = vm.LoadImageAsync();
+                    // Images: FastWin2DImage binds ImageFileId (GPU).
                 }
             }
             catch (SolarApiException)
@@ -750,7 +769,7 @@ public partial class SphereExploreViewModel : ObservableObject
             {
                 var vm = new StickerItemViewModel(s, _imageLoader);
                 OpenPackStickers.Add(vm);
-                _ = vm.LoadImageAsync();
+                // Images: FastWin2DImage binds ImageFileId (GPU).
             }
 
             if (stickers.Count == 0)
@@ -848,18 +867,28 @@ public partial class SphereExploreViewModel : ObservableObject
 
         try
         {
-            await _api.AwardPostAsync(postId, new PostAwardRequest
+            IsBusy = true;
+            var result = await _api.AwardPostAsync(postId, new PostAwardRequest
             {
                 Amount = amount,
                 Attitude = 0,
                 Message = string.IsNullOrWhiteSpace(AwardMessage) ? null : AwardMessage.Trim(),
             }).ConfigureAwait(true);
+            MonetizeStatus = result.OrderId == Guid.Empty
+                ? $"已打赏 {amount:0.##}"
+                : $"打赏订单 {result.OrderId:D}";
             _toast.Success("打赏成功");
+            AwardMessage = string.Empty;
             await LoadAwardsAsync().ConfigureAwait(true);
         }
         catch (SolarApiException ex)
         {
+            MonetizeStatus = $"打赏失败：{ex.Message}";
             _toast.Error(ex.Message);
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -880,12 +909,22 @@ public partial class SphereExploreViewModel : ObservableObject
 
         try
         {
-            await _api.SponsorPostAsync(postId, new PostSponsorRequest { Amount = amount }).ConfigureAwait(true);
+            IsBusy = true;
+            var result = await _api.SponsorPostAsync(postId, new PostSponsorRequest { Amount = amount }).ConfigureAwait(true);
+            var confirmedAmount = result.Amount > 0 ? result.Amount : amount;
+            MonetizeStatus = result.OrderId == Guid.Empty
+                ? $"已赞助 {confirmedAmount:0.##}"
+                : $"赞助订单 {result.OrderId:D} · {confirmedAmount:0.##}";
             _toast.Success("赞助成功");
         }
         catch (SolarApiException ex)
         {
+            MonetizeStatus = $"赞助失败：{ex.Message}";
             _toast.Error(ex.Message);
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 

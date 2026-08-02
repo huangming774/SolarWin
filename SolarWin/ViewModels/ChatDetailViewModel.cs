@@ -38,10 +38,13 @@ public partial class ChatDetailViewModel : ObservableObject
     private readonly IChatLocalStore _localStore;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly ChatViewModel _chatList;
+    private readonly SemaphoreSlim _syncGate = new(1, 1);
+    private readonly object _mediaStopGate = new();
     private readonly HashSet<Guid> _knownMessageIds = [];
     private readonly List<ChatBotCommand> _botCommands = [];
 
     private CancellationTokenSource? _syncCts;
+    private bool _realtimeSyncActive;
     private CancellationTokenSource? _suggestCts;
     private CancellationTokenSource? _loadCts;
     private int _offset;
@@ -67,6 +70,7 @@ public partial class ChatDetailViewModel : ObservableObject
     private bool _callEventsHooked;
     private bool _voiceHooked;
     private int _voiceLimitStopRequested;
+    private Task _mediaStopTask = Task.CompletedTask;
     /// <summary>Generation stamp so cancelled / superseded loads never mutate the active room.</summary>
     private int _loadGeneration;
 
@@ -170,6 +174,8 @@ public partial class ChatDetailViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string? PendingImageFileId { get; set; }
+
+    public string? PendingAttachmentMimeType { get; private set; }
 
     [ObservableProperty]
     public partial bool IsBusy { get; set; }
@@ -321,7 +327,7 @@ public partial class ChatDetailViewModel : ObservableObject
     public partial string ConnectionQualityText { get; set; } = "未知";
 
     [ObservableProperty]
-    public partial Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap? RemoteVideoBitmap { get; set; }
+    public partial Microsoft.UI.Xaml.Media.ImageSource? RemoteVideoBitmap { get; set; }
 
     [ObservableProperty]
     public partial Microsoft.UI.Xaml.Media.Imaging.WriteableBitmap? LocalVideoBitmap { get; set; }
@@ -596,7 +602,7 @@ public partial class ChatDetailViewModel : ObservableObject
                     return;
                 }
 
-                var ordered = await Task.Run(() => NormalizeOrder(batch), ct).ConfigureAwait(false);
+                var ordered = NormalizeOrder(batch);
 
                 if (IsStaleLoad(generation, roomId, ct))
                 {
@@ -737,10 +743,7 @@ public partial class ChatDetailViewModel : ObservableObject
             return false;
         }
 
-        var ordered = await Task.Run(
-                () => NormalizeOrder(newest as List<SnChatMessage> ?? newest.ToList()),
-                cancellationToken)
-            .ConfigureAwait(false);
+        var ordered = NormalizeOrder(newest as List<SnChatMessage> ?? newest.ToList());
         if (IsStaleLoad(generation, roomId, cancellationToken))
         {
             return false;
@@ -1467,12 +1470,24 @@ public partial class ChatDetailViewModel : ObservableObject
 
         try
         {
+            Task pendingStop;
+            lock (_mediaStopGate)
+            {
+                pendingStop = _mediaStopTask;
+            }
+
+            // A previous page departure may still be releasing LiveKit/native devices.
+            // Never start a new session until that deterministic teardown has completed.
+            await pendingStop.ConfigureAwait(true);
+
             IsCallPanelOpen = true;
             IsCallConnecting = true;
             CallStatusText = "正在创建通话会话…";
+            _incomingCalls.MarkOutgoingCall(RoomId);
 
             var call = await _api.JoinRealtimeCallAsync(RoomId).ConfigureAwait(true);
             _activeCall = call;
+            _incomingCalls.MarkOutgoingCall(RoomId, call.CallId);
             CallEndpointText = string.IsNullOrWhiteSpace(call.Endpoint)
                 ? "(无 endpoint)"
                 : call.Endpoint!;
@@ -1501,6 +1516,11 @@ public partial class ChatDetailViewModel : ObservableObject
         }
         catch (SolarApiException ex)
         {
+            if (_activeCall is null)
+            {
+                _incomingCalls.CancelOutgoingCall(RoomId);
+            }
+
             IsCallConnecting = false;
             IsInCall = false;
             CallStatusText = "加入失败";
@@ -1508,6 +1528,11 @@ public partial class ChatDetailViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (_activeCall is null)
+            {
+                _incomingCalls.CancelOutgoingCall(RoomId);
+            }
+
             IsCallConnecting = false;
             IsInCall = false;
             CallStatusText = "媒体连接失败";
@@ -2065,7 +2090,7 @@ public partial class ChatDetailViewModel : ObservableObject
         try
         {
             var msg = await _api.SendPlaceholderMessageAsync(RoomId, "typing").ConfigureAwait(true);
-            AddMessageInternal(msg, append: true);
+            AddMessageInternal(msg, append: true, playSendAnimation: true);
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             _toast.Success("已发送 placeholder(typing)");
         }
@@ -2111,7 +2136,7 @@ public partial class ChatDetailViewModel : ObservableObject
         try
         {
             var msg = await _api.RedirectMessagesAsync(RoomId, ids).ConfigureAwait(true);
-            AddMessageInternal(msg, append: true);
+            AddMessageInternal(msg, append: true, playSendAnimation: true);
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             RedirectMessageIdsText = string.Empty;
             _toast.Success($"已 redirect {ids.Count} 条");
@@ -2132,11 +2157,12 @@ public partial class ChatDetailViewModel : ObservableObject
         _wsHooked = true;
         _ws.PacketReceived += OnRoomWsPacket;
         _ws.StateChanged += OnWsStateChanged;
+        ApplyWebSocketState(_ws.State);
     }
 
     private void OnWsStateChanged(object? sender, ChatWsConnectionState state)
     {
-        void Apply() => RealtimeModeText = state == ChatWsConnectionState.Connected ? "实时: WebSocket" : "实时: 轮询";
+        void Apply() => ApplyWebSocketState(state);
         if (App.DispatcherQueue is { } dq && !dq.HasThreadAccess)
         {
             dq.TryEnqueue(Apply);
@@ -2147,6 +2173,26 @@ public partial class ChatDetailViewModel : ObservableObject
         }
     }
 
+    private void ApplyWebSocketState(ChatWsConnectionState state)
+    {
+        RealtimeModeText = state == ChatWsConnectionState.Connected ? "实时: WebSocket" : "实时: 轮询";
+        if (!_realtimeSyncActive)
+        {
+            return;
+        }
+
+        if (state == ChatWsConnectionState.Connected)
+        {
+            StopFallbackPolling();
+            // Fill the small disconnect/reconnect gap once, without starting a poll loop.
+            _ = CompensateAfterResumeAsync();
+        }
+        else
+        {
+            EnsureFallbackPolling();
+        }
+    }
+
     private void OnRoomWsPacket(object? sender, ChatWsPacket packet)
     {
         if (RoomId == Guid.Empty)
@@ -2154,28 +2200,7 @@ public partial class ChatDetailViewModel : ObservableObject
             return;
         }
 
-        // Forward possible call invites when not already in a call
         var t = packet.Type ?? string.Empty;
-        if (!IsInCall && !IsCallConnecting
-            && (t.Contains("realtime", StringComparison.OrdinalIgnoreCase)
-                || (t.Contains("call", StringComparison.OrdinalIgnoreCase)
-                    && t.Contains("invite", StringComparison.OrdinalIgnoreCase))))
-        {
-            try
-            {
-                _incomingCalls.PresentInvite(new IncomingCallInfo
-                {
-                    RoomId = RoomId,
-                    RoomTitle = RoomTitle,
-                    CallerName = "通话邀请",
-                });
-            }
-            catch
-            {
-                // ignore
-            }
-        }
-
         // Solian: messages.new / messages.update carry SnChatMessage in data
         if (!t.StartsWith("messages.", StringComparison.OrdinalIgnoreCase) &&
             !string.Equals(t, "system.e2ee.enabled", StringComparison.OrdinalIgnoreCase))
@@ -2319,7 +2344,7 @@ public partial class ChatDetailViewModel : ObservableObject
                     clip.DurationMs)
                 .ConfigureAwait(true);
 
-            AddMessageInternal(sent, append: true);
+            AddMessageInternal(sent, append: true, playSendAnimation: true);
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             _ = LoadMediaAsync();
             _toast.Success($"语音已发送（{clip.DurationMs / 1000.0:0.0}s）");
@@ -2491,25 +2516,10 @@ public partial class ChatDetailViewModel : ObservableObject
                 ImageFileId = fileId,
             };
             StickerGrid.Add(item);
-            if (!string.IsNullOrWhiteSpace(fileId))
-            {
-                _ = LoadStickerThumbAsync(item, fileId);
-            }
+            // Thumbs paint via FastWin2DImage.Source = ImageFileId (GPU).
         }
 
         await Task.CompletedTask.ConfigureAwait(true);
-    }
-
-    private async Task LoadStickerThumbAsync(StickerPickItem item, string fileId)
-    {
-        try
-        {
-            item.Image = await _imageLoader.LoadSafeAsync(fileId, DysonFileImageLoader.StickerThumbDecodeWidth).ConfigureAwait(true);
-        }
-        catch
-        {
-            // ignore
-        }
     }
 
     /// <summary>
@@ -2565,25 +2575,15 @@ public partial class ChatDetailViewModel : ObservableObject
                 RememberStickerFileId(placeholder, item.ImageFileId!);
             }
 
-            AddLocalEcho(placeholder, null, clientMessageId, replied);
+            AddLocalEcho(placeholder, null, null, null, clientMessageId, replied);
 
-            // Paint the sticker image immediately (don't wait for server lookup).
+            // Seed FileId so FastWin2DImage can paint without waiting for sticker lookup.
             if (Messages.Count > 0 && !string.IsNullOrWhiteSpace(item.ImageFileId))
             {
                 var echoVm = Messages[^1];
                 if (string.Equals(echoVm.Message.ClientMessageId, clientMessageId, StringComparison.Ordinal))
                 {
                     echoVm.SeedStickerFromFileId(placeholder, item.ImageFileId!);
-                    if (item.Image is not null)
-                    {
-                        var slot = echoVm.Stickers.FirstOrDefault(s =>
-                            string.Equals(s.Placeholder, placeholder, StringComparison.OrdinalIgnoreCase));
-                        if (slot is not null)
-                        {
-                            slot.Image = item.Image;
-                            slot.ImageOpacity = 1.0;
-                        }
-                    }
                 }
             }
 
@@ -3128,7 +3128,7 @@ public partial class ChatDetailViewModel : ObservableObject
                     apiBatchCount = batch.Count;
                     if (batch.Count > 0)
                     {
-                        var orderedApi = await Task.Run(() => NormalizeOrder(batch), ct).ConfigureAwait(false);
+                        var orderedApi = NormalizeOrder(batch);
 
                         // Dual-write into L1 + SQLite (Phase 2); memory remains read authority for hot path.
                         foreach (var msg in orderedApi)
@@ -3162,7 +3162,7 @@ public partial class ChatDetailViewModel : ObservableObject
             }
 
             // 3) Normalize + paint (dedupe by id; no duplicate bubbles).
-            var ordered = await Task.Run(() => NormalizeOrder(merged), ct).ConfigureAwait(false);
+            var ordered = NormalizeOrder(merged);
 
             if (IsStaleLoad(generation, roomId, ct))
             {
@@ -3446,10 +3446,7 @@ public partial class ChatDetailViewModel : ObservableObject
                     break;
                 }
 
-                var ordered = await Task.Run(
-                        () => NormalizeOrder(newer as List<SnChatMessage> ?? newer.ToList()),
-                        ct)
-                    .ConfigureAwait(false);
+                var ordered = NormalizeOrder(newer as List<SnChatMessage> ?? newer.ToList());
 
                 await RunOnUiAsync(() =>
                 {
@@ -3560,8 +3557,10 @@ public partial class ChatDetailViewModel : ObservableObject
         }
 
         var text = Draft?.Trim();
-        var imageId = PendingImageFileId;
-        if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(imageId))
+        var attachmentId = PendingImageFileId;
+        var attachmentName = PendingImageName;
+        var attachmentMimeType = PendingAttachmentMimeType;
+        if (string.IsNullOrWhiteSpace(text) && string.IsNullOrWhiteSpace(attachmentId))
         {
             return;
         }
@@ -3583,7 +3582,7 @@ public partial class ChatDetailViewModel : ObservableObject
                 Content = string.IsNullOrWhiteSpace(text) ? null : text,
                 ClientMessageId = clientMessageId,
                 Nonce = Guid.NewGuid().ToString("N")[..16],
-                AttachmentsId = string.IsNullOrWhiteSpace(imageId) ? null : [imageId!],
+                AttachmentsId = string.IsNullOrWhiteSpace(attachmentId) ? null : [attachmentId!],
                 RepliedMessageId = replyId,
             };
 
@@ -3594,7 +3593,13 @@ public partial class ChatDetailViewModel : ObservableObject
             ClearPendingImage();
 
             // Show immediately; the sync copy replaces the echo in place (matched by client_message_id).
-            AddLocalEcho(text, imageId, clientMessageId, repliedSnapshot);
+            AddLocalEcho(
+                text,
+                attachmentId,
+                attachmentName,
+                attachmentMimeType,
+                clientMessageId,
+                repliedSnapshot);
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             _ = LoadMediaAsync();
             _ = ReconcileAfterSendAsync();
@@ -3611,7 +3616,9 @@ public partial class ChatDetailViewModel : ObservableObject
 
     private void AddLocalEcho(
         string? text,
-        string? imageId,
+        string? attachmentId,
+        string? attachmentName,
+        string? attachmentMimeType,
         string clientMessageId,
         MessageItemViewModel? repliedTo = null)
     {
@@ -3621,7 +3628,11 @@ public partial class ChatDetailViewModel : ObservableObject
             Id = Guid.Empty,
             ClientMessageId = clientMessageId,
             ChatRoomId = RoomId,
-            Type = string.IsNullOrWhiteSpace(imageId) ? "text" : "image",
+            Type = string.IsNullOrWhiteSpace(attachmentId)
+                ? "text"
+                : attachmentMimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true
+                    ? "video"
+                    : "image",
             Content = text,
             CreatedAt = DateTimeOffset.Now,
             SenderId = account?.Id ?? Guid.Empty,
@@ -3633,14 +3644,22 @@ public partial class ChatDetailViewModel : ObservableObject
                     Account = account,
                     Nick = account.Nick,
                 },
-            Attachments = string.IsNullOrWhiteSpace(imageId)
+            Attachments = string.IsNullOrWhiteSpace(attachmentId)
                 ? null
-                : [new SnCloudFile { Id = imageId, MimeType = "image/jpeg" }],
+                :
+                [
+                    new SnCloudFile
+                    {
+                        Id = attachmentId,
+                        Name = attachmentName,
+                        MimeType = attachmentMimeType ?? "application/octet-stream",
+                    },
+                ],
             RepliedMessageId = repliedTo?.Message.Id is { } rid && rid != Guid.Empty ? rid : null,
             RepliedMessage = repliedTo?.Message,
         };
 
-        AddMessageInternal(echo, append: true);
+        AddMessageInternal(echo, append: true, playSendAnimation: true);
     }
 
     private static string TruncatePreview(string? text)
@@ -3666,8 +3685,8 @@ public partial class ChatDetailViewModel : ObservableObject
         }
     }
 
-    /// <summary>Upload local image to DysonFS then keep file id for send.</summary>
-    public async Task AttachLocalImageAsync(Stream stream, string fileName, string contentType, long size)
+    /// <summary>Upload local image/video to DysonFS, using chunks for large media.</summary>
+    public async Task AttachLocalMediaAsync(Stream stream, string fileName, string contentType, long size)
     {
         if (RoomId == Guid.Empty)
         {
@@ -3681,16 +3700,15 @@ public partial class ChatDetailViewModel : ObservableObject
             ErrorMessage = null;
             PendingImageName = fileName;
             PendingImageFileId = null;
+            PendingAttachmentMimeType = contentType;
 
             var progress = new Progress<double>(p => UploadProgress = p);
-            var file = await _api.UploadFileDirectAsync(
-                stream,
-                fileName,
-                contentType,
-                size,
-                parentId: null,
-                progress,
-                CancellationToken.None).ConfigureAwait(true);
+            const long chunkedUploadThreshold = 5L * 1024 * 1024;
+            var file = size >= chunkedUploadThreshold
+                ? await _api.UploadFileChunkedAsync(
+                    stream, fileName, contentType, size, parentId: null, progress, CancellationToken.None).ConfigureAwait(true)
+                : await _api.UploadFileDirectAsync(
+                    stream, fileName, contentType, size, parentId: null, progress, CancellationToken.None).ConfigureAwait(true);
 
             var id = file.Id ?? CloudFileUrlHelper.ResolveFileId(file);
             if (string.IsNullOrWhiteSpace(id))
@@ -3700,6 +3718,7 @@ public partial class ChatDetailViewModel : ObservableObject
 
             PendingImageFileId = id;
             PendingImageName = file.Name ?? fileName;
+            PendingAttachmentMimeType = file.MimeType ?? contentType;
             UploadProgress = 1;
             UpdateCanSend();
         }
@@ -3726,6 +3745,7 @@ public partial class ChatDetailViewModel : ObservableObject
         PendingImageName = null;
         PendingImagePath = null;
         PendingImageFileId = null;
+        PendingAttachmentMimeType = null;
         UploadProgress = 0;
         UpdateCanSend();
     }
@@ -3735,25 +3755,14 @@ public partial class ChatDetailViewModel : ObservableObject
 
     public void StartPolling()
     {
-        // Only stop the poll loop — do not cancel message load (StartPolling runs
-        // right after LoadInitial on navigate-to).
-        if (_syncCts is not null)
+        _realtimeSyncActive = true;
+        if (_ws.State == ChatWsConnectionState.Connected)
         {
-            try
-            {
-                _syncCts.Cancel();
-            }
-            catch
-            {
-                // ignore
-            }
-
-            _syncCts.Dispose();
-            _syncCts = null;
+            StopFallbackPolling();
+            return;
         }
 
-        _syncCts = new CancellationTokenSource();
-        _ = PollLoopAsync(_syncCts.Token);
+        EnsureFallbackPolling();
     }
 
     /// <summary>Cancel in-flight message loads when leaving the detail page.</summary>
@@ -3761,6 +3770,7 @@ public partial class ChatDetailViewModel : ObservableObject
 
     public void StopPolling()
     {
+        _realtimeSyncActive = false;
         // Leaving conversation → allow notifications for this room again
         if (_messageNotifier.ActiveRoomId == RoomId)
         {
@@ -3773,13 +3783,40 @@ public partial class ChatDetailViewModel : ObservableObject
             IsRecording = false;
         }
 
-        if (IsInCall || IsCallConnecting)
+        if (IsInCall
+            || IsCallConnecting
+            || _realtimeCall.IsConnected
+            || _realtimeCall.IsConnecting)
         {
-            _ = HangUpInternalAsync(showToast: false);
+            lock (_mediaStopGate)
+            {
+                if (_mediaStopTask.IsCompleted)
+                {
+                    _mediaStopTask = HangUpInternalAsync(showToast: false);
+                }
+            }
         }
 
         _suggestCts?.Cancel();
 
+        StopFallbackPolling();
+    }
+
+    private void EnsureFallbackPolling()
+    {
+        if (!_realtimeSyncActive
+            || _ws.State == ChatWsConnectionState.Connected
+            || _syncCts is not null)
+        {
+            return;
+        }
+
+        _syncCts = new CancellationTokenSource();
+        _ = PollLoopAsync(_syncCts.Token);
+    }
+
+    private void StopFallbackPolling()
+    {
         if (_syncCts is null)
         {
             return;
@@ -3798,6 +3835,33 @@ public partial class ChatDetailViewModel : ObservableObject
         _syncCts = null;
     }
 
+    /// <summary>Window returned to the foreground or WebSocket just recovered.</summary>
+    public async Task CompensateAfterResumeAsync()
+    {
+        if (!_realtimeSyncActive || RoomId == Guid.Empty)
+        {
+            return;
+        }
+
+        if (_ws.State == ChatWsConnectionState.Connected)
+        {
+            StopFallbackPolling();
+        }
+        else
+        {
+            EnsureFallbackPolling();
+        }
+
+        try
+        {
+            await SyncOnceSerializedAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        catch
+        {
+            // The fallback loop will retry while WebSocket is unavailable.
+        }
+    }
+
     private async Task PollLoopAsync(CancellationToken cancellationToken)
     {
         while (!cancellationToken.IsCancellationRequested)
@@ -3805,7 +3869,7 @@ public partial class ChatDetailViewModel : ObservableObject
             try
             {
                 await Task.Delay(SyncInterval, cancellationToken).ConfigureAwait(false);
-                await SyncOnceAsync(cancellationToken).ConfigureAwait(false);
+                await SyncOnceSerializedAsync(cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -3815,6 +3879,23 @@ public partial class ChatDetailViewModel : ObservableObject
             {
                 // keep polling
             }
+        }
+    }
+
+    private async Task SyncOnceSerializedAsync(CancellationToken cancellationToken)
+    {
+        if (!await _syncGate.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        try
+        {
+            await SyncOnceAsync(cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _syncGate.Release();
         }
     }
 
@@ -3842,9 +3923,7 @@ public partial class ChatDetailViewModel : ObservableObject
 
         var incoming = response.Messages ?? [];
         // Pure data sort only — BitmapImage/WinRT VMs must be created on the UI thread.
-        var ordered = incoming.Count <= 1
-            ? incoming
-            : await Task.Run(() => NormalizeOrder(incoming), cancellationToken).ConfigureAwait(false);
+        var ordered = incoming.Count <= 1 ? incoming : NormalizeOrder(incoming);
         var currentAccountId = _authService.CurrentAccount?.Id;
 
         if (cancellationToken.IsCancellationRequested || roomId != RoomId)
@@ -3891,7 +3970,10 @@ public partial class ChatDetailViewModel : ObservableObject
         }
     }
 
-    private bool AddMessageInternal(SnChatMessage message, bool append)
+    private bool AddMessageInternal(
+        SnChatMessage message,
+        bool append,
+        bool playSendAnimation = false)
     {
         var currentId = _authService.CurrentAccount?.Id;
 
@@ -3921,7 +4003,11 @@ public partial class ChatDetailViewModel : ObservableObject
             return false;
         }
 
-        var item = new MessageItemViewModel(message, currentId, _imageLoader);
+        var item = new MessageItemViewModel(
+            message,
+            currentId,
+            _imageLoader,
+            playSendAnimation);
 
         if (append)
         {
@@ -4179,29 +4265,16 @@ public partial class ChatDetailViewModel : ObservableObject
 
     private bool _mediaLoading;
 
-    /// <summary>Bound parallel image downloads/decodes per room load (peak memory guard).</summary>
-    private const int MediaLoadConcurrency = 6;
-
-    private readonly SemaphoreSlim _mediaGate = new(MediaLoadConcurrency, MediaLoadConcurrency);
-
-    private async Task<BitmapImage?> LoadMediaThrottledAsync(
-        Func<Task<BitmapImage?>> start,
-        CancellationToken cancellationToken)
-    {
-        await _mediaGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            return await start().ConfigureAwait(false);
-        }
-        finally
-        {
-            _mediaGate.Release();
-        }
-    }
-
     private Task LoadMediaAsync()
-        => LoadMediaAsync(CancellationToken.None, _loadGeneration, RoomId);
+        => LoadMediaAsync(
+            _loadCts?.Token ?? new CancellationToken(canceled: true),
+            _loadGeneration,
+            RoomId);
 
+    /// <summary>
+    /// Resolve sticker placeholders → file ids. Bitmap paint is owned by <c>FastWin2DImage</c>
+    /// (GPU lease, viewport cancel, Unloaded release).
+    /// </summary>
     private async Task LoadMediaAsync(CancellationToken cancellationToken, int generation, Guid roomId)
     {
         // Single-flight: send/poll/load-more can all trigger this concurrently.
@@ -4218,170 +4291,7 @@ public partial class ChatDetailViewModel : ObservableObject
                 return;
             }
 
-            // Resolve :prefix+slug: stickers → file ids before downloading bitmaps.
             await ResolveStickerFileIdsAsync(cancellationToken, generation, roomId).ConfigureAwait(false);
-
-            if (IsStaleLoad(generation, roomId, cancellationToken))
-            {
-                return;
-            }
-
-            List<MessageItemViewModel> snapshot = [];
-            await RunOnUiAsync(() =>
-            {
-                if (!IsStaleLoad(generation, roomId, cancellationToken))
-                {
-                    snapshot = Messages.ToList();
-                }
-            }).ConfigureAwait(false);
-
-            if (snapshot.Count == 0 || IsStaleLoad(generation, roomId, cancellationToken))
-            {
-                return;
-            }
-
-            var avatarTasks = new List<(MessageItemViewModel Msg, Task<BitmapImage?> Task)>();
-            var attachmentTasks = new List<(MessageAttachmentViewModel Att, Task<BitmapImage?> Task)>();
-            var stickerTasks = new List<(MessageStickerViewModel Sticker, Task<BitmapImage?> Task)>();
-
-            await RunOnUiAsync(() =>
-            {
-                if (IsStaleLoad(generation, roomId, cancellationToken))
-                {
-                    return;
-                }
-
-                foreach (var msg in snapshot)
-                {
-                    if (!msg.AvatarAuthenticated && !string.IsNullOrWhiteSpace(msg.AvatarUrl))
-                    {
-                        avatarTasks.Add((msg, LoadMediaThrottledAsync(
-                            () => _imageLoader.LoadSafeAsync(msg.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth, cancellationToken),
-                            cancellationToken)));
-                    }
-
-                    foreach (var att in msg.Attachments.Where(a => a.IsImage && a.Image is null))
-                    {
-                        var key = att.FileId ?? att.Url;
-                        if (string.IsNullOrWhiteSpace(key))
-                        {
-                            continue;
-                        }
-
-                        att.IsLoading = true;
-                        attachmentTasks.Add((att, LoadMediaThrottledAsync(
-                            () => _imageLoader.LoadSafeAsync(key, DysonFileImageLoader.ChatImageDecodeWidth, cancellationToken),
-                            cancellationToken)));
-                    }
-
-                    foreach (var sticker in msg.Stickers.Where(s => s.Image is null && !string.IsNullOrWhiteSpace(s.FileId)))
-                    {
-                        sticker.IsLoading = true;
-                        stickerTasks.Add((sticker, LoadMediaThrottledAsync(
-                            () => _imageLoader.LoadSafeAsync(sticker.FileId, DysonFileImageLoader.StickerDecodeWidth, cancellationToken),
-                            cancellationToken)));
-                    }
-                }
-            }).ConfigureAwait(false);
-
-            if (avatarTasks.Count == 0 && attachmentTasks.Count == 0 && stickerTasks.Count == 0)
-            {
-                return;
-            }
-
-            // Downloads run on thread pool; BitmapImage creation is low-priority UI work inside the loader.
-            await Task.WhenAll(
-                avatarTasks.Select(t => t.Task)
-                    .Concat(attachmentTasks.Select(t => t.Task))
-                    .Concat(stickerTasks.Select(t => t.Task))).ConfigureAwait(false);
-
-            if (IsStaleLoad(generation, roomId, cancellationToken))
-            {
-                return;
-            }
-
-            // Apply results in small UI batches so title-bar / drag keep processing.
-            const int batchSize = 6;
-            for (var i = 0; i < avatarTasks.Count; i += batchSize)
-            {
-                if (IsStaleLoad(generation, roomId, cancellationToken))
-                {
-                    return;
-                }
-
-                var slice = avatarTasks.Skip(i).Take(batchSize).ToList();
-                await RunOnUiAsync(() =>
-                {
-                    if (IsStaleLoad(generation, roomId, cancellationToken))
-                    {
-                        return;
-                    }
-
-                    foreach (var (msg, task) in slice)
-                    {
-                        if (task.IsCompletedSuccessfully && task.Result is { } bmp)
-                        {
-                            msg.SetAuthenticatedAvatar(bmp);
-                        }
-                    }
-                }, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low).ConfigureAwait(false);
-            }
-
-            for (var i = 0; i < attachmentTasks.Count; i += batchSize)
-            {
-                if (IsStaleLoad(generation, roomId, cancellationToken))
-                {
-                    return;
-                }
-
-                var slice = attachmentTasks.Skip(i).Take(batchSize).ToList();
-                await RunOnUiAsync(() =>
-                {
-                    if (IsStaleLoad(generation, roomId, cancellationToken))
-                    {
-                        return;
-                    }
-
-                    foreach (var (att, task) in slice)
-                    {
-                        if (task.IsCompletedSuccessfully && task.Result is { } bmp)
-                        {
-                            att.Image = bmp;
-                            att.ImageOpacity = 1.0;
-                        }
-
-                        att.IsLoading = false;
-                    }
-                }, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low).ConfigureAwait(false);
-            }
-
-            for (var i = 0; i < stickerTasks.Count; i += batchSize)
-            {
-                if (IsStaleLoad(generation, roomId, cancellationToken))
-                {
-                    return;
-                }
-
-                var slice = stickerTasks.Skip(i).Take(batchSize).ToList();
-                await RunOnUiAsync(() =>
-                {
-                    if (IsStaleLoad(generation, roomId, cancellationToken))
-                    {
-                        return;
-                    }
-
-                    foreach (var (sticker, task) in slice)
-                    {
-                        if (task.IsCompletedSuccessfully && task.Result is { } bmp)
-                        {
-                            sticker.Image = bmp;
-                            sticker.ImageOpacity = 1.0;
-                        }
-
-                        sticker.IsLoading = false;
-                    }
-                }, Microsoft.UI.Dispatching.DispatcherQueuePriority.Low).ConfigureAwait(false);
-            }
         }
         catch (OperationCanceledException)
         {

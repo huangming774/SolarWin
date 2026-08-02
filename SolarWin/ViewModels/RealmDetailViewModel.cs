@@ -31,7 +31,7 @@ public partial class RealmDetailViewModel : ObservableObject
     public ObservableCollection<SocialListItemViewModel> Permissions { get; } = [];
 
     [ObservableProperty]
-    public partial string Title { get; set; } = "Realm";
+    public partial string Title { get; set; } = "领域";
 
     [ObservableProperty]
     public partial string SlugText { get; set; } = string.Empty;
@@ -48,6 +48,11 @@ public partial class RealmDetailViewModel : ObservableObject
     [ObservableProperty]
     public partial string InviteUserId { get; set; } = string.Empty;
 
+    /// <summary>GPU source for realm cover (FastWin2DImage).</summary>
+    [ObservableProperty]
+    public partial string? PictureUrl { get; set; }
+
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? PictureImage { get; set; }
 
@@ -67,7 +72,7 @@ public partial class RealmDetailViewModel : ObservableObject
     {
         if (args is null || string.IsNullOrWhiteSpace(args.Slug))
         {
-            ErrorMessage = "缺少 Realm slug";
+            ErrorMessage = "缺少领域标识";
             return;
         }
 
@@ -101,7 +106,7 @@ public partial class RealmDetailViewModel : ObservableObject
             {
                 // Fallback: find in my/public lists
                 realm = await FindRealmFallbackAsync(_slug).ConfigureAwait(true)
-                    ?? throw new SolarApiException($"找不到 Realm：{_slug}");
+                    ?? throw new SolarApiException($"找不到领域：{_slug}");
             }
 
             Title = realm.Name ?? realm.Slug ?? _slug;
@@ -291,23 +296,14 @@ public partial class RealmDetailViewModel : ObservableObject
         }
     }
 
-    private async Task LoadPictureAsync(SnCloudFile? picture)
+    private Task LoadPictureAsync(SnCloudFile? picture)
     {
-        var url = CloudFileUrlHelper.Resolve(picture);
-        if (string.IsNullOrWhiteSpace(url))
-        {
-            PictureImage = null;
-            return;
-        }
-
-        try
-        {
-            PictureImage = await _imageLoader.LoadAsync(url, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
-        }
-        catch
-        {
-            PictureImage = null;
-        }
+        var id = CloudFileUrlHelper.ResolveFileId(picture);
+        var url = CloudFileUrlHelper.Resolve(picture) ?? (id is null ? null : CloudFileUrlHelper.DriveFileUrl(id));
+        PictureUrl = url ?? id;
+        PictureImage = null;
+        _ = _imageLoader;
+        return Task.CompletedTask;
     }
 
     private async Task<Guid?> SafeGetMyIdAsync()

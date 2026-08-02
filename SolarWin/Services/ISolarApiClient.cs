@@ -467,9 +467,9 @@ public interface ISolarApiClient
 
     Task<List<SnPostAward>> GetPostAwardsAsync(Guid postId, int offset = 0, int take = 20, CancellationToken cancellationToken = default);
 
-    Task AwardPostAsync(Guid postId, PostAwardRequest request, CancellationToken cancellationToken = default);
+    Task<PostAwardResponse> AwardPostAsync(Guid postId, PostAwardRequest request, CancellationToken cancellationToken = default);
 
-    Task SponsorPostAsync(Guid postId, PostSponsorRequest request, CancellationToken cancellationToken = default);
+    Task<PostSponsorResponse> SponsorPostAsync(Guid postId, PostSponsorRequest request, CancellationToken cancellationToken = default);
 
     // —— Passport / Social ——
 
@@ -521,9 +521,9 @@ public interface ISolarApiClient
 
     Task CancelFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default);
 
-    Task AcceptFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default);
+    Task<SnAccountRelationship> AcceptFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default);
 
-    Task DeclineFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default);
+    Task<SnAccountRelationship> DeclineFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default);
 
     Task BlockAccountAsync(Guid accountId, RelationshipActionRequest? request = null, CancellationToken cancellationToken = default);
 

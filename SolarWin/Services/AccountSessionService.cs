@@ -14,7 +14,6 @@ public sealed class AccountSessionService : IAccountSessionService
     private readonly IAccountDbContextFactory _accountDb;
     private readonly IChatWritePump _writePump;
     private readonly DysonFileImageLoader _dysonImages;
-    private readonly FileThumbnailLoader _thumbnails;
     private readonly object _sync = new();
     private List<SavedAccountProfile> _profiles = [];
 
@@ -22,14 +21,12 @@ public sealed class AccountSessionService : IAccountSessionService
         ITokenStorage tokens,
         IAccountDbContextFactory accountDb,
         IChatWritePump writePump,
-        DysonFileImageLoader dysonImages,
-        FileThumbnailLoader thumbnails)
+        DysonFileImageLoader dysonImages)
     {
         _tokens = tokens;
         _accountDb = accountDb;
         _writePump = writePump;
         _dysonImages = dysonImages;
-        _thumbnails = thumbnails;
         LoadProfiles();
         if (Guid.TryParse(SettingsStore.GetString(ActiveIdKey), out var id))
         {
@@ -146,6 +143,7 @@ public sealed class AccountSessionService : IAccountSessionService
 
         OfflineCache.Remove($"account_me_{accountId:N}");
         OfflineCache.Remove($"chat_rooms_{accountId:N}");
+        OfflineCache.Remove($"daily_check_in_v1_{accountId:N}");
 
         // Stop writing into the file we are about to delete.
         if (_accountDb.BoundAccountId == accountId)
@@ -202,7 +200,6 @@ public sealed class AccountSessionService : IAccountSessionService
         try
         {
             _dysonImages.Clear();
-            _thumbnails.Clear();
         }
         catch
         {

@@ -9,6 +9,9 @@ namespace SolarWin.ViewModels;
 
 public partial class ProfileViewModel : ObservableObject
 {
+    private const string CheckInCacheKeyPrefix = "daily_check_in_v1_";
+    private static readonly TimeSpan CheckInCacheTtl = TimeSpan.FromDays(2);
+
     private readonly ISolarApiClient _api;
     private readonly IAuthService _authService;
     private readonly IToastService _toast;
@@ -49,6 +52,7 @@ public partial class ProfileViewModel : ObservableObject
     [ObservableProperty]
     public partial string? AvatarUrl { get; set; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? AvatarImage { get; set; }
 
@@ -98,8 +102,8 @@ public partial class ProfileViewModel : ObservableObject
     public string EditLocation { get; set; } = string.Empty;
     public string EditGender { get; set; } = string.Empty;
 
-    /// <summary>Preview image while editing (may be newly picked).</summary>
-    public BitmapImage? EditAvatarPreview { get; set; }
+    /// <summary>Edit-dialog avatar source (file id / URL) for FastWin2DImage.</summary>
+    public string? EditAvatarUrl { get; set; }
 
     public string? PendingPictureId => _pendingPictureId ?? _currentPictureId;
 
@@ -162,7 +166,7 @@ public partial class ProfileViewModel : ObservableObject
         EditLocation = _profile?.Location ?? string.Empty;
         EditGender = _profile?.Gender ?? string.Empty;
         _pendingPictureId = null;
-        EditAvatarPreview = AvatarImage;
+        EditAvatarUrl = AvatarUrl;
         EditProfileRequested?.Invoke(this, EventArgs.Empty);
     }
 
@@ -211,12 +215,9 @@ public partial class ProfileViewModel : ObservableObject
 
             _pendingPictureId = id;
             var url = CloudFileUrlHelper.DriveFileUrl(id);
-            var bmp = await _imageLoader.LoadAsync(id, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true)
-                      ?? await _imageLoader.LoadAsync(url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
-            if (bmp is not null)
-            {
-                EditAvatarPreview = bmp;
-            }
+            EditAvatarUrl = id;
+            AvatarUrl = url;
+            _ = _imageLoader;
 
             InfoMessage = "头像已上传，保存资料后生效";
             _toast.Success("头像已上传");
@@ -303,6 +304,7 @@ public partial class ProfileViewModel : ObservableObject
             InfoMessage = null;
 
             var result = await _api.DoCheckInAsync().ConfigureAwait(true);
+            SaveCheckInCache(result);
             ApplyCheckInResult(result, justCheckedIn: true);
             InfoMessage = "签到成功";
             _toast.Success("签到成功");
@@ -314,6 +316,7 @@ public partial class ProfileViewModel : ObservableObject
                 var existing = await _api.GetCheckInAsync().ConfigureAwait(true);
                 if (existing is not null)
                 {
+                    SaveCheckInCache(existing);
                     ApplyCheckInResult(existing, justCheckedIn: false);
                     InfoMessage = "今日已签到";
                     _toast.Warning("今日已签到");
@@ -376,40 +379,17 @@ public partial class ProfileViewModel : ObservableObject
         }
     }
 
-    private async Task LoadAvatarAsync(SnCloudFile? picture)
+    private Task LoadAvatarAsync(SnCloudFile? picture)
     {
         var id = CloudFileUrlHelper.ResolveFileId(picture);
-        var url = CloudFileUrlHelper.Resolve(picture);
-        AvatarUrl = url;
+        var url = CloudFileUrlHelper.Resolve(picture) ?? (id is null ? null : CloudFileUrlHelper.DriveFileUrl(id));
+        AvatarUrl = url ?? id;
         _currentPictureId = id;
-
-        if (string.IsNullOrWhiteSpace(id) && string.IsNullOrWhiteSpace(url))
-        {
-            AvatarImage = null;
-            AvatarOpacity = 0;
-            InitialsOpacity = 1;
-            return;
-        }
-
-        try
-        {
-            var bmp = await _imageLoader.LoadAsync(id ?? url, DysonFileImageLoader.ProfileDecodeWidth).ConfigureAwait(true);
-            if (bmp is not null)
-            {
-                AvatarImage = bmp;
-                AvatarOpacity = 1;
-                InitialsOpacity = 0;
-                return;
-            }
-        }
-        catch
-        {
-            // fall through
-        }
-
         AvatarImage = null;
+        // FastWin2DImage paints AvatarUrl; initials remain underneath until GPU bitmap arrives.
         AvatarOpacity = 0;
         InitialsOpacity = 1;
+        return Task.CompletedTask;
     }
 
     private async Task SetAttitudeAsync(StatusAttitude attitude)
@@ -468,6 +448,12 @@ public partial class ProfileViewModel : ObservableObject
 
     private async Task LoadCheckInInfoAsync()
     {
+        if (TryLoadTodayCheckInCache(out var cached) && cached is not null)
+        {
+            ApplyCheckInResult(cached, justCheckedIn: false);
+            return;
+        }
+
         try
         {
             var result = await _api.GetCheckInAsync().ConfigureAwait(true);
@@ -478,6 +464,7 @@ public partial class ProfileViewModel : ObservableObject
                 return;
             }
 
+            SaveCheckInCache(result);
             ApplyCheckInResult(result, justCheckedIn: false);
         }
         catch (SolarApiException)
@@ -513,6 +500,58 @@ public partial class ProfileViewModel : ObservableObject
             fortune.Love is null ? null : $"感情：{fortune.Love}",
             fortune.Health is null ? null : $"健康：{fortune.Health}",
         }.Where(s => s is not null)!);
+    }
+
+    private bool TryLoadTodayCheckInCache(out SnCheckInResult? result)
+    {
+        result = null;
+        var accountId = _account?.Id ?? _authService.CurrentAccount?.Id ?? Guid.Empty;
+        if (accountId == Guid.Empty
+            || !OfflineCache.TryGetJson<CachedDailyCheckIn>(CheckInCacheKey(accountId), out var cached)
+            || cached?.Result is null
+            || !string.Equals(cached.LocalDate, DateTime.Now.ToString("yyyy-MM-dd"), StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        result = cached.Result;
+        return true;
+    }
+
+    private void SaveCheckInCache(SnCheckInResult result)
+    {
+        var accountId = result.AccountId != Guid.Empty
+            ? result.AccountId
+            : _account?.Id ?? _authService.CurrentAccount?.Id ?? Guid.Empty;
+        if (accountId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            OfflineCache.SetJson(
+                CheckInCacheKey(accountId),
+                new CachedDailyCheckIn
+                {
+                    LocalDate = DateTime.Now.ToString("yyyy-MM-dd"),
+                    Result = result,
+                },
+                CheckInCacheTtl);
+        }
+        catch
+        {
+            // A cache write must never make check-in fail.
+        }
+    }
+
+    private static string CheckInCacheKey(Guid accountId) => $"{CheckInCacheKeyPrefix}{accountId:N}";
+
+    private sealed class CachedDailyCheckIn
+    {
+        public string LocalDate { get; set; } = string.Empty;
+
+        public SnCheckInResult? Result { get; set; }
     }
 
     private void ApplyStatusUi(SnAccountStatus status)

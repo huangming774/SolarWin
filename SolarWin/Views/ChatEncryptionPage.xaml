@@ -1,0 +1,140 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.ChatEncryptionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <Style x:Key="SecurityCardStyle" TargetType="Border">
+            <Setter Property="Padding" Value="22" />
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+        </Style>
+    </Page.Resources>
+
+    <ScrollViewer Padding="28,16,28,40" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel
+            MaxWidth="780"
+            HorizontalAlignment="Center"
+            Spacing="18">
+            <Grid ColumnSpacing="14">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button
+                    Width="40"
+                    Height="40"
+                    Click="Back_OnClick"
+                    ToolTipService.ToolTip="返回聊天">
+                    <FontIcon FontSize="16" Glyph="&#xE72B;" />
+                </Button>
+                <StackPanel Grid.Column="1" Spacing="2">
+                    <TextBlock FontSize="26" FontWeight="SemiBold" Text="加密与解密" />
+                    <TextBlock
+                        Opacity="0.65"
+                        Text="{x:Bind ViewModel.RoomTitle, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Grid>
+
+            <Border Style="{StaticResource SecurityCardStyle}">
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border
+                        Width="48"
+                        Height="48"
+                        Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                        CornerRadius="14">
+                        <FontIcon
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="22"
+                            Glyph="&#xE72E;" />
+                    </Border>
+                    <StackPanel Grid.Column="1" Spacing="5">
+                        <TextBlock FontSize="18" FontWeight="SemiBold" Text="当前会话安全状态" />
+                        <TextBlock
+                            FontFamily="Consolas"
+                            Text="{x:Bind ViewModel.E2eeStatusText, Mode=OneWay}"
+                            TextWrapping="Wrap" />
+                        <TextBlock
+                            Opacity="0.65"
+                            Text="状态来自服务端会话元数据，不代表本机已经持有完整解密密钥。"
+                            TextWrapping="Wrap" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Border Style="{StaticResource SecurityCardStyle}">
+                <StackPanel Spacing="16">
+                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="端到端加密" />
+                    <TextBlock
+                        Opacity="0.7"
+                        Text="为当前会话请求启用 E2EE 或 MLS。启用属于会话级变更，可能影响其他成员和旧客户端。"
+                        TextWrapping="WrapWholeWords" />
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button
+                            HorizontalAlignment="Stretch"
+                            Command="{x:Bind ViewModel.EnableE2eeCommand}"
+                            Content="启用 E2EE"
+                            Style="{StaticResource AccentButtonStyle}" />
+                        <Button
+                            Grid.Column="1"
+                            HorizontalAlignment="Stretch"
+                            Command="{x:Bind ViewModel.EnableMlsCommand}"
+                            Content="启用 MLS" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <InfoBar
+                IsClosable="False"
+                IsOpen="True"
+                Message="当前版本尚未接入本地密钥交换、密钥持久化与 MLS 状态机。无法解密的密文仍会显示为“加密消息”，不会伪装成已解密。"
+                Severity="Warning"
+                Title="客户端解密能力尚未完成" />
+
+            <Expander Header="高级消息工具">
+                <Border
+                    Padding="18"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    CornerRadius="0,0,12,12">
+                    <StackPanel Spacing="14">
+                        <TextBlock
+                            Opacity="0.68"
+                            Text="以下接口用于协议调试，不属于普通聊天操作。"
+                            TextWrapping="Wrap" />
+                        <Button
+                            HorizontalAlignment="Left"
+                            Command="{x:Bind ViewModel.SendTypingPlaceholderCommand}"
+                            Content="发送 typing Placeholder" />
+                        <TextBox
+                            Header="重定向消息 ID"
+                            MinHeight="76"
+                            AcceptsReturn="True"
+                            PlaceholderText="每行一个 UUID，也可以使用空格、逗号或分号分隔"
+                            Text="{x:Bind ViewModel.RedirectMessageIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            TextWrapping="Wrap" />
+                        <Button
+                            HorizontalAlignment="Left"
+                            Command="{x:Bind ViewModel.RedirectMessagesCommand}"
+                            Content="执行消息重定向" />
+                    </StackPanel>
+                </Border>
+            </Expander>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

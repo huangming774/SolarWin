@@ -23,19 +23,16 @@ public sealed partial class AiPage : Page
         // matching unsubscribe rooted every visited page's visual tree forever.
         _messagesChangedHandler = (_, _) =>
         {
-            Bindings.Update();
+            UpdateEmptyState();
             ScrollToBottom();
         };
         Loaded += OnLoaded;
     }
 
-    /// <summary>Empty-state hint when there are no messages.</summary>
-    public Visibility EmptyHintVisibility =>
-        ViewModel.Messages.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         SyncApiKeyBox();
+        UpdateEmptyState();
     }
 
     protected override void OnNavigatedTo(NavigationEventArgs e)
@@ -45,6 +42,7 @@ public sealed partial class AiPage : Page
         SyncApiKeyBox();
         ViewModel.Messages.CollectionChanged += _messagesChangedHandler;
         Bindings.Update();
+        UpdateEmptyState();
     }
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
@@ -106,6 +104,16 @@ public sealed partial class AiPage : Page
         catch
         {
             // ignore
+        }
+    }
+
+    private void UpdateEmptyState()
+    {
+        if (EmptyState is not null)
+        {
+            EmptyState.Visibility = ViewModel.Messages.Count == 0
+                ? Visibility.Visible
+                : Visibility.Collapsed;
         }
     }
 }

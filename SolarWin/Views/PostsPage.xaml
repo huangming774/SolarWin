@@ -9,154 +9,131 @@
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="24" RowSpacing="12">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="PostsHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#FFF4E8" />
+                        <GradientStop Offset="0.5" Color="#F5F7ED" />
+                        <GradientStop Offset="1" Color="#E9F5F2" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="PostsSoftBrush" Color="#F7F9F6" />
+                    <SolidColorBrush x:Key="PostsAccentSoftBrush" Color="#FFEBD5" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <LinearGradientBrush x:Key="PostsHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#493325" />
+                        <GradientStop Offset="0.5" Color="#30352C" />
+                        <GradientStop Offset="1" Color="#203A36" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="PostsSoftBrush" Color="#202320" />
+                    <SolidColorBrush x:Key="PostsAccentSoftBrush" Color="#493523" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="PostsHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#493325" />
+                        <GradientStop Offset="0.5" Color="#30352C" />
+                        <GradientStop Offset="1" Color="#203A36" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="PostsSoftBrush" Color="#202320" />
+                    <SolidColorBrush x:Key="PostsAccentSoftBrush" Color="#493523" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="PostsButtonStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="38" />
+                <Setter Property="Padding" Value="14,8" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+            <Style x:Key="PostsPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="42" />
+                <Setter Property="Padding" Value="17,9" />
+                <Setter Property="CornerRadius" Value="12" />
+            </Style>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid x:Name="LayoutRoot" Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <StackPanel Orientation="Horizontal" Spacing="12">
-            <TextBlock
-                VerticalAlignment="Center"
-                Style="{StaticResource TitleTextBlockStyle}"
-                Text="帖子" />
-            <Button
-                VerticalAlignment="Center"
-                Command="{x:Bind ViewModel.LoadCommand}"
-                Content="刷新" />
-            <TextBlock
-                VerticalAlignment="Center"
-                Opacity="0.75"
-                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
-            <ProgressRing
-                Width="28"
-                Height="28"
-                VerticalAlignment="Center"
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-        </StackPanel>
-
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
-            <TextBlock
-                VerticalAlignment="Center"
-                Opacity="0.7"
-                Text="信息流" />
-            <ComboBox
-                MinWidth="140"
-                SelectedIndex="{x:Bind ViewModel.FeedModeIndex, Mode=TwoWay}">
-                <ComboBoxItem Content="时间线" />
-                <ComboBoxItem Content="公共帖子" />
-            </ComboBox>
-        </StackPanel>
+        <Border
+            Padding="22,18"
+            Background="{ThemeResource PostsHeroBrush}"
+            CornerRadius="20">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="11">
+                        <Border Width="38" Height="38" Background="{ThemeResource PostsAccentSoftBrush}" CornerRadius="12">
+                            <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="18" Glyph="&#xE8F2;" />
+                        </Border>
+                        <TextBlock VerticalAlignment="Center" FontSize="27" FontWeight="SemiBold" Text="帖子" />
+                        <Border Padding="8,3" VerticalAlignment="Center" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="10">
+                            <TextBlock FontSize="10" FontWeight="SemiBold" Opacity="0.68" Text="COMMUNITY" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Opacity="0.66" Text="发现社区里的新鲜想法，也分享此刻属于你的故事。" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Ellipse Width="7" Height="7" VerticalAlignment="Center" Fill="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <TextBlock VerticalAlignment="Center" Opacity="0.65" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+                        <ProgressRing Width="16" Height="16" IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    </StackPanel>
+                </StackPanel>
+                <Button
+                    Grid.Column="1"
+                    VerticalAlignment="Top"
+                    Click="OpenComposer_OnClick"
+                    Style="{StaticResource PostsPrimaryButtonStyle}">
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <FontIcon FontSize="14" Glyph="&#xE70F;" />
+                        <TextBlock Text="发布帖子" />
+                    </StackPanel>
+                </Button>
+            </Grid>
+        </Border>
 
         <Border
-            Grid.Row="2"
-            Padding="10"
+            Grid.Row="1"
+            Padding="12"
             Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
             BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
             BorderThickness="1"
-            CornerRadius="12">
-            <StackPanel Spacing="8">
-                <TextBox
-                    MaxHeight="140"
-                    MinHeight="44"
-                    AcceptsReturn="True"
-                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                    PlaceholderText="分享此刻的想法… 可添加照片"
-                    ScrollViewer.VerticalScrollBarVisibility="Auto"
-                    Text="{x:Bind ViewModel.NewPostContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                    TextWrapping="Wrap" />
-
-                <!-- Pending photos -->
-                <ItemsControl ItemsSource="{x:Bind ViewModel.PendingAttachments, Mode=OneWay}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <ItemsStackPanel Orientation="Horizontal" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:PendingPostAttachment">
-                            <Border
-                                Width="96"
-                                Height="96"
-                                Margin="0,0,8,0"
-                                CornerRadius="10"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1">
-                                <Grid>
-                                    <Image
-                                        Stretch="UniformToFill"
-                                        Source="{x:Bind Preview}" />
-                                    <Border
-                                        VerticalAlignment="Bottom"
-                                        Background="#99000000"
-                                        Padding="4,2">
-                                        <TextBlock
-                                            FontSize="10"
-                                            Foreground="White"
-                                            Text="{x:Bind FileName}"
-                                            TextTrimming="CharacterEllipsis" />
-                                    </Border>
-                                    <Button
-                                        HorizontalAlignment="Right"
-                                        VerticalAlignment="Top"
-                                        Margin="4"
-                                        Padding="6,2"
-                                        Background="#CC000000"
-                                        Foreground="White"
-                                        Content="×"
-                                        Tag="{x:Bind}"
-                                        Click="RemovePending_OnClick" />
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <ProgressBar
-                    Maximum="1"
-                    Minimum="0"
-                    Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}"
-                    Visibility="{x:Bind ViewModel.UploadProgressVisibility, Mode=OneWay}" />
-
-                <Grid ColumnSpacing="8">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <Button
-                        Click="PickImage_OnClick"
-                        Content="添加照片"
-                        IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                        ToolTipService.ToolTip="从本地选择图片并上传" />
-                    <TextBlock
-                        Grid.Column="1"
-                        VerticalAlignment="Center"
-                        Opacity="0.55"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="支持 jpg / png / gif / webp，可多张" />
-                    <Button
-                        Grid.Column="2"
-                        Command="{x:Bind ViewModel.ClearPendingAttachmentsCommand}"
-                        Content="清空图片"
-                        Visibility="{x:Bind ViewModel.PendingAttachmentsVisibility, Mode=OneWay}" />
-                    <Button
-                        Grid.Column="3"
-                        MinWidth="88"
-                        Command="{x:Bind ViewModel.CreatePostCommand}"
-                        Content="发布"
-                        IsEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
-                        Style="{StaticResource AccentButtonStyle}" />
-                </Grid>
-            </StackPanel>
+            CornerRadius="16">
+            <Grid ColumnSpacing="10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center" Orientation="Horizontal" Spacing="9">
+                    <FontIcon FontSize="15" Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}" Glyph="&#xE8A5;" />
+                    <TextBlock VerticalAlignment="Center" FontWeight="SemiBold" Text="浏览信息流" />
+                </StackPanel>
+                <ComboBox Grid.Column="1" MinWidth="150" SelectedIndex="{x:Bind ViewModel.FeedModeIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="我的时间线" />
+                    <ComboBoxItem Content="公共帖子" />
+                </ComboBox>
+                <Button
+                    Grid.Column="2"
+                    Command="{x:Bind ViewModel.LoadCommand}"
+                    Style="{StaticResource PostsButtonStyle}"
+                    ToolTipService.ToolTip="刷新信息流">
+                    <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                </Button>
+            </Grid>
         </Border>
 
-        <Grid Grid.Row="3">
+        <Grid Grid.Row="2">
             <ListView
                 x:Name="PostList"
+                Background="Transparent"
                 ContainerContentChanging="PostList_OnContainerContentChanging"
                 IsItemClickEnabled="True"
                 ItemClick="PostList_OnItemClick"
@@ -166,14 +143,17 @@
                     <Style TargetType="ListViewItem">
                         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                         <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,10" />
                     </Style>
                 </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="vm:PostItemViewModel">
                         <Border
-                            Padding="8,12"
-                            BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
-                            BorderThickness="0,0,0,1">
+                            Padding="16"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="16">
                             <Grid ColumnSpacing="12">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto" />
@@ -187,11 +167,20 @@
                                     Click="AuthorAvatar_OnClick"
                                     Tag="{x:Bind}"
                                     ToolTipService.ToolTip="查看主页">
-                                    <PersonPicture
-                                        Width="40"
-                                        Height="40"
-                                        Initials="{x:Bind Initials}"
-                                        ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                    <Grid Width="40" Height="40">
+                                        <PersonPicture
+                                            Width="40"
+                                            Height="40"
+                                            Initials="{x:Bind Initials}" />
+                                        <!-- FastWin2DImage: GPU CanvasBitmap + viewport lease release -->
+                                        <controls:FastWin2DImage
+                                            Width="40"
+                                            Height="40"
+                                            CornerRadius="20"
+                                            DecodeWidth="96"
+                                            Source="{x:Bind AvatarUrl}"
+                                            Stretch="UniformToFill" />
+                                    </Grid>
                                 </Button>
 
                                 <StackPanel Grid.Column="1" Spacing="4">
@@ -243,14 +232,15 @@
                                             Background="Transparent"
                                             BorderThickness="0"
                                             Click="PostImage_OnClick"
-                                            DoubleTapped="PostImage_OnDoubleTapped"
                                             Tag="{x:Bind}"
-                                            ToolTipService.ToolTip="点击或双击放大">
-                                            <Image
+                                            ToolTipService.ToolTip="点击放大">
+                                            <controls:FastWin2DImage
                                                 MaxWidth="480"
                                                 MaxHeight="320"
                                                 HorizontalAlignment="Left"
-                                                Source="{x:Bind FirstImage, Mode=OneWay}"
+                                                CornerRadius="8"
+                                                DecodeWidth="640"
+                                                Source="{x:Bind FirstImageUrl}"
                                                 Stretch="Uniform" />
                                         </Button>
                                         <Border
@@ -267,6 +257,53 @@
                                                 Text="{x:Bind ExtraImagesText}" />
                                         </Border>
                                     </Grid>
+
+                                    <Button
+                                        MaxWidth="560"
+                                        Padding="0"
+                                        HorizontalAlignment="Left"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Click="PostVideo_OnClick"
+                                        Loaded="PostVideo_OnLoaded"
+                                        Tag="{x:Bind}"
+                                        Visibility="{x:Bind VideoVisibility}"
+                                        ToolTipService.ToolTip="播放视频">
+                                        <Border
+                                            Width="480"
+                                            Height="270"
+                                            Background="Black"
+                                            CornerRadius="10">
+                                            <Grid>
+                                                <controls:FastWin2DImage
+                                                    DecodeWidth="640"
+                                                    EnableFadeIn="True"
+                                                    ShowPlaceholder="False"
+                                                    Source="{x:Bind VideoThumbnailPath, Mode=OneWay}"
+                                                    Stretch="UniformToFill" />
+                                                <Border
+                                                    Width="54"
+                                                    Height="54"
+                                                    HorizontalAlignment="Center"
+                                                    VerticalAlignment="Center"
+                                                    Background="#B0000000"
+                                                    CornerRadius="27">
+                                                    <FontIcon
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="24"
+                                                        Foreground="White"
+                                                        Glyph="&#xE768;" />
+                                                </Border>
+                                                <TextBlock
+                                                    Margin="10"
+                                                    VerticalAlignment="Bottom"
+                                                    Foreground="White"
+                                                    Text="{x:Bind VideoName}"
+                                                    TextTrimming="CharacterEllipsis" />
+                                            </Grid>
+                                        </Border>
+                                    </Button>
 
                                     <TextBlock
                                         Opacity="0.55"
@@ -303,5 +340,147 @@
                 IsLoading="{x:Bind ViewModel.IsBusy, Mode=OneWay}"
                 LoadingMessage="正在加载帖子…" />
         </Grid>
+
+        <ContentDialog
+            x:Name="ComposerDialog"
+            Grid.RowSpan="3"
+            CloseButtonText="取消"
+            DefaultButton="None"
+            Opened="ComposerDialog_OnOpened">
+            <ContentDialog.Title>
+                <StackPanel Orientation="Horizontal" Spacing="10">
+                    <Border Width="32" Height="32" Background="{ThemeResource PostsAccentSoftBrush}" CornerRadius="10">
+                        <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="15" Glyph="&#xE70F;" />
+                    </Border>
+                    <TextBlock VerticalAlignment="Center" FontSize="20" FontWeight="SemiBold" Text="发布新帖子" />
+                </StackPanel>
+            </ContentDialog.Title>
+            <Grid Width="620" MaxWidth="620" RowSpacing="14">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBox
+                    x:Name="ComposerTextBox"
+                    MinHeight="150"
+                    MaxHeight="260"
+                    AcceptsReturn="True"
+                    CornerRadius="12"
+                    IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
+                    PlaceholderText="分享此刻的想法…"
+                    ScrollViewer.VerticalScrollBarVisibility="Auto"
+                    Text="{x:Bind ViewModel.NewPostContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                    TextWrapping="Wrap" />
+
+                <ScrollViewer
+                    Grid.Row="1"
+                    HorizontalScrollBarVisibility="Auto"
+                    HorizontalScrollMode="Enabled"
+                    VerticalScrollBarVisibility="Disabled"
+                    VerticalScrollMode="Disabled"
+                    Visibility="{x:Bind ViewModel.PendingAttachmentsVisibility, Mode=OneWay}">
+                    <ItemsControl ItemsSource="{x:Bind ViewModel.PendingAttachments, Mode=OneWay}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <ItemsStackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:PendingPostAttachment">
+                                <Border
+                                    Width="112"
+                                    Height="112"
+                                    Margin="0,0,10,0"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="12">
+                                    <Grid>
+                                        <controls:FastWin2DImage
+                                            DecodeWidth="320"
+                                            EnableFadeIn="True"
+                                            ShowPlaceholder="True"
+                                            Source="{x:Bind PreviewSource}"
+                                            Stretch="UniformToFill"
+                                            Visibility="{x:Bind ImageVisibility}" />
+                                        <Grid Background="{ThemeResource PostsSoftBrush}" Visibility="{x:Bind VideoVisibility}">
+                                            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                                                <FontIcon FontSize="28" Glyph="&#xE714;" />
+                                                <TextBlock FontSize="11" Text="视频" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <Border Padding="5,3" VerticalAlignment="Bottom" Background="#A6000000" CornerRadius="0,0,11,11">
+                                            <TextBlock FontSize="10" Foreground="White" Text="{x:Bind FileName}" TextTrimming="CharacterEllipsis" />
+                                        </Border>
+                                        <Button
+                                            Margin="5"
+                                            Padding="6,2"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Top"
+                                            Background="#CC000000"
+                                            Click="RemovePending_OnClick"
+                                            Content="×"
+                                            Foreground="White"
+                                            Tag="{x:Bind}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+
+                <ProgressBar
+                    Grid.Row="2"
+                    Maximum="1"
+                    Minimum="0"
+                    Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}"
+                    Visibility="{x:Bind ViewModel.UploadProgressVisibility, Mode=OneWay}" />
+
+                <Grid Grid.Row="3" ColumnSpacing="8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button
+                        Click="PickImage_OnClick"
+                        IsEnabled="{x:Bind ViewModel.CanAddAttachments, Mode=OneWay}"
+                        Style="{StaticResource PostsButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xEB9F;" />
+                            <TextBlock Text="照片" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Grid.Column="1"
+                        Click="PickVideo_OnClick"
+                        IsEnabled="{x:Bind ViewModel.CanAddAttachments, Mode=OneWay}"
+                        Style="{StaticResource PostsButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE714;" />
+                            <TextBlock Text="视频" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Grid.Column="2"
+                        HorizontalAlignment="Left"
+                        Command="{x:Bind ViewModel.ClearPendingAttachmentsCommand}"
+                        Content="清空附件"
+                        Visibility="{x:Bind ViewModel.PendingAttachmentsVisibility, Mode=OneWay}" />
+                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9">
+                        <ProgressRing Width="20" Height="20" IsActive="{x:Bind ViewModel.IsPosting, Mode=OneWay}" />
+                        <Button
+                            MinWidth="96"
+                            Click="PublishPost_OnClick"
+                            Content="发布"
+                            IsEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
+                            Style="{StaticResource PostsPrimaryButtonStyle}" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </ContentDialog>
     </Grid>
 </Page>

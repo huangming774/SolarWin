@@ -32,6 +32,12 @@ public sealed partial class PostFeedPage : Page
         }
     }
 
+    protected override void OnNavigatedFrom(NavigationEventArgs e)
+    {
+        ViewModel.Cleanup();
+        base.OnNavigatedFrom(e);
+    }
+
     private void BackButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (Frame?.CanGoBack == true)
@@ -74,7 +80,8 @@ public sealed partial class PostFeedPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        ViewModel.OpenPost -= OnOpenPost;
         Unloaded -= OnUnloaded;
+        ViewModel.OpenPost -= OnOpenPost;
+        ViewModel.Cleanup();
     }
 }

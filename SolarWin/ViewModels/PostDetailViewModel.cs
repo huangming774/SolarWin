@@ -2,14 +2,18 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
 
-/// <summary>Full single-post view: detail fetch, interactions, replies.</summary>
+/// <summary>
+/// Full single-post view: detail fetch, interactions, replies.
+/// Images bind URL lists to <c>GpuImage</c>; no BitmapImage assignment on this path.
+/// Page must call <see cref="Cleanup"/> from <c>OnNavigatedFrom</c> to cancel in-flight work
+/// and drop media bindings so GpuImage can release VRAM leases immediately.
+/// </summary>
 public partial class PostDetailViewModel : ObservableObject
 {
     private const int ReplyPageSize = 20;
@@ -21,9 +25,9 @@ public partial class PostDetailViewModel : ObservableObject
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly IAuthService _auth;
-    private readonly Dictionary<PostItemViewModel, CancellationTokenSource> _replyImageRequests = [];
-    private HashSet<PostItemViewModel> _replyImageWindow = [];
-    private int _replyImageWindowVersion;
+
+    /// <summary>One CTS per page session; cancelled in <see cref="Cleanup"/>.</summary>
+    private CancellationTokenSource? _sessionCts;
 
     private Guid _postId;
     private int _replyOffset;
@@ -43,12 +47,13 @@ public partial class PostDetailViewModel : ObservableObject
         _auth = auth;
     }
 
-    public ObservableCollection<BitmapImage> Images { get; } = [];
+    /// <summary>Detail attachment image URLs (full resolution preferred) for GpuImage.</summary>
+    public ObservableCollection<string> ImageUrls { get; } = [];
 
     public ObservableCollection<PostItemViewModel> Replies { get; } = [];
 
     [ObservableProperty]
-    public partial BitmapImage? AvatarImage { get; set; }
+    public partial string? AvatarUrl { get; set; }
 
     [ObservableProperty]
     public partial string AuthorName { get; set; } = string.Empty;
@@ -96,6 +101,21 @@ public partial class PostDetailViewModel : ObservableObject
 
     [ObservableProperty]
     public partial Visibility ImagesVisibility { get; set; } = Visibility.Collapsed;
+
+    [ObservableProperty]
+    public partial string? VideoSourceKey { get; set; }
+
+    [ObservableProperty]
+    public partial string VideoName { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string VideoMimeType { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    public partial string? VideoThumbnailPath { get; set; }
+
+    [ObservableProperty]
+    public partial Visibility VideoVisibility { get; set; } = Visibility.Collapsed;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsEmptyReplies))]
@@ -201,9 +221,76 @@ public partial class PostDetailViewModel : ObservableObject
     /// </summary>
     public void Initialize(PostItemViewModel item)
     {
+        BeginSession();
         _postId = item.Id;
         ApplyHeader(item);
         _ = LoadAsync();
+    }
+
+    /// <summary>
+    /// Cancel all in-flight detail/reply loads and drop media URL bindings so
+    /// <c>GpuImage</c> releases CanvasBitmap leases on leave.
+    /// </summary>
+    public void Cleanup()
+    {
+        CancelSession();
+        ReleaseMediaBindings();
+        IsBusy = false;
+        IsLoadingReplies = false;
+        _busyAction = false;
+        NotifyReplyUi();
+    }
+
+    private void BeginSession()
+    {
+        CancelSession();
+        _sessionCts = new CancellationTokenSource();
+    }
+
+    private void CancelSession()
+    {
+        var cts = Interlocked.Exchange(ref _sessionCts, null);
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cts.Dispose();
+    }
+
+    private CancellationToken SessionToken
+        => _sessionCts?.Token ?? CancellationToken.None;
+
+    /// <summary>
+    /// Clear body images, avatar URL, and replies so bindings tear down GPU leases.
+    /// </summary>
+    private void ReleaseMediaBindings()
+    {
+        ImageUrls.Clear();
+        ImagesVisibility = Visibility.Collapsed;
+        VideoSourceKey = null;
+        VideoThumbnailPath = null;
+        VideoVisibility = Visibility.Collapsed;
+        AvatarUrl = null;
+
+        foreach (var reply in Replies)
+        {
+            // Legacy slots (posts path keeps them null; still clear defensively).
+            reply.AvatarImage = null;
+            reply.FirstImage = null;
+        }
+
+        Replies.Clear();
+        AwardItems.Clear();
+        _replyOffset = 0;
     }
 
     [RelayCommand]
@@ -214,44 +301,61 @@ public partial class PostDetailViewModel : ObservableObject
             return;
         }
 
+        var ct = SessionToken;
         try
         {
             IsBusy = true;
             ErrorMessage = null;
-            Images.Clear();
-            ClearReplyImageWindow(clearImages: true);
+            ImageUrls.Clear();
             Replies.Clear();
             _replyOffset = 0;
+            ct.ThrowIfCancellationRequested();
 
             SnPost post;
             try
             {
-                post = await _api.GetPostAsync(_postId).ConfigureAwait(true);
+                post = await _api.GetPostAsync(_postId, ct).ConfigureAwait(true);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (SolarApiException)
             {
                 // Fall back to seed data already on screen.
-                await LoadRepliesInternalAsync(reset: true).ConfigureAwait(true);
+                await LoadRepliesInternalAsync(reset: true, ct).ConfigureAwait(true);
                 return;
             }
 
+            ct.ThrowIfCancellationRequested();
             ApplyPost(post);
-            await LoadImagesFromPostAsync(post).ConfigureAwait(true);
-            await LoadSubscriptionStateAsync().ConfigureAwait(true);
-            await LoadAwardsPreviewAsync().ConfigureAwait(true);
-            await LoadRepliesInternalAsync(reset: true).ConfigureAwait(true);
+            await LoadSubscriptionStateAsync(ct).ConfigureAwait(true);
+            await LoadAwardsPreviewAsync(ct).ConfigureAwait(true);
+            await LoadRepliesInternalAsync(reset: true, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
+            // Left the page — do not toast or mutate further.
         }
         catch (SolarApiException ex)
         {
+            if (ct.IsCancellationRequested)
+            {
+                return;
+            }
+
             ErrorMessage = ex.Message;
             _toast.Error("加载帖子失败");
         }
         finally
         {
-            IsBusy = false;
-            NotifyReplyUi();
-            OnPropertyChanged(nameof(HasError));
-            OnPropertyChanged(nameof(ErrorVisibility));
+            if (!ct.IsCancellationRequested)
+            {
+                IsBusy = false;
+                NotifyReplyUi();
+                OnPropertyChanged(nameof(HasError));
+                OnPropertyChanged(nameof(ErrorVisibility));
+            }
         }
     }
 
@@ -338,7 +442,10 @@ public partial class PostDetailViewModel : ObservableObject
             MonetizeStatus = $"已打赏 {amount:0.##}";
             _toast.Success("打赏成功");
             AwardMessage = string.Empty;
-            await LoadAwardsPreviewAsync().ConfigureAwait(true);
+            await LoadAwardsPreviewAsync(SessionToken).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (SolarApiException ex)
         {
@@ -384,27 +491,42 @@ public partial class PostDetailViewModel : ObservableObject
         }
     }
 
-    private async Task LoadSubscriptionStateAsync()
+    private async Task LoadSubscriptionStateAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            var sub = await _api.GetPostSubscriptionAsync(_postId).ConfigureAwait(true);
+            var sub = await _api.GetPostSubscriptionAsync(_postId, cancellationToken).ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             IsPostSubscribed = sub is not null;
             SubscribeButtonText = IsPostSubscribed ? "已订阅帖" : "订阅帖";
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (SolarApiException)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             IsPostSubscribed = false;
             SubscribeButtonText = "订阅帖";
         }
     }
 
-    private async Task LoadAwardsPreviewAsync()
+    private async Task LoadAwardsPreviewAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         AwardItems.Clear();
         try
         {
-            var list = await _api.GetPostAwardsAsync(_postId, take: 10).ConfigureAwait(true);
+            var list = await _api
+                .GetPostAwardsAsync(_postId, take: 10, cancellationToken: cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var a in list)
             {
                 AwardItems.Add(new SocialListItemViewModel(
@@ -419,9 +541,16 @@ public partial class PostDetailViewModel : ObservableObject
                 ? "暂无打赏记录"
                 : $"最近打赏 {list.Count} 条";
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (SolarApiException)
         {
-            AwardsSummary = "打赏记录未加载";
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                AwardsSummary = "打赏记录未加载";
+            }
         }
     }
 
@@ -433,19 +562,29 @@ public partial class PostDetailViewModel : ObservableObject
             return;
         }
 
+        var ct = SessionToken;
         try
         {
             IsLoadingReplies = true;
-            await LoadRepliesInternalAsync(reset: false).ConfigureAwait(true);
+            await LoadRepliesInternalAsync(reset: false, ct).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (SolarApiException ex)
         {
-            _toast.Error($"加载回复失败:{ex.Message}");
+            if (!ct.IsCancellationRequested)
+            {
+                _toast.Error($"加载回复失败:{ex.Message}");
+            }
         }
         finally
         {
-            IsLoadingReplies = false;
-            NotifyReplyUi();
+            if (!ct.IsCancellationRequested)
+            {
+                IsLoadingReplies = false;
+                NotifyReplyUi();
+            }
         }
     }
 
@@ -695,8 +834,9 @@ public partial class PostDetailViewModel : ObservableObject
         }
     }
 
-    private async Task LoadRepliesInternalAsync(bool reset)
+    private async Task LoadRepliesInternalAsync(bool reset, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (reset)
         {
             Replies.Clear();
@@ -706,7 +846,10 @@ public partial class PostDetailViewModel : ObservableObject
         IsLoadingReplies = true;
         try
         {
-            var list = await _api.GetPostRepliesAsync(_postId, _replyOffset, ReplyPageSize).ConfigureAwait(true);
+            var list = await _api
+                .GetPostRepliesAsync(_postId, _replyOffset, ReplyPageSize, cancellationToken)
+                .ConfigureAwait(true);
+            cancellationToken.ThrowIfCancellationRequested();
             foreach (var reply in list)
             {
                 Replies.Add(new PostItemViewModel(reply, _imageLoader, bindCachedImages: false));
@@ -718,7 +861,10 @@ public partial class PostDetailViewModel : ObservableObject
         }
         finally
         {
-            IsLoadingReplies = false;
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                IsLoadingReplies = false;
+            }
         }
     }
 
@@ -731,7 +877,7 @@ public partial class PostDetailViewModel : ObservableObject
         AuthorAccountId = item.AuthorAccountId;
         PublisherName = item.PublisherName;
         OnPropertyChanged(nameof(CanOpenAuthorProfile));
-        AvatarImage = item.AvatarImage;
+        AvatarUrl = item.AvatarUrl;
         Title = item.Title;
         TitleVisibility = item.TitleVisibility;
         ContentText = item.Post.Content ?? item.Post.Description ?? item.ContentText;
@@ -762,8 +908,8 @@ public partial class PostDetailViewModel : ObservableObject
             ForwardedVisibility = Visibility.Collapsed;
         }
 
-        ImagesVisibility = item.HasImages ? Visibility.Visible : Visibility.Collapsed;
-        _ = LoadImagesFromItemAsync(item);
+        SetImageUrls(PreferDetailUrls(item));
+        SetVideo(item.VideoSourceKey, item.VideoName, item.VideoMimeType);
     }
 
     private void ApplyPost(SnPost post)
@@ -810,19 +956,22 @@ public partial class PostDetailViewModel : ObservableObject
         PostIdText = post.Id.ToString("D");
         RefreshStats();
 
+        AvatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture)
+            ?? CloudFileUrlHelper.Resolve(publisher?.Account?.Profile?.Picture)
+            ?? AvatarUrl;
+
         var imageUrls = (post.Attachments ?? [])
             .Where(CloudFileUrlHelper.IsLikelyImage)
             .Select(CloudFileUrlHelper.Resolve)
             .Where(u => !string.IsNullOrWhiteSpace(u))
             .Cast<string>()
             .ToList();
-        ImagesVisibility = imageUrls.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-
-        var avatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture);
-        if (!string.IsNullOrWhiteSpace(avatarUrl) && AvatarImage is null)
-        {
-            _ = LoadAvatarAsync(avatarUrl);
-        }
+        SetImageUrls(imageUrls);
+        var video = (post.Attachments ?? []).FirstOrDefault(CloudFileUrlHelper.IsLikelyVideo);
+        SetVideo(
+            video is null ? null : CloudFileUrlHelper.ResolveFileId(video) ?? CloudFileUrlHelper.Resolve(video),
+            video?.Name,
+            video?.MimeType);
     }
 
     private void RefreshStats()
@@ -830,198 +979,34 @@ public partial class PostDetailViewModel : ObservableObject
         StatsText = $"回复 {RepliesCount} · 转发 {BoostCount} · 赞 {Upvotes}";
     }
 
-    private async Task LoadImagesFromItemAsync(PostItemViewModel item)
+    private void SetImageUrls(IReadOnlyList<string> urls)
     {
-        if (AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
-        {
-            await LoadAvatarAsync(item.AvatarUrl).ConfigureAwait(true);
-        }
-
-        foreach (var url in item.ImageUrls)
-        {
-            var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.DetailImageDecodeWidth).ConfigureAwait(true);
-            if (bmp is not null)
-            {
-                Images.Add(bmp);
-            }
-        }
-
-        ImagesVisibility = Images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
-    }
-
-    private async Task LoadImagesFromPostAsync(SnPost post)
-    {
-        Images.Clear();
-        var urls = (post.Attachments ?? [])
-            .Where(CloudFileUrlHelper.IsLikelyImage)
-            .Select(CloudFileUrlHelper.Resolve)
-            .Where(u => !string.IsNullOrWhiteSpace(u))
-            .Cast<string>()
-            .ToList();
-
+        ImageUrls.Clear();
         foreach (var url in urls)
         {
-            var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.DetailImageDecodeWidth).ConfigureAwait(true);
-            if (bmp is not null)
-            {
-                Images.Add(bmp);
-            }
+            ImageUrls.Add(url);
         }
 
-        ImagesVisibility = Images.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ImagesVisibility = ImageUrls.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    private async Task LoadAvatarAsync(string url)
+    private void SetVideo(string? source, string? name, string? mimeType)
     {
-        var bmp = await _imageLoader.LoadAsync(url, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
-        if (bmp is not null)
-        {
-            AvatarImage = bmp;
-        }
+        VideoSourceKey = source;
+        VideoName = string.IsNullOrWhiteSpace(name) ? "视频" : name;
+        VideoMimeType = mimeType ?? string.Empty;
+        VideoThumbnailPath = null;
+        VideoVisibility = string.IsNullOrWhiteSpace(source) ? Visibility.Collapsed : Visibility.Visible;
     }
 
-    public void UpdateVisibleReplyImageWindow(
-        IReadOnlyCollection<PostItemViewModel> visibleItems,
-        int prefetchCount)
+    private static List<string> PreferDetailUrls(PostItemViewModel item)
     {
-        var indexes = visibleItems
-            .Select(item => Replies.IndexOf(item))
-            .Where(index => index >= 0)
-            .ToList();
-
-        if (indexes.Count == 0)
+        if (item.FullImageUrls.Count > 0)
         {
-            ClearReplyImageWindow(clearImages: true);
-            return;
+            return item.FullImageUrls;
         }
 
-        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
-        var end = Math.Min(Replies.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
-        var window = Replies
-            .Skip(start)
-            .Take(end - start + 1)
-            .ToHashSet();
-
-        if (!_replyImageWindow.SetEquals(window))
-        {
-            foreach (var item in _replyImageRequests.Keys.ToList())
-            {
-                if (!window.Contains(item))
-                {
-                    CancelReplyImageRequest(item);
-                }
-            }
-
-            foreach (var item in Replies)
-            {
-                if (!window.Contains(item))
-                {
-                    item.AvatarImage = null;
-                }
-            }
-
-            _replyImageWindow = window;
-        }
-
-        var version = _replyImageWindowVersion;
-        foreach (var item in window)
-        {
-            LoadReplyAvatarForVisibleItem(item, version);
-        }
-    }
-
-    public void ClearVisibleReplyImageWindow()
-        => ClearReplyImageWindow(clearImages: true);
-
-    private void LoadReplyAvatarForVisibleItem(PostItemViewModel item, int version)
-    {
-        if (!item.HasAvatar
-            || item.AvatarImage is not null
-            || string.IsNullOrWhiteSpace(item.AvatarUrl)
-            || _replyImageRequests.ContainsKey(item))
-        {
-            return;
-        }
-
-        var cts = new CancellationTokenSource();
-        _replyImageRequests[item] = cts;
-        _ = LoadReplyAvatarAsync(item, version, cts);
-    }
-
-    private async Task LoadReplyAvatarAsync(
-        PostItemViewModel item,
-        int version,
-        CancellationTokenSource requestCts)
-    {
-        try
-        {
-            BitmapImage? image;
-            if (!_imageLoader.TryGetCached(
-                    item.AvatarUrl,
-                    out image,
-                    DysonFileImageLoader.AvatarDecodeWidth))
-            {
-                image = await _imageLoader
-                    .LoadSafeAsync(item.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth, requestCts.Token)
-                    .ConfigureAwait(true);
-            }
-
-            if (image is not null
-                && !requestCts.IsCancellationRequested
-                && version == _replyImageWindowVersion
-                && _replyImageWindow.Contains(item)
-                && Replies.Contains(item))
-            {
-                item.AvatarImage = image;
-            }
-        }
-        finally
-        {
-            var shouldRetry = false;
-            if (_replyImageRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
-            {
-                _replyImageRequests.Remove(item);
-                shouldRetry = requestCts.IsCancellationRequested
-                              && _replyImageWindow.Contains(item)
-                              && Replies.Contains(item);
-            }
-
-            requestCts.Dispose();
-            if (shouldRetry)
-            {
-                LoadReplyAvatarForVisibleItem(item, _replyImageWindowVersion);
-            }
-        }
-    }
-
-    private void CancelReplyImageRequest(PostItemViewModel item)
-    {
-        if (_replyImageRequests.TryGetValue(item, out var cts))
-        {
-            cts.Cancel();
-        }
-    }
-
-    private void ClearReplyImageWindow(bool clearImages)
-    {
-        _replyImageWindowVersion++;
-        foreach (var cts in _replyImageRequests.Values)
-        {
-            cts.Cancel();
-        }
-
-        _replyImageRequests.Clear();
-        _replyImageWindow = [];
-
-        if (!clearImages)
-        {
-            return;
-        }
-
-        foreach (var item in Replies)
-        {
-            item.AvatarImage = null;
-        }
+        return item.ImageUrls;
     }
 
     private async Task<string?> ResolvePublisherNameAsync()

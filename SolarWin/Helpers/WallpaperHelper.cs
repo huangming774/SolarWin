@@ -1,8 +1,10 @@
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
+using Windows.Foundation;
 using Windows.UI;
 
 namespace SolarWin.Helpers;
@@ -20,7 +22,11 @@ public enum WallpaperEffectMode
     Frosted = 2,
 }
 
-/// <summary>Persist + apply custom wallpaper behind shell content.</summary>
+/// <summary>
+/// Persist + apply custom wallpaper behind shell content.
+/// Local image is decoded with Win2D into a <see cref="CanvasImageSource"/> (GPU surface)
+/// instead of a full-size <c>BitmapImage</c> in RAM.
+/// </summary>
 public static class WallpaperHelper
 {
     private const string PathKey = "WallpaperPath";
@@ -29,11 +35,20 @@ public static class WallpaperHelper
     private const string EffectKey = "WallpaperEffect";
     private const string EnabledKey = "WallpaperEnabled";
 
-    // Reused across ApplyToLayers calls (theme switches etc.) so the same wallpaper
-    // is not re-decoded into a fresh full-size BitmapImage every time.
-    private static string? _cachedBitmapPath;
-    private static DateTime _cachedBitmapWriteUtc;
-    private static BitmapImage? _cachedBitmap;
+    /// <summary>Max long edge for full-window wallpaper (keeps VRAM reasonable for 4K sources).</summary>
+    private const int FullMaxEdge = 2560;
+
+    /// <summary>Settings page thumbnail long edge.</summary>
+    private const int PreviewMaxEdge = 480;
+
+    private static readonly object CacheGate = new();
+    private static string? _cachedPath;
+    private static DateTime _cachedWriteUtc;
+    private static CanvasImageSource? _fullImageSource;
+    private static int _fullEdge;
+    private static CanvasImageSource? _previewImageSource;
+    private static int _previewEdge;
+    private static int _applyGeneration;
 
     public static event EventHandler? Changed;
 
@@ -91,31 +106,17 @@ public static class WallpaperHelper
 
     public static void NotifyChanged() => Changed?.Invoke(null, EventArgs.Empty);
 
-    private static BitmapImage GetOrCreateBitmap()
+    private static void ResetGpuCache()
     {
-        var path = ImagePath!;
-        var writeUtc = File.GetLastWriteTimeUtc(path);
-        if (_cachedBitmap is not null
-            && string.Equals(_cachedBitmapPath, path, StringComparison.OrdinalIgnoreCase)
-            && _cachedBitmapWriteUtc == writeUtc)
+        lock (CacheGate)
         {
-            return _cachedBitmap;
+            _fullImageSource = null;
+            _previewImageSource = null;
+            _fullEdge = 0;
+            _previewEdge = 0;
+            _cachedPath = null;
+            _cachedWriteUtc = default;
         }
-
-        var bmp = new BitmapImage();
-        bmp.CreateOptions = BitmapCreateOptions.IgnoreImageCache;
-        bmp.UriSource = new Uri(path, UriKind.Absolute);
-        _cachedBitmap = bmp;
-        _cachedBitmapPath = path;
-        _cachedBitmapWriteUtc = writeUtc;
-        return bmp;
-    }
-
-    private static void ResetBitmapCache()
-    {
-        _cachedBitmap = null;
-        _cachedBitmapPath = null;
-        _cachedBitmapWriteUtc = default;
     }
 
     /// <summary>
@@ -158,7 +159,7 @@ public static class WallpaperHelper
 
         var dest = Path.Combine(WallpaperDirectory, "current" + ext.ToLowerInvariant());
         File.Copy(sourcePath, dest, overwrite: true);
-        ResetBitmapCache();
+        ResetGpuCache();
         ImagePath = dest;
         IsEnabled = true;
         NotifyChanged();
@@ -170,7 +171,7 @@ public static class WallpaperHelper
         IsEnabled = false;
         var p = ImagePath;
         ImagePath = string.Empty;
-        ResetBitmapCache();
+        ResetGpuCache();
         try
         {
             if (!string.IsNullOrWhiteSpace(p) && File.Exists(p))
@@ -186,6 +187,10 @@ public static class WallpaperHelper
         NotifyChanged();
     }
 
+    /// <summary>GPU-backed preview for settings (long edge ≤ <paramref name="maxEdge"/>).</summary>
+    public static Task<ImageSource?> CreatePreviewImageSourceAsync(int maxEdge = PreviewMaxEdge)
+        => GetOrCreateImageSourceAsync(Math.Clamp(maxEdge, 64, 1024), isPreview: true);
+
     /// <summary>
     /// Paint wallpaper layers on the main window host.
     /// <paramref name="image"/> is the full-bleed picture;
@@ -200,23 +205,15 @@ public static class WallpaperHelper
         Window? window)
     {
         var enabled = IsEnabled && HasImage;
+        var generation = Interlocked.Increment(ref _applyGeneration);
 
         if (image is not null)
         {
             if (enabled)
             {
-                try
-                {
-                    image.Source = GetOrCreateBitmap();
-                    image.Opacity = OpacityPercent / 100.0;
-                    image.Visibility = Visibility.Visible;
-                }
-                catch
-                {
-                    image.Source = null;
-                    image.Visibility = Visibility.Collapsed;
-                    enabled = false;
-                }
+                image.Opacity = OpacityPercent / 100.0;
+                image.Visibility = Visibility.Visible;
+                _ = ApplyImageSourceAsync(image, generation);
             }
             else
             {
@@ -224,6 +221,18 @@ public static class WallpaperHelper
                 image.Visibility = Visibility.Collapsed;
             }
         }
+        else
+        {
+            enabled = false;
+        }
+
+        if (!enabled && image is not null)
+        {
+            // Keep collapsed if async apply aborted.
+        }
+
+        // Re-evaluate enabled for overlays (file may be missing mid-apply).
+        enabled = IsEnabled && HasImage;
 
         var blur = BlurPercent / 100.0;
         var mode = EffectMode;
@@ -235,7 +244,7 @@ public static class WallpaperHelper
         {
             if (enabled && blur > 0.01)
             {
-                // Soft desaturating wash simulates “blur strength” without Win2D.
+                // Soft desaturating wash simulates “blur strength” without a full blur pass.
                 var alpha = (byte)Math.Clamp((int)(blur * (mode == WallpaperEffectMode.Frosted ? 140 : 90)), 0, 180);
                 var c = isDark
                     ? Color.FromArgb(alpha, 20, 24, 32)
@@ -284,6 +293,116 @@ public static class WallpaperHelper
             contentRoot.Background = enabled
                 ? new SolidColorBrush(Colors.Transparent)
                 : null;
+        }
+    }
+
+    private static async Task ApplyImageSourceAsync(Image target, int generation)
+    {
+        try
+        {
+            var source = await GetOrCreateImageSourceAsync(FullMaxEdge, isPreview: false)
+                .ConfigureAwait(true);
+            if (generation != Volatile.Read(ref _applyGeneration) || source is null)
+            {
+                return;
+            }
+
+            target.Source = source;
+            target.Opacity = OpacityPercent / 100.0;
+            target.Visibility = Visibility.Visible;
+        }
+        catch
+        {
+            if (generation == Volatile.Read(ref _applyGeneration))
+            {
+                target.Source = null;
+                target.Visibility = Visibility.Collapsed;
+            }
+        }
+    }
+
+    private static async Task<ImageSource?> GetOrCreateImageSourceAsync(int maxEdge, bool isPreview)
+    {
+        if (!HasImage)
+        {
+            return null;
+        }
+
+        var path = ImagePath!;
+        var writeUtc = File.GetLastWriteTimeUtc(path);
+
+        lock (CacheGate)
+        {
+            if (string.Equals(_cachedPath, path, StringComparison.OrdinalIgnoreCase)
+                && _cachedWriteUtc == writeUtc)
+            {
+                if (isPreview && _previewImageSource is not null && _previewEdge == maxEdge)
+                {
+                    return _previewImageSource;
+                }
+
+                if (!isPreview && _fullImageSource is not null && _fullEdge == maxEdge)
+                {
+                    return _fullImageSource;
+                }
+            }
+            else
+            {
+                // Path/mtime changed — drop both sizes.
+                _fullImageSource = null;
+                _previewImageSource = null;
+                _fullEdge = 0;
+                _previewEdge = 0;
+            }
+        }
+
+        var device = CanvasDevice.GetSharedDevice();
+        CanvasBitmap? bitmap = null;
+        try
+        {
+            bitmap = await CanvasBitmap.LoadAsync(device, path).AsTask().ConfigureAwait(true);
+            var pixelW = (double)bitmap.SizeInPixels.Width;
+            var pixelH = (double)bitmap.SizeInPixels.Height;
+            if (pixelW <= 0 || pixelH <= 0)
+            {
+                return null;
+            }
+
+            var scale = Math.Min(1d, maxEdge / Math.Max(pixelW, pixelH));
+            var dispW = Math.Max(1f, (float)Math.Round(pixelW * scale));
+            var dispH = Math.Max(1f, (float)Math.Round(pixelH * scale));
+
+            var imageSource = new CanvasImageSource(device, dispW, dispH, 96);
+            using (var session = imageSource.CreateDrawingSession(Color.FromArgb(0, 0, 0, 0)))
+            {
+                session.DrawImage(
+                    bitmap,
+                    new Rect(0, 0, dispW, dispH),
+                    new Rect(0, 0, pixelW, pixelH));
+            }
+
+            lock (CacheGate)
+            {
+                _cachedPath = path;
+                _cachedWriteUtc = writeUtc;
+                if (isPreview)
+                {
+                    _previewImageSource = imageSource;
+                    _previewEdge = maxEdge;
+                }
+                else
+                {
+                    _fullImageSource = imageSource;
+                    _fullEdge = maxEdge;
+                }
+            }
+
+            return imageSource;
+        }
+        finally
+        {
+            // Surface already holds a GPU copy; free the full decoded texture.
+            bitmap?.Dispose();
         }
     }
 

@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml.Media.Imaging;
+using Microsoft.UI.Xaml;
 using SolarWin.Helpers;
 using SolarWin.Models;
 
@@ -8,15 +9,16 @@ namespace SolarWin.ViewModels;
 /// <summary>One attachment on a chat message (image or generic file).</summary>
 public partial class MessageAttachmentViewModel : ObservableObject
 {
-    public MessageAttachmentViewModel(SnCloudFile file)
+    public MessageAttachmentViewModel(SnCloudFile file, bool forceVideo = false)
     {
         File = file;
         FileId = CloudFileUrlHelper.ResolveFileId(file);
         Url = CloudFileUrlHelper.Resolve(file);
         Name = string.IsNullOrWhiteSpace(file.Name) ? (FileId ?? "附件") : file.Name!;
-        IsImage = CloudFileUrlHelper.IsLikelyImage(file)
+        IsVideo = forceVideo || IsLikelyVideo(file);
+        IsImage = !IsVideo && (CloudFileUrlHelper.IsLikelyImage(file)
                   || string.Equals(file.MimeType, "image/*", StringComparison.OrdinalIgnoreCase)
-                  || LooksLikeImageById(file);
+                  || LooksLikeImageById(file));
         MimeType = file.MimeType ?? string.Empty;
         SizeText = FormatSize(file.Size);
     }
@@ -31,10 +33,21 @@ public partial class MessageAttachmentViewModel : ObservableObject
 
     public bool IsImage { get; }
 
+    public bool IsVideo { get; }
+
     public string MimeType { get; }
 
     public string SizeText { get; }
 
+    /// <summary>Preferred source key for FastWin2DImage (file id or absolute URL).</summary>
+    public string? ImageSourceKey => FileId ?? Url;
+
+    public string? VideoSourceKey => FileId ?? Url;
+
+    [ObservableProperty]
+    public partial string? VideoThumbnailPath { get; set; }
+
+    /// <summary>Legacy BitmapImage slot (preview dialog may still use RAM path).</summary>
     [ObservableProperty]
     public partial BitmapImage? Image { get; set; }
 
@@ -45,9 +58,22 @@ public partial class MessageAttachmentViewModel : ObservableObject
     public partial double ImageOpacity { get; set; }
 
     /// <summary>When not image, still show a chip.</summary>
-    public double FileChipOpacity => IsImage ? 0.0 : 1.0;
+    public Visibility FileChipVisibility => IsImage || IsVideo ? Visibility.Collapsed : Visibility.Visible;
 
-    public double ImageAreaOpacity => IsImage ? 1.0 : 0.0;
+    public Visibility ImageAreaVisibility => IsImage ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility VideoAreaVisibility => IsVideo ? Visibility.Visible : Visibility.Collapsed;
+
+    private static bool IsLikelyVideo(SnCloudFile file)
+    {
+        if (file.MimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true) return true;
+        var extension = Path.GetExtension(file.Name);
+        return string.Equals(extension, ".mp4", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".mov", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".mkv", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".webm", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".avi", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static bool LooksLikeImageById(SnCloudFile file)
     {

@@ -111,6 +111,18 @@ public partial class App : Application
 
         Window.Activate();
 
+        if (AppSettings.McpEnabled)
+        {
+            try
+            {
+                await _services.GetRequiredService<IMcpBridgeService>().StartAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                _services.GetService<IToastService>()?.Warning("MCP 服务启动失败：" + ex.Message);
+            }
+        }
+
         // Tray after window is activated (shell needs a live HWND for some hosts)
         try
         {

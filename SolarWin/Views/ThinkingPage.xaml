@@ -8,79 +8,273 @@
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="16" RowSpacing="12">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="ThinkingHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#FFF1DE" />
+                        <GradientStop Offset="0.5" Color="#F8F3E7" />
+                        <GradientStop Offset="1" Color="#E7F6EF" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="ThinkingSurfaceBrush" Color="#F9FAF8" />
+                    <SolidColorBrush x:Key="ThinkingAccentSoftBrush" Color="#FFF0D3" />
+                    <SolidColorBrush x:Key="ThinkingBotBrush" Color="#E4F3EC" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <LinearGradientBrush x:Key="ThinkingHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#49351F" />
+                        <GradientStop Offset="0.5" Color="#373327" />
+                        <GradientStop Offset="1" Color="#203B33" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="ThinkingSurfaceBrush" Color="#20221F" />
+                    <SolidColorBrush x:Key="ThinkingAccentSoftBrush" Color="#49391F" />
+                    <SolidColorBrush x:Key="ThinkingBotBrush" Color="#243B33" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="ThinkingHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#49351F" />
+                        <GradientStop Offset="0.5" Color="#373327" />
+                        <GradientStop Offset="1" Color="#203B33" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="ThinkingSurfaceBrush" Color="#20221F" />
+                    <SolidColorBrush x:Key="ThinkingAccentSoftBrush" Color="#49391F" />
+                    <SolidColorBrush x:Key="ThinkingBotBrush" Color="#243B33" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <Style x:Key="ThinkingCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="18" />
+            </Style>
+            <Style x:Key="ThinkingButtonStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="38" />
+                <Setter Property="Padding" Value="13,8" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+            <Style x:Key="ThinkingPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="44" />
+                <Setter Property="Padding" Value="18,9" />
+                <Setter Property="CornerRadius" Value="12" />
+            </Style>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid x:Name="LayoutRoot" Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid ColumnSpacing="12">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="2">
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="寻思" />
-                <TextBlock
-                    Opacity="0.7"
-                    Text="{x:Bind ViewModel.ConversationTitle, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis" />
-                <TextBlock
-                    Opacity="0.6"
-                    Style="{StaticResource CaptionTextBlockStyle}"
-                    Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
-            </StackPanel>
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="8"
-                VerticalAlignment="Top">
-                <Button Command="{x:Bind ViewModel.NewConversationCommand}" Content="新对话" />
-                <Button Command="{x:Bind ViewModel.LoadHistoryCommand}" Content="历史" />
-                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新" />
-                <ProgressRing
-                    Width="28"
-                    Height="28"
-                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-            </StackPanel>
-        </Grid>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="860" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Padding" Value="12" />
+                        <Setter Target="HeroCard.Padding" Value="16" />
+                        <Setter Target="HeroActions.(Grid.Row)" Value="1" />
+                        <Setter Target="HeroActions.(Grid.Column)" Value="0" />
+                        <Setter Target="HeroActions.Margin" Value="0,14,0,0" />
+                        <Setter Target="HeroActions.HorizontalAlignment" Value="Left" />
+                        <Setter Target="ModelPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="ModelPanel.(Grid.Column)" Value="0" />
+                        <Setter Target="ModelPanel.Margin" Value="0,12,0,0" />
+                        <Setter Target="ComposerHint.Visibility" Value="Collapsed" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-        <!-- Bot + Model selectors -->
+        <Border
+            x:Name="HeroCard"
+            Padding="22,18"
+            Background="{ThemeResource ThinkingHeroBrush}"
+            CornerRadius="20">
+            <Grid ColumnSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Spacing="6">
+                    <StackPanel Orientation="Horizontal" Spacing="11">
+                        <Border
+                            Width="38"
+                            Height="38"
+                            Background="{ThemeResource ThinkingAccentSoftBrush}"
+                            CornerRadius="12">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="22"
+                                Text="◌" />
+                        </Border>
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="27"
+                            FontWeight="SemiBold"
+                            Text="寻思" />
+                        <Border
+                            Padding="8,3"
+                            VerticalAlignment="Center"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            CornerRadius="10">
+                            <TextBlock
+                                FontSize="10"
+                                FontWeight="SemiBold"
+                                Opacity="0.68"
+                                Text="PERSONALITY" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock
+                        MaxWidth="620"
+                        Opacity="0.68"
+                        Text="选择一个熟悉你的机器人，让每次对话都带着独特的性格与思考方式。"
+                        TextWrapping="WrapWholeWords" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Ellipse
+                            Width="7"
+                            Height="7"
+                            VerticalAlignment="Center"
+                            Fill="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontWeight="SemiBold"
+                            Opacity="0.76"
+                            Text="{x:Bind ViewModel.ConversationTitle, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+                        <TextBlock VerticalAlignment="Center" Opacity="0.35" Text="·" />
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            Opacity="0.58"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                            TextTrimming="CharacterEllipsis" />
+                        <ProgressRing
+                            Width="16"
+                            Height="16"
+                            IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    </StackPanel>
+                </StackPanel>
+
+                <StackPanel
+                    x:Name="HeroActions"
+                    Grid.Column="1"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <Button
+                        Command="{x:Bind ViewModel.LoadHistoryCommand}"
+                        Style="{StaticResource ThinkingButtonStyle}"
+                        ToolTipService.ToolTip="加载最近一次对话">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE81C;" />
+                            <TextBlock Text="历史" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.LoadCommand}"
+                        Style="{StaticResource ThinkingButtonStyle}"
+                        ToolTipService.ToolTip="刷新机器人列表">
+                        <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.NewConversationCommand}"
+                        Style="{StaticResource ThinkingButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE710;" />
+                            <TextBlock Text="新对话" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <Border
             Grid.Row="1"
-            Padding="14"
-            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="14">
-            <Grid ColumnSpacing="16">
+            Padding="16"
+            Style="{StaticResource ThinkingCardStyle}">
+            <Grid ColumnSpacing="18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Spacing="6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="14" Glyph="&#xE99A;" />
-                        <TextBlock FontWeight="SemiBold" Text="机器人" />
+                <StackPanel Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <Border
+                            Width="30"
+                            Height="30"
+                            Background="{ThemeResource ThinkingBotBrush}"
+                            CornerRadius="9">
+                            <FontIcon
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="14"
+                                Glyph="&#xE99A;" />
+                        </Border>
+                        <StackPanel Spacing="1">
+                            <TextBlock FontWeight="SemiBold" Text="对话机器人" />
+                            <TextBlock
+                                Opacity="0.52"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="切换机器人会开启一段新对话" />
+                        </StackPanel>
                     </StackPanel>
                     <ComboBox
+                        MinHeight="40"
                         HorizontalAlignment="Stretch"
+                        CornerRadius="10"
                         ItemsSource="{x:Bind ViewModel.AgentNames, Mode=OneWay}"
                         PlaceholderText="选择机器人…"
                         SelectedIndex="{x:Bind ViewModel.SelectedAgentIndex, Mode=TwoWay}" />
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" Spacing="6">
-                    <StackPanel Orientation="Horizontal" Spacing="6">
-                        <FontIcon FontSize="14" Glyph="&#xE950;" />
-                        <TextBlock FontWeight="SemiBold" Text="模型" />
+                <StackPanel x:Name="ModelPanel" Grid.Column="1" Spacing="8">
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <Border
+                            Width="30"
+                            Height="30"
+                            Background="{ThemeResource ThinkingAccentSoftBrush}"
+                            CornerRadius="9">
+                            <FontIcon
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="14"
+                                Glyph="&#xE950;" />
+                        </Border>
+                        <StackPanel Spacing="1">
+                            <TextBlock FontWeight="SemiBold" Text="思考模型" />
+                            <TextBlock
+                                Opacity="0.52"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="自动模式会由机器人选择最合适的模型" />
+                        </StackPanel>
                     </StackPanel>
                     <ComboBox
+                        MinHeight="40"
                         HorizontalAlignment="Stretch"
+                        CornerRadius="10"
                         ItemsSource="{x:Bind ViewModel.ModelNames, Mode=OneWay}"
                         PlaceholderText="选择模型…"
                         SelectedIndex="{x:Bind ViewModel.SelectedModelIndex, Mode=TwoWay}" />
@@ -88,88 +282,179 @@
             </Grid>
         </Border>
 
-        <!-- Messages -->
         <Border
             Grid.Row="2"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-            BorderThickness="1"
-            CornerRadius="14">
+            MinHeight="290"
+            Style="{StaticResource ThinkingCardStyle}">
             <Grid>
-                <ListView
-                    x:Name="MessageList"
-                    Padding="12"
-                    ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
-                    SelectionMode="None">
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="vm:ThoughtBubbleItem">
-                            <Grid Margin="0,6" HorizontalAlignment="{x:Bind Alignment}">
-                                <Border
-                                    MaxWidth="560"
-                                    Padding="12,10"
-                                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="12">
-                                    <StackPanel Spacing="4">
-                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <Grid>
+                    <ListView
+                        x:Name="MessageList"
+                        Padding="16,12"
+                        Background="Transparent"
+                        ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
+                        SelectionMode="None">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ThoughtBubbleItem">
+                                <Grid Margin="0,7" HorizontalAlignment="{x:Bind Alignment}">
+                                    <Border
+                                        MaxWidth="700"
+                                        Padding="14,12"
+                                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1"
+                                        CornerRadius="16">
+                                        <StackPanel Spacing="8">
+                                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                                <Border
+                                                    Width="25"
+                                                    Height="25"
+                                                    Background="{ThemeResource ThinkingBotBrush}"
+                                                    CornerRadius="8">
+                                                    <TextBlock
+                                                        HorizontalAlignment="Center"
+                                                        VerticalAlignment="Center"
+                                                        FontSize="11"
+                                                        FontWeight="SemiBold"
+                                                        Text="{x:Bind RoleLabel}" />
+                                                </Border>
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="12"
+                                                    FontWeight="SemiBold"
+                                                    Opacity="0.76"
+                                                    Text="{x:Bind RoleLabel}" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Opacity="0.45"
+                                                    Text="{x:Bind ModelHint}" />
+                                                <TextBlock
+                                                    VerticalAlignment="Center"
+                                                    FontSize="11"
+                                                    Opacity="0.42"
+                                                    Text="{x:Bind TimeText}" />
+                                            </StackPanel>
                                             <TextBlock
-                                                FontSize="12"
-                                                FontWeight="SemiBold"
-                                                Opacity="0.75"
-                                                Text="{x:Bind RoleLabel}" />
-                                            <TextBlock
-                                                FontSize="11"
-                                                Opacity="0.5"
-                                                Text="{x:Bind TimeText}" />
-                                            <TextBlock
-                                                FontSize="11"
-                                                Opacity="0.45"
-                                                Text="{x:Bind ModelHint}" />
+                                                FontSize="14"
+                                                IsTextSelectionEnabled="True"
+                                                LineHeight="22"
+                                                Text="{x:Bind Content}"
+                                                TextWrapping="WrapWholeWords" />
                                         </StackPanel>
-                                        <TextBlock
-                                            IsTextSelectionEnabled="True"
-                                            Text="{x:Bind Content}"
-                                            TextWrapping="WrapWholeWords" />
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+
+                    <StackPanel
+                        x:Name="EmptyState"
+                        MaxWidth="500"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Spacing="12">
+                        <Border
+                            Width="70"
+                            Height="70"
+                            HorizontalAlignment="Center"
+                            Background="{ThemeResource ThinkingHeroBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="23">
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="36"
+                                Text="◌" />
+                        </Border>
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="22"
+                            FontWeight="SemiBold"
+                            Text="让想法慢慢浮现" />
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            Opacity="0.58"
+                            Text="先选择机器人与模型，再写下此刻最想探讨的事情。"
+                            TextAlignment="Center"
+                            TextWrapping="WrapWholeWords" />
+                        <StackPanel HorizontalAlignment="Center" Orientation="Horizontal" Spacing="8">
+                            <Border Padding="10,6" Background="{ThemeResource ThinkingSurfaceBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.62" Text="梳理思路" />
+                            </Border>
+                            <Border Padding="10,6" Background="{ThemeResource ThinkingSurfaceBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.62" Text="深入讨论" />
+                            </Border>
+                            <Border Padding="10,6" Background="{ThemeResource ThinkingSurfaceBrush}" CornerRadius="10">
+                                <TextBlock FontSize="12" Opacity="0.62" Text="寻找灵感" />
+                            </Border>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <Border
+                    Grid.Row="1"
+                    Padding="14"
+                    Background="{ThemeResource ThinkingSurfaceBrush}"
+                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="0,1,0,0"
+                    CornerRadius="0,0,18,18">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="DraftBox"
+                            AcceptsReturn="True"
+                            MinHeight="48"
+                            MaxHeight="150"
+                            CornerRadius="12"
+                            KeyDown="DraftBox_OnKeyDown"
+                            PlaceholderText="写下你的想法…"
+                            Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            TextWrapping="Wrap" />
+                        <StackPanel
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            Orientation="Horizontal"
+                            Spacing="9">
+                            <TextBlock
+                                x:Name="ComposerHint"
+                                VerticalAlignment="Center"
+                                Opacity="0.45"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="Ctrl + Enter" />
+                            <ProgressRing
+                                Width="20"
+                                Height="20"
+                                IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" />
+                            <Button
+                                MinWidth="96"
+                                Command="{x:Bind ViewModel.SendCommand}"
+                                Style="{StaticResource ThinkingPrimaryButtonStyle}">
+                                <StackPanel Orientation="Horizontal" Spacing="7">
+                                    <TextBlock Text="发送" />
+                                    <FontIcon FontSize="14" Glyph="&#xE724;" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </Grid>
         </Border>
-
-        <!-- Composer -->
-        <Grid
-            Grid.Row="3"
-            ColumnSpacing="10"
-            Padding="4,0,4,4">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBox
-                x:Name="DraftBox"
-                AcceptsReturn="True"
-                MinHeight="44"
-                MaxHeight="120"
-                PlaceholderText="输入你的想法… 点发送或 Ctrl+Enter"
-                Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                TextWrapping="Wrap"
-                KeyDown="DraftBox_OnKeyDown" />
-            <StackPanel Grid.Column="1" VerticalAlignment="Bottom" Spacing="6">
-                <ProgressRing
-                    Width="22"
-                    Height="22"
-                    HorizontalAlignment="Center"
-                    IsActive="{x:Bind ViewModel.IsSending, Mode=OneWay}" />
-                <Button
-                    MinWidth="88"
-                    Command="{x:Bind ViewModel.SendCommand}"
-                    Content="发送"
-                    Style="{StaticResource AccentButtonStyle}" />
-            </StackPanel>
-        </Grid>
     </Grid>
 </Page>

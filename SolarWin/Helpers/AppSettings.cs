@@ -8,6 +8,9 @@ public static class AppSettings
     private const string SystemNotificationsKey = "UseSystemNotifications";
     private const string ProtocolRegisteredKey = "ProtocolRegistered";
     private const string FileThumbnailMaxConcurrencyKey = "FileThumbnailMaxConcurrency";
+    private const string McpEnabledKey = "McpEnabled";
+    private const string McpPortKey = "McpPort";
+    private const string McpAccessTokenKey = "McpAccessToken";
 
     public static bool MinimizeToTray
     {
@@ -51,6 +54,41 @@ public static class AppSettings
             return int.TryParse(raw, out var value) ? Math.Clamp(value, 1, 16) : 4;
         }
         set => SettingsStore.SetString(FileThumbnailMaxConcurrencyKey, Math.Clamp(value, 1, 16).ToString());
+    }
+
+    /// <summary>Whether the local MCP bridge should be started. Disabled by default.</summary>
+    public static bool McpEnabled
+    {
+        get => SettingsStore.GetString(McpEnabledKey) == "1";
+        set => SettingsStore.SetString(McpEnabledKey, value ? "1" : "0");
+    }
+
+    /// <summary>Loopback-only MCP port. Invalid values fall back to 49321.</summary>
+    public static int McpPort
+    {
+        get
+        {
+            var raw = SettingsStore.GetString(McpPortKey);
+            return int.TryParse(raw, out var value) && value is >= 1024 and <= 65535 ? value : 49321;
+        }
+        set => SettingsStore.SetString(McpPortKey, Math.Clamp(value, 1024, 65535).ToString());
+    }
+
+    /// <summary>Per-install bearer token used by local MCP clients.</summary>
+    public static string McpAccessToken
+    {
+        get
+        {
+            var token = SettingsStore.GetString(McpAccessTokenKey);
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                return token;
+            }
+
+            token = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(32));
+            SettingsStore.SetString(McpAccessTokenKey, token);
+            return token;
+        }
     }
 
     // —— OpenAI-compatible AI chat (user-configured endpoint; no baked-in defaults) ——

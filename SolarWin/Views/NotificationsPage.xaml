@@ -9,111 +9,335 @@
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
-    <Grid Padding="24" RowSpacing="12">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="NotificationHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#E8F2FF" />
+                        <GradientStop Offset="0.52" Color="#F2F0FF" />
+                        <GradientStop Offset="1" Color="#FFF4F8" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="NotificationUnreadCardBrush" Color="#EFF6FF" />
+                    <SolidColorBrush x:Key="NotificationAvatarBrush" Color="#E3EEFF" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <LinearGradientBrush x:Key="NotificationHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#22324A" />
+                        <GradientStop Offset="0.52" Color="#302B45" />
+                        <GradientStop Offset="1" Color="#3B2936" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="NotificationUnreadCardBrush" Color="#1D2B40" />
+                    <SolidColorBrush x:Key="NotificationAvatarBrush" Color="#293A55" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="NotificationHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#22324A" />
+                        <GradientStop Offset="0.52" Color="#302B45" />
+                        <GradientStop Offset="1" Color="#3B2936" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="NotificationUnreadCardBrush" Color="#1D2B40" />
+                    <SolidColorBrush x:Key="NotificationAvatarBrush" Color="#293A55" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+
+            <Style x:Key="NotificationCardStyle" TargetType="Border">
+                <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+                <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="CornerRadius" Value="16" />
+            </Style>
+            <Style x:Key="NotificationIconButtonStyle" TargetType="Button">
+                <Setter Property="Width" Value="40" />
+                <Setter Property="Height" Value="40" />
+                <Setter Property="Padding" Value="0" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+            <Style x:Key="NotificationPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="Padding" Value="15,8" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid
+        x:Name="LayoutRoot"
+        MaxWidth="1080"
+        Padding="24,18,24,16"
+        HorizontalAlignment="Stretch"
+        RowSpacing="14">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="通知中心" />
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup x:Name="WindowWidthStates">
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="720" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="LayoutRoot.Padding" Value="12" />
+                        <Setter Target="HeroCard.Padding" Value="16" />
+                        <Setter Target="HeaderActions.(Grid.Row)" Value="1" />
+                        <Setter Target="HeaderActions.(Grid.Column)" Value="0" />
+                        <Setter Target="HeaderActions.Margin" Value="0,14,0,0" />
+                        <Setter Target="HeaderActions.HorizontalAlignment" Value="Left" />
+                        <Setter Target="NotificationList.Padding" Value="0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
-            <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新" />
-            <Button
-                Command="{x:Bind ViewModel.MarkAllReadCommand}"
-                Content="全部已读"
-                Style="{StaticResource AccentButtonStyle}" />
+        <Border
+            x:Name="HeroCard"
+            Padding="20,18"
+            Background="{ThemeResource NotificationHeroBrush}"
+            CornerRadius="20">
+            <Grid ColumnSpacing="18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border
+                        Width="48"
+                        Height="48"
+                        VerticalAlignment="Center"
+                        Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                        CornerRadius="15">
+                        <FontIcon
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center"
+                            FontSize="21"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            Glyph="&#xE7F4;" />
+                    </Border>
+
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                        <TextBlock
+                            FontSize="24"
+                            FontWeight="SemiBold"
+                            Text="通知中心" />
+                        <TextBlock
+                            Opacity="0.7"
+                            Text="及时查看与你相关的互动和系统动态"
+                            TextTrimming="CharacterEllipsis" />
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <Ellipse
+                                Width="7"
+                                Height="7"
+                                VerticalAlignment="Center"
+                                Fill="{ThemeResource AccentFillColorDefaultBrush}" />
+                            <TextBlock
+                                VerticalAlignment="Center"
+                                Opacity="0.62"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel
+                    x:Name="HeaderActions"
+                    Grid.Column="1"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <ProgressRing
+                        Width="20"
+                        Height="20"
+                        IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    <Button
+                        Command="{x:Bind ViewModel.LoadCommand}"
+                        Style="{StaticResource NotificationIconButtonStyle}"
+                        ToolTipService.ToolTip="刷新通知">
+                        <FontIcon Glyph="&#xE72C;" />
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.MarkAllReadCommand}"
+                        Style="{StaticResource NotificationPrimaryButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <SymbolIcon Symbol="Accept" />
+                            <TextBlock Text="全部已读" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="2,2,2,0" ColumnSpacing="10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Orientation="Horizontal" Spacing="9">
+                <TextBlock
+                    FontSize="18"
+                    FontWeight="SemiBold"
+                    Text="最新动态" />
+                <Border
+                    Padding="8,2"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                    CornerRadius="9">
+                    <TextBlock
+                        FontSize="11"
+                        Opacity="0.72"
+                        Text="最近 20 条" />
+                </Border>
+            </StackPanel>
             <TextBlock
+                Grid.Column="1"
                 VerticalAlignment="Center"
-                Opacity="0.75"
-                Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
-            <ProgressRing
-                Width="28"
-                Height="28"
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-        </StackPanel>
+                Opacity="0.55"
+                Style="{StaticResource CaptionTextBlockStyle}"
+                Text="按时间排序" />
+        </Grid>
 
         <Grid Grid.Row="2">
             <ListView
+                x:Name="NotificationList"
+                Padding="0,0,2,0"
+                Background="Transparent"
+                BorderThickness="0"
                 ItemsSource="{x:Bind ViewModel.Items, Mode=OneWay}"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                 SelectionMode="None">
+                <ListView.ItemContainerStyle>
+                    <Style TargetType="ListViewItem">
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,0,8" />
+                        <Setter Property="CornerRadius" Value="16" />
+                    </Style>
+                </ListView.ItemContainerStyle>
                 <ListView.ItemTemplate>
                     <DataTemplate x:DataType="vm:NotificationItemViewModel">
-                        <Grid Padding="8,10" ColumnSpacing="12" Opacity="{x:Bind CardOpacity}">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
+                        <Border Style="{StaticResource NotificationCardStyle}">
+                            <Grid>
+                                <Border
+                                    Background="{ThemeResource NotificationUnreadCardBrush}"
+                                    CornerRadius="15"
+                                    Opacity="{x:Bind UnreadOpacity}" />
 
-                            <Ellipse
-                                Width="10"
-                                Height="10"
-                                VerticalAlignment="Top"
-                                Margin="0,6,0,0"
-                                Fill="{ThemeResource AccentFillColorDefaultBrush}"
-                                Opacity="{x:Bind UnreadOpacity}" />
+                                <Grid Padding="14,13" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="4" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
 
-                            <Grid
-                                Grid.Column="1"
-                                Width="40"
-                                Height="40">
-                                <Ellipse
-                                    Width="40"
-                                    Height="40"
-                                    Fill="{ThemeResource ControlFillColorSecondaryBrush}" />
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    FontSize="14"
-                                    FontWeight="SemiBold"
-                                    Opacity="{x:Bind InitialsOpacity, Mode=OneWay}"
-                                    Text="{x:Bind Initials}" />
-                                <Ellipse Width="40" Height="40" Opacity="{x:Bind AvatarOpacity, Mode=OneWay}">
-                                    <Ellipse.Fill>
-                                        <ImageBrush
-                                            ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
+                                    <Border
+                                        Width="4"
+                                        Height="44"
+                                        VerticalAlignment="Center"
+                                        Background="{ThemeResource AccentFillColorDefaultBrush}"
+                                        CornerRadius="2"
+                                        Opacity="{x:Bind UnreadOpacity}" />
+
+                                    <Grid
+                                        Grid.Column="1"
+                                        Width="44"
+                                        Height="44"
+                                        VerticalAlignment="Top">
+                                        <Ellipse
+                                            Width="44"
+                                            Height="44"
+                                            Fill="{ThemeResource NotificationAvatarBrush}" />
+                                        <TextBlock
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            FontSize="15"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind Initials}" />
+                                        <controls:FastWin2DImage
+                                            Width="44"
+                                            Height="44"
+                                            CornerRadius="22"
+                                            DecodeWidth="96"
+                                            EnableFadeIn="True"
+                                            ShowPlaceholder="False"
+                                            Source="{x:Bind AvatarUrl}"
                                             Stretch="UniformToFill" />
-                                    </Ellipse.Fill>
-                                </Ellipse>
+                                    </Grid>
+
+                                    <StackPanel Grid.Column="2" Spacing="3">
+                                        <TextBlock
+                                            FontSize="15"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind Title}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            FontSize="13"
+                                            Opacity="0.64"
+                                            Text="{x:Bind Subtitle}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            MaxLines="3"
+                                            Opacity="0.82"
+                                            Text="{x:Bind Content}"
+                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="WrapWholeWords" />
+                                        <TextBlock
+                                            Margin="0,3,0,0"
+                                            Opacity="0.5"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Text="{x:Bind Topic}"
+                                            TextTrimming="CharacterEllipsis" />
+                                    </StackPanel>
+
+                                    <StackPanel
+                                        Grid.Column="3"
+                                        HorizontalAlignment="Right"
+                                        Spacing="8">
+                                        <TextBlock
+                                            HorizontalAlignment="Right"
+                                            Opacity="0.56"
+                                            Style="{StaticResource CaptionTextBlockStyle}"
+                                            Text="{x:Bind TimeText}" />
+                                        <Border
+                                            Padding="7,3"
+                                            HorizontalAlignment="Right"
+                                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                            CornerRadius="8"
+                                            Opacity="{x:Bind UnreadOpacity}">
+                                            <TextBlock
+                                                FontSize="11"
+                                                FontWeight="SemiBold"
+                                                Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                                Text="未读" />
+                                        </Border>
+                                    </StackPanel>
+                                </Grid>
                             </Grid>
-
-                            <StackPanel Grid.Column="2" Spacing="2">
-                                <TextBlock
-                                    FontWeight="SemiBold"
-                                    Opacity="{x:Bind CardOpacity}"
-                                    Text="{x:Bind Title}"
-                                    TextWrapping="WrapWholeWords" />
-                                <TextBlock
-                                    Opacity="0.8"
-                                    Text="{x:Bind Content}"
-                                    TextWrapping="WrapWholeWords" />
-                                <TextBlock
-                                    Opacity="0.55"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind Topic}" />
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="3" Spacing="4" HorizontalAlignment="Right">
-                                <TextBlock
-                                    Opacity="0.6"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind TimeText}" />
-                                <TextBlock
-                                    Opacity="{x:Bind UnreadOpacity}"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                    Text="{x:Bind UnreadLabel}" />
-                            </StackPanel>
-                        </Grid>
+                        </Border>
                     </DataTemplate>
                 </ListView.ItemTemplate>
             </ListView>
 
             <controls:PageStateOverlay
-                EmptyMessage="暂无通知"
+                EmptyMessage="暂无通知，新的动态会显示在这里"
                 ErrorMessage="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
                 HasError="{x:Bind ViewModel.HasError, Mode=OneWay}"
                 IsEmpty="{x:Bind ViewModel.IsEmpty, Mode=OneWay}"

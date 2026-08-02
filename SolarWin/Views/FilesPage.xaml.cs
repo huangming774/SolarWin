@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Navigation;
+using SolarWin.Helpers;
+using SolarWin.Services;
 using SolarWin.ViewModels;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -13,6 +15,8 @@ public sealed partial class FilesPage : Page
     private const int ThumbnailPrefetchItemCount = 12;
 
     private readonly HashSet<FileItemViewModel> _visibleThumbnailItems = [];
+    private readonly DysonFileImageLoader _imageLoader;
+    private readonly VideoMediaCache _videoMediaCache;
 
     public FilesViewModel ViewModel { get; }
 
@@ -21,6 +25,8 @@ public sealed partial class FilesPage : Page
     public FilesPage()
     {
         ViewModel = App.Services.GetRequiredService<FilesViewModel>();
+        _imageLoader = App.Services.GetRequiredService<DysonFileImageLoader>();
+        _videoMediaCache = App.Services.GetRequiredService<VideoMediaCache>();
         InitializeComponent();
         ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
     }
@@ -397,7 +403,7 @@ public sealed partial class FilesPage : Page
         ViewModel.UpdateVisibleThumbnailWindow(_visibleThumbnailItems, ThumbnailPrefetchItemCount);
     }
 
-    private void FileGrid_OnItemClick(object sender, ItemClickEventArgs e)
+    private async void FileGrid_OnItemClick(object sender, ItemClickEventArgs e)
     {
         if (e.ClickedItem is FileItemViewModel item)
         {
@@ -405,6 +411,23 @@ public sealed partial class FilesPage : Page
             if (item.IsFolder && ViewModel.OpenItemCommand.CanExecute(item))
             {
                 ViewModel.OpenItemCommand.Execute(item);
+            }
+            else if (item.IsImage && !string.IsNullOrWhiteSpace(item.FullImageSource))
+            {
+                await ImagePreviewHelper.ShowAsync(
+                    XamlRoot,
+                    item.ThumbnailUrl ?? item.FullImageSource,
+                    title: item.Name,
+                    fullResUrl: item.FullImageSource,
+                    imageLoader: _imageLoader);
+            }
+            else if (item.IsVideo && !string.IsNullOrWhiteSpace(item.VideoSource))
+            {
+                if (!await VideoPreviewHelper.ShowAsync(
+                        XamlRoot, item.VideoSource, item.Name, item.MimeType, _videoMediaCache))
+                {
+                    ViewModel.ErrorMessage = "视频下载或解码失败。";
+                }
             }
         }
     }

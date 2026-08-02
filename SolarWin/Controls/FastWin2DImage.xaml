@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="SolarWin.Controls.FastWin2DImage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml">
+    <!--
+      Win2D-backed image host for the posts pipeline.
+      Placeholder shows while loading; CanvasControl draws CanvasBitmap from DysonFileImageLoader.
+    -->
+    <Grid x:Name="RootGrid">
+        <Border
+            x:Name="Placeholder"
+            Background="{ThemeResource CardBackgroundFillColorSecondaryBrush}"
+            IsHitTestVisible="False" />
+        <canvas:CanvasControl
+            x:Name="ImageCanvas"
+            ClearColor="Transparent"
+            Draw="ImageCanvas_OnDraw"
+            Opacity="0" />
+    </Grid>
+</UserControl>

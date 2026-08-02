@@ -3,12 +3,16 @@ using System.Collections.ObjectModel;
 using System.Runtime.InteropServices.WindowsRuntime;
 using LiveKit.Proto;
 using LiveKit.Rtc;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Dispatching;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using NAudio.Wave;
 using SolarWin.Models;
 using Windows.Devices.Enumeration;
 using Windows.Graphics.Imaging;
+using Windows.Graphics.DirectX;
 using Windows.Media.Capture;
 using Windows.Media.Capture.Frames;
 using Windows.Media.MediaProperties;
@@ -25,6 +29,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
 {
     private const int SampleRate = 48000;
     private const int Channels = 1;
+    private const int SurfaceShrinkAfterFrames = 120;
 
     private readonly object _gate = new();
     private readonly ConcurrentDictionary<string, RemoteAudioSink> _audioSinks = new(StringComparer.Ordinal);
@@ -34,6 +39,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
     // Per-tile frame handoff: latest-wins gate + double buffer so a slow UI thread
     // drops frames instead of piling multi-MB closures onto the DispatcherQueue.
     private readonly ConcurrentDictionary<string, TileFrameState> _frameStates = new(StringComparer.Ordinal);
+    private readonly CanvasDevice _videoCanvasDevice = CanvasDevice.GetSharedDevice();
 
     private Room? _room;
     private AudioSource? _audioSource;
@@ -91,7 +97,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
 
     public WriteableBitmap? LocalVideo { get; private set; }
 
-    public WriteableBitmap? FocusedRemoteVideo { get; private set; }
+    public ImageSource? FocusedRemoteVideo { get; private set; }
 
     public string? FocusedIdentity => _focusedIdentity;
 
@@ -332,11 +338,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             _participants.Clear();
         }
 
-        EnqueueUi(() =>
-        {
-            VideoTiles.Clear();
-            _tilesByKey.Clear();
-        });
+        EnqueueUi(ClearVideoTiles, ReleaseVideoTileResourcesFallback);
 
         RaiseState();
         RaiseParticipants();
@@ -851,16 +853,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
                 var state = _frameStates.GetOrAdd(key, static _ => new TileFrameState());
                 var scratch = state.GetWriteBuffer(needed);
                 bgra.CopyToBuffer(scratch.AsBuffer());
-
-                var rgba = state.RgbaBuffer;
-                if (rgba is null || rgba.Length < needed)
-                {
-                    rgba = new byte[needed];
-                    state.RgbaBuffer = rgba;
-                }
-
-                SwizzleBgraToRgba(scratch, rgba, needed);
-                _videoSource.CaptureFrame(new VideoFrame(w, h, VideoBufferType.Rgba, rgba));
+                _videoSource.CaptureFrame(new VideoFrame(w, h, VideoBufferType.Bgra, scratch));
 
                 // Latest-wins: skip the preview update while a previous one is still queued.
                 if (Interlocked.CompareExchange(ref state.UiPending, 1, 0) != 0)
@@ -875,15 +868,15 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
                     {
                         var tile = UpsertTile(key, "我", isLocal: true, screen: false);
                         EnsureTileBitmap(tile, w, h);
-                        if (tile.Bitmap is null)
+                        if (tile.Bitmap is not WriteableBitmap localBitmap)
                         {
                             return;
                         }
 
-                        using var stream = tile.Bitmap.PixelBuffer.AsStream();
+                        using var stream = localBitmap.PixelBuffer.AsStream();
                         stream.Write(scratch, 0, needed);
-                        tile.Bitmap.Invalidate();
-                        LocalVideo = tile.Bitmap;
+                        localBitmap.Invalidate();
+                        LocalVideo = localBitmap;
                         RaiseVideo();
                     }
                     catch
@@ -1099,7 +1092,9 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
 
         EnqueueUi(() => UpsertTile(key, displayName + (isScreen ? " · 屏幕" : string.Empty), isLocal: false, screen: isScreen));
 
-        _ = Task.Run(async () =>
+        _ = PumpRemoteFramesAsync();
+
+        async Task PumpRemoteFramesAsync()
         {
             try
             {
@@ -1151,15 +1146,8 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
                                     tile = UpsertTile(key, displayName, isLocal: false, screen: isScreen);
                                 }
 
-                                EnsureTileBitmap(tile, w, h);
-                                if (tile.Bitmap is null)
-                                {
-                                    return;
-                                }
-
-                                using var s = tile.Bitmap.PixelBuffer.AsStream();
-                                s.Write(buf, 0, needed);
-                                tile.Bitmap.Invalidate();
+                                PresentRemoteFrame(tile, buf, w, h);
+                                if (tile.Bitmap is null) return;
 
                                 if (_focusedIdentity is null
                                     || string.Equals(_focusedIdentity, identity, StringComparison.Ordinal))
@@ -1197,9 +1185,12 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             }
             finally
             {
-                _videoLoops.TryRemove(sid, out _);
+                if (_videoLoops.TryRemove(sid, out var completedLoop))
+                {
+                    completedLoop.Dispose();
+                }
             }
-        }, cts.Token);
+        }
     }
 
     private void OnParticipantConnected(object? sender, Participant participant)
@@ -1409,9 +1400,10 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         {
             if (_tilesByKey.Remove(key, out var tile))
             {
+                ReleaseTileResources(tile);
                 VideoTiles.Remove(tile);
             }
-        });
+        }, () => ReleaseTileByKeyFallback(key));
     }
 
     private static string TileKey(string identity, bool isLocal, bool screen)
@@ -1431,10 +1423,76 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             return;
         }
 
-        if (tile.Bitmap is null || tile.Bitmap.PixelWidth != width || tile.Bitmap.PixelHeight != height)
+        if (tile.Bitmap is not WriteableBitmap bitmap
+            || bitmap.PixelWidth != width
+            || bitmap.PixelHeight != height)
         {
             tile.Bitmap = new WriteableBitmap(width, height);
         }
+    }
+
+    private void PresentRemoteFrame(CallVideoTile tile, byte[] bgra, int width, int height)
+    {
+        if (width <= 0 || height <= 0 || bgra.Length < width * height * 4)
+        {
+            return;
+        }
+
+        if (tile.GpuBitmap is null
+            || tile.FrameWidth != width
+            || tile.FrameHeight != height)
+        {
+            tile.GpuBitmap?.Dispose();
+            tile.GpuBitmap = CanvasBitmap.CreateFromBytes(
+                _videoCanvasDevice,
+                bgra,
+                width,
+                height,
+                DirectXPixelFormat.B8G8R8A8UIntNormalized);
+            tile.FrameWidth = width;
+            tile.FrameHeight = height;
+        }
+        else
+        {
+            tile.GpuBitmap.SetPixelBytes(bgra);
+        }
+
+        // CanvasImageSource has no deterministic Dispose API. Keep the largest surface
+        // seen by this tile and scale subsequent smaller adaptive-resolution frames into
+        // it, so resolution oscillation does not continuously allocate native surfaces.
+        var surfaceArea = (long)tile.SurfaceWidth * tile.SurfaceHeight;
+        var frameArea = (long)width * height;
+        if (surfaceArea > frameArea * 2)
+        {
+            tile.SurfaceSmallFrameCount++;
+        }
+        else
+        {
+            tile.SurfaceSmallFrameCount = 0;
+        }
+
+        var shouldShrinkSurface = tile.SurfaceSmallFrameCount >= SurfaceShrinkAfterFrames;
+        if (tile.GpuSurface is null
+            || width > tile.SurfaceWidth
+            || height > tile.SurfaceHeight
+            || shouldShrinkSurface)
+        {
+            var surfaceWidth = shouldShrinkSurface ? width : Math.Max(width, tile.SurfaceWidth);
+            var surfaceHeight = shouldShrinkSurface ? height : Math.Max(height, tile.SurfaceHeight);
+            tile.Bitmap = null;
+            tile.GpuSurface = null;
+            tile.GpuSurface = new CanvasImageSource(_videoCanvasDevice, surfaceWidth, surfaceHeight, 96);
+            tile.SurfaceWidth = surfaceWidth;
+            tile.SurfaceHeight = surfaceHeight;
+            tile.SurfaceSmallFrameCount = 0;
+            tile.Bitmap = tile.GpuSurface;
+        }
+
+        using var drawing = tile.GpuSurface.CreateDrawingSession(Microsoft.UI.Colors.Black);
+        drawing.DrawImage(
+            tile.GpuBitmap,
+            new Windows.Foundation.Rect(0, 0, tile.SurfaceWidth, tile.SurfaceHeight),
+            new Windows.Foundation.Rect(0, 0, width, height));
     }
 
     private async Task TeardownMediaAsync()
@@ -1540,7 +1598,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         _sessionCts = null;
     }
 
-    private void EnqueueUi(Action action)
+    private bool EnqueueUi(Action action, Action? onEnqueueFailure = null)
     {
         var q = _uiQueue ?? App.DispatcherQueue;
         if (q is null)
@@ -1548,16 +1606,24 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             try
             {
                 action();
+                return true;
             }
             catch
             {
-                // ignore
-            }
+                try
+                {
+                    onEnqueueFailure?.Invoke();
+                }
+                catch
+                {
+                    // no dispatcher is available; cleanup remains best effort
+                }
 
-            return;
+                return false;
+            }
         }
 
-        q.TryEnqueue(() =>
+        if (q.TryEnqueue(() =>
         {
             try
             {
@@ -1567,7 +1633,94 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             {
                 // ignore
             }
-        });
+        }))
+        {
+            return true;
+        }
+
+        try
+        {
+            onEnqueueFailure?.Invoke();
+        }
+        catch
+        {
+            // Queue shutdown is already in progress; cleanup remains best effort.
+        }
+
+        return false;
+    }
+
+    private void ClearVideoTiles()
+    {
+        foreach (var tile in VideoTiles)
+        {
+            ReleaseTileResources(tile);
+        }
+
+        VideoTiles.Clear();
+        _tilesByKey.Clear();
+    }
+
+    private void ReleaseVideoTileResourcesFallback()
+    {
+        foreach (var tile in _tilesByKey.Values.ToArray())
+        {
+            ReleaseTileResourcesFallback(tile);
+        }
+
+        _tilesByKey.Clear();
+    }
+
+    private void ReleaseTileByKeyFallback(string key)
+    {
+        if (_tilesByKey.Remove(key, out var tile))
+        {
+            ReleaseTileResourcesFallback(tile);
+        }
+    }
+
+    private static void ReleaseTileResources(CallVideoTile tile)
+    {
+        tile.Bitmap = null;
+        tile.GpuBitmap?.Dispose();
+        tile.GpuBitmap = null;
+        tile.GpuSurface = null;
+        tile.FrameWidth = 0;
+        tile.FrameHeight = 0;
+        tile.SurfaceWidth = 0;
+        tile.SurfaceHeight = 0;
+        tile.SurfaceSmallFrameCount = 0;
+    }
+
+    private static void ReleaseTileResourcesFallback(CallVideoTile tile)
+    {
+        // The dispatcher is gone, so XAML property notification may reject this thread.
+        // Dispose every native resource independently and never let one failure prevent
+        // cleanup of the remaining tiles.
+        try
+        {
+            tile.GpuBitmap?.Dispose();
+        }
+        catch
+        {
+            // ignore
+        }
+
+        tile.GpuBitmap = null;
+        tile.GpuSurface = null;
+        tile.FrameWidth = 0;
+        tile.FrameHeight = 0;
+        tile.SurfaceWidth = 0;
+        tile.SurfaceHeight = 0;
+        tile.SurfaceSmallFrameCount = 0;
+        try
+        {
+            tile.Bitmap = null;
+        }
+        catch
+        {
+            // The process/window is shutting down; no UI dispatcher remains.
+        }
     }
 
     private void RaiseState() => StateChanged?.Invoke(this, EventArgs.Empty);
@@ -1597,17 +1750,6 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         return u;
     }
 
-    private static void SwizzleBgraToRgba(byte[] src, byte[] dst, int length)
-    {
-        for (var i = 0; i < length; i += 4)
-        {
-            dst[i] = src[i + 2];
-            dst[i + 1] = src[i + 1];
-            dst[i + 2] = src[i];
-            dst[i + 3] = src[i + 3];
-        }
-    }
-
     /// <summary>
     /// Per-tile frame handoff state. The producer (camera callback / remote track loop)
     /// writes into the current write buffer, flips, then the UI reads that buffer while
@@ -1616,15 +1758,36 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
     /// </summary>
     private sealed class TileFrameState
     {
+        private const int ShrinkAfterFrames = 120;
+
         public int UiPending;
-        public byte[]? RgbaBuffer;
 
         private byte[]? _bufferA;
         private byte[]? _bufferB;
         private int _writeIndex;
+        private int _smallFrameCount;
 
         public byte[] GetWriteBuffer(int needed)
         {
+            var currentCapacity = Math.Max(_bufferA?.Length ?? 0, _bufferB?.Length ?? 0);
+            if (currentCapacity > (long)needed * 2)
+            {
+                _smallFrameCount++;
+                if (_smallFrameCount >= ShrinkAfterFrames)
+                {
+                    // UiPending guarantees the previous presentation completed before a
+                    // new frame reaches this method, so both buffers are safe to replace.
+                    _bufferA = new byte[needed];
+                    _bufferB = new byte[needed];
+                    _writeIndex = 0;
+                    _smallFrameCount = 0;
+                }
+            }
+            else
+            {
+                _smallFrameCount = 0;
+            }
+
             if (_writeIndex == 0)
             {
                 if (_bufferA is null || _bufferA.Length < needed)
@@ -1703,7 +1866,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         {
             _cts = new CancellationTokenSource();
             _waveOut.Play();
-            _ = Task.Run(() => PumpAsync(_cts.Token));
+            _ = PumpAsync(_cts.Token);
         }
 
         private async Task PumpAsync(CancellationToken ct)

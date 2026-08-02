@@ -5,15 +5,19 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Project Path="SolarWin.Native/SolarWin.Native.vcxproj" Id="6a52bc55-6411-48d4-b635-f7975d8ba9b2">
+    <Build Solution="*|ARM64" Project="false" />
+    <Platform Solution="*|Any CPU" Project="x64" />
+    <Platform Solution="*|x86" Project="Win32" />
+  </Project>
+  <Project Path="SolarWin.Tests/SolarWin.Tests.csproj">
+    <Platform Solution="*|ARM64" Project="ARM64" />
+  </Project>
   <Project Path="SolarWin/SolarWin.csproj">
     <Platform Solution="*|Any CPU" Project="x64" />
     <Platform Solution="*|ARM64" Project="ARM64" />
     <Platform Solution="*|x64" Project="x64" />
     <Platform Solution="*|x86" Project="x86" />
     <Deploy Solution="*|x64" />
-  </Project>
-  <Project Path="SolarWin.Tests/SolarWin.Tests.csproj">
-    <Platform Solution="*|ARM64" Project="ARM64" />
-    <Platform Solution="*|x86" Project="AnyCPU" />
   </Project>
 </Solution>

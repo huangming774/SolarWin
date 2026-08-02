@@ -157,4 +157,35 @@ public class ChatMessageMapperTests
         Assert.DoesNotContain("\"encryption_signature\"", json, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("\"content\"", json, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void RoundTrip_Preserves_Forwarded_Message_Preview()
+    {
+        var roomId = Guid.NewGuid();
+        var forwardedId = Guid.NewGuid();
+        var original = new SnChatMessage
+        {
+            Id = Guid.NewGuid(),
+            ChatRoomId = roomId,
+            ForwardedMessageId = forwardedId,
+            ForwardedMessage = new SnChatMessage
+            {
+                Id = forwardedId,
+                ChatRoomId = Guid.NewGuid(),
+                Content = "forwarded body",
+                Sender = new SnChatMember
+                {
+                    Nick = "Forwarded sender",
+                },
+            },
+        };
+
+        var entity = ChatMessageMapper.ToEntity(original, roomId, ChatMessageSource.Api);
+        var roundTrip = ChatMessageMapper.ToDto(entity);
+
+        Assert.Equal(forwardedId, roundTrip.ForwardedMessageId);
+        Assert.NotNull(roundTrip.ForwardedMessage);
+        Assert.Equal("forwarded body", roundTrip.ForwardedMessage!.Content);
+        Assert.Equal("Forwarded sender", roundTrip.ForwardedMessage.Sender?.Nick);
+    }
 }

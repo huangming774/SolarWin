@@ -1,4 +1,7 @@
 using System.Collections.ObjectModel;
+using Microsoft.Graphics.Canvas;
+using Microsoft.Graphics.Canvas.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Models;
 
@@ -38,7 +41,7 @@ public interface IRealtimeCallService : IAsyncDisposable
     WriteableBitmap? LocalVideo { get; }
 
     /// <summary>Focused remote tile (or first remote).</summary>
-    WriteableBitmap? FocusedRemoteVideo { get; }
+    ImageSource? FocusedRemoteVideo { get; }
 
     string? FocusedIdentity { get; }
 
@@ -124,7 +127,21 @@ public partial class CallVideoTile : CommunityToolkit.Mvvm.ComponentModel.Observ
     public bool IsScreenShare { get; init; }
 
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
-    public partial WriteableBitmap? Bitmap { get; set; }
+    public partial ImageSource? Bitmap { get; set; }
+
+    internal CanvasBitmap? GpuBitmap { get; set; }
+
+    internal CanvasImageSource? GpuSurface { get; set; }
+
+    internal int FrameWidth { get; set; }
+
+    internal int FrameHeight { get; set; }
+
+    internal int SurfaceWidth { get; set; }
+
+    internal int SurfaceHeight { get; set; }
+
+    internal int SurfaceSmallFrameCount { get; set; }
 
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty]
     public partial bool IsFocused { get; set; }

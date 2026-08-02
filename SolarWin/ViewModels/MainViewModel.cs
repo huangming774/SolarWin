@@ -1,5 +1,7 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using SolarWin.Helpers;
+using SolarWin.Models;
 using SolarWin.Services;
 
 namespace SolarWin.ViewModels;
@@ -7,6 +9,8 @@ namespace SolarWin.ViewModels;
 /// <summary>Shell-level state for the authenticated main frame.</summary>
 public partial class MainViewModel : ObservableObject
 {
+    private static readonly TimeSpan ShellProfileCacheDuration = TimeSpan.FromMinutes(30);
+
     private readonly IAuthService _authService;
     private readonly ISolarApiClient _api;
 
@@ -23,6 +27,12 @@ public partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string? UserHandle { get; set; }
+
+    [ObservableProperty]
+    public partial string UserInitials { get; set; } = "?";
+
+    [ObservableProperty]
+    public partial string? UserAvatarUrl { get; set; }
 
     [ObservableProperty]
     public partial string? StatusText { get; set; }
@@ -52,14 +62,20 @@ public partial class MainViewModel : ObservableObject
         {
             UserDisplayName = null;
             UserHandle = null;
+            UserInitials = "?";
+            UserAvatarUrl = null;
             StatusText = "未登录";
             UnreadNotificationCount = 0;
             return;
         }
 
-        UserDisplayName = account.Nick ?? account.Name ?? "用户";
-        UserHandle = account.Name is null ? null : $"@{account.Name}";
-        StatusText = $"Perk {account.PerkLevel}";
+        ApplyAccount(account);
+        if (account.Id != Guid.Empty
+            && OfflineCache.TryGetJson<SnAccount>(GetShellProfileCacheKey(account.Id), out var cached)
+            && cached?.Id == account.Id)
+        {
+            ApplyAccount(cached);
+        }
     }
 
     public async Task RefreshNotificationBadgeAsync()
@@ -118,11 +134,43 @@ public partial class MainViewModel : ObservableObject
     {
         try
         {
+            var accountId = _authService.CurrentAccount?.Id;
+            if (accountId is { } id
+                && id != Guid.Empty
+                && OfflineCache.TryGetJson<SnAccount>(GetShellProfileCacheKey(id), out var cached)
+                && cached?.Id == id)
+            {
+                ApplyAccount(cached);
+                return;
+            }
+
             StatusText = "同步中…";
             var me = await _api.GetMeAsync().ConfigureAwait(true);
-            UserDisplayName = me.Nick ?? me.Name ?? "用户";
-            UserHandle = me.Name is null ? null : $"@{me.Name}";
-            StatusText = $"Perk {me.PerkLevel}";
+            try
+            {
+                me.Profile = await _api.GetMyProfileAsync().ConfigureAwait(true);
+            }
+            catch (SolarApiException)
+            {
+                // The account endpoint may already contain enough profile data.
+            }
+
+            ApplyAccount(me);
+            if (me.Id != Guid.Empty)
+            {
+                try
+                {
+                    OfflineCache.SetJson(
+                        GetShellProfileCacheKey(me.Id),
+                        me,
+                        ShellProfileCacheDuration);
+                }
+                catch
+                {
+                    // Profile display must not fail when the optional disk cache is unavailable.
+                }
+            }
+
             await RefreshNotificationBadgeAsync().ConfigureAwait(true);
         }
         catch (SolarApiException ex)
@@ -130,4 +178,17 @@ public partial class MainViewModel : ObservableObject
             StatusText = ex.Message;
         }
     }
+
+    private void ApplyAccount(SnAccount account)
+    {
+        var displayName = account.Nick ?? account.Name ?? "用户";
+        UserDisplayName = displayName;
+        UserHandle = account.Name is null ? null : $"@{account.Name}";
+        UserInitials = displayName.Length > 0 ? displayName[..1].ToUpperInvariant() : "?";
+        UserAvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(account);
+        StatusText = $"Perk {account.PerkLevel}";
+    }
+
+    private static string GetShellProfileCacheKey(Guid accountId)
+        => $"shell_profile_{accountId:N}";
 }

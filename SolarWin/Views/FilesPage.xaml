@@ -3,155 +3,232 @@
     x:Class="SolarWin.Views.FilesPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SolarWin.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="using:SolarWin.ViewModels"
     Unloaded="FilesPage_OnUnloaded"
     mc:Ignorable="d">
 
-    <Grid Padding="16" RowSpacing="12">
+    <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <LinearGradientBrush x:Key="FilesHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#FFF5E8" />
+                        <GradientStop Offset="0.48" Color="#F3F7F1" />
+                        <GradientStop Offset="1" Color="#E7F4F0" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="FilesSoftBrush" Color="#F5F7F5" />
+                    <SolidColorBrush x:Key="FilesAccentSoftBrush" Color="#FFE6C6" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <LinearGradientBrush x:Key="FilesHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#453226" />
+                        <GradientStop Offset="0.48" Color="#2D3933" />
+                        <GradientStop Offset="1" Color="#203B38" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="FilesSoftBrush" Color="#202622" />
+                    <SolidColorBrush x:Key="FilesAccentSoftBrush" Color="#513B27" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Default">
+                    <LinearGradientBrush x:Key="FilesHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                        <GradientStop Offset="0" Color="#453226" />
+                        <GradientStop Offset="0.48" Color="#2D3933" />
+                        <GradientStop Offset="1" Color="#203B38" />
+                    </LinearGradientBrush>
+                    <SolidColorBrush x:Key="FilesSoftBrush" Color="#202622" />
+                    <SolidColorBrush x:Key="FilesAccentSoftBrush" Color="#513B27" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+            <Style x:Key="FilesToolButtonStyle" TargetType="Button">
+                <Setter Property="MinHeight" Value="36" />
+                <Setter Property="Padding" Value="12,7" />
+                <Setter Property="CornerRadius" Value="10" />
+            </Style>
+            <Style x:Key="FilesPrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+                <Setter Property="MinHeight" Value="40" />
+                <Setter Property="Padding" Value="16,8" />
+                <Setter Property="CornerRadius" Value="12" />
+            </Style>
+        </ResourceDictionary>
+    </Page.Resources>
+
+    <Grid Padding="20" RowSpacing="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="文件" />
+        <Border Padding="22,18" Background="{ThemeResource FilesHeroBrush}" CornerRadius="20">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Spacing="7">
+                    <StackPanel Orientation="Horizontal" Spacing="11">
+                        <Border Width="40" Height="40" Background="{ThemeResource FilesAccentSoftBrush}" CornerRadius="12">
+                            <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="19" Glyph="&#xE8B7;" />
+                        </Border>
+                        <TextBlock VerticalAlignment="Center" FontSize="27" FontWeight="SemiBold" Text="文件" />
+                        <Border Padding="8,3" VerticalAlignment="Center" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" CornerRadius="10">
+                            <TextBlock FontSize="10" FontWeight="SemiBold" Opacity="0.68" Text="SPACE" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Opacity="0.68" Text="整理、预览并安全保存每一份重要资料" />
+                    <StackPanel Orientation="Horizontal" Spacing="7">
+                        <Ellipse Width="7" Height="7" VerticalAlignment="Center" Fill="{ThemeResource AccentFillColorDefaultBrush}" />
+                        <TextBlock VerticalAlignment="Center" Opacity="0.68" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" />
+                        <ProgressRing Width="16" Height="16" IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" VerticalAlignment="Top" Orientation="Horizontal" Spacing="8">
+                    <Button Click="Refresh_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="刷新">
+                        <FontIcon FontSize="15" Glyph="&#xE72C;" />
+                    </Button>
+                    <Button Click="Upload_OnClick" Style="{StaticResource FilesPrimaryButtonStyle}" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon FontSize="14" Glyph="&#xE898;" />
+                            <TextBlock Text="上传文件" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-        <TextBlock
+        <Border
             Grid.Row="1"
-            Opacity="0.8"
-            Text="{x:Bind ViewModel.Breadcrumb, Mode=OneWay}"
-            TextTrimming="CharacterEllipsis" />
-
-        <StackPanel
-            Grid.Row="2"
-            Orientation="Horizontal"
-            Spacing="8">
-            <Button Click="Refresh_OnClick" Content="刷新" />
-            <Button
-                Click="GoUp_OnClick"
-                Content="上级"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="CreateFolder_OnClick"
-                Content="新建文件夹"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Upload_OnClick"
-                Content="上传文件"
-                Style="{StaticResource AccentButtonStyle}"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Rename_OnClick"
-                Content="重命名"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Move_OnClick"
-                Content="移动"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Recycle_OnClick"
-                Content="删除"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Download_OnClick"
-                Content="下载"
-                Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="Restore_OnClick"
-                Content="恢复"
-                Style="{StaticResource AccentButtonStyle}"
-                Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}" />
-            <Button
-                Click="DeletePermanent_OnClick"
-                Content="永久删除"
-                Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}" />
-            <Button Click="ToggleRecycleBin_OnClick" Content="{x:Bind RecycleBinButtonText, Mode=OneWay}" />
-            <ProgressRing
-                Width="28"
-                Height="28"
-                IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-        </StackPanel>
-
-        <GridView
-            x:Name="FileGrid"
-            Grid.Row="3"
-            IsItemClickEnabled="True"
-            ContainerContentChanging="FileGrid_OnContainerContentChanging"
-            ItemClick="FileGrid_OnItemClick"
-            ItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}"
-            SelectionChanged="FileGrid_OnSelectionChanged"
-            SelectionMode="Single">
-            <GridView.ItemTemplate>
-                <DataTemplate x:DataType="vm:FileItemViewModel">
-                    <Border
-                        Width="140"
-                        Height="160"
-                        Padding="8"
-                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="8">
-                        <Grid RowSpacing="6">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="*" />
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
-
-                            <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
-                                <FontIcon
-                                    FontSize="40"
-                                    Glyph="{x:Bind IconGlyph}"
-                                    Opacity="{x:Bind IconOpacity, Mode=OneWay}" />
-                                <Image
-                                    Width="96"
-                                    Height="96"
-                                    Source="{x:Bind Thumbnail, Mode=OneWay}"
-                                    Opacity="{x:Bind ThumbnailOpacity, Mode=OneWay}"
-                                    Stretch="UniformToFill" />
-                            </Grid>
-
-                            <TextBlock
-                                Grid.Row="1"
-                                FontWeight="SemiBold"
-                                Text="{x:Bind Name}"
-                                TextTrimming="CharacterEllipsis"
-                                TextWrapping="NoWrap" />
-                            <TextBlock
-                                Grid.Row="2"
-                                Opacity="0.65"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind SizeText}" />
-                            <TextBlock
-                                Grid.Row="2"
-                                Margin="0,14,0,0"
-                                Opacity="0.55"
-                                Style="{StaticResource CaptionTextBlockStyle}"
-                                Text="{x:Bind DateText}"
-                                TextTrimming="CharacterEllipsis" />
-                        </Grid>
+            Padding="12"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="16">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal" Spacing="9">
+                    <Button Click="GoUp_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="返回上级" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE72B;" />
+                    </Button>
+                    <Border Padding="10,7" VerticalAlignment="Center" Background="{ThemeResource FilesSoftBrush}" CornerRadius="9">
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE8B7;" />
+                            <TextBlock MaxWidth="380" Text="{x:Bind ViewModel.Breadcrumb, Mode=OneWay}" TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
                     </Border>
-                </DataTemplate>
-            </GridView.ItemTemplate>
-        </GridView>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="4">
+                    <Button Click="CreateFolder_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="新建文件夹" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE8F4;" />
+                    </Button>
+                    <Button Click="Rename_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="重命名" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE8AC;" />
+                    </Button>
+                    <Button Click="Move_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="移动" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE8AB;" />
+                    </Button>
+                    <Button Click="Download_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="下载" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE896;" />
+                    </Button>
+                    <Button Click="Recycle_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="移入回收站" Visibility="{x:Bind ViewModel.NormalModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                    </Button>
+                    <Button Click="Restore_OnClick" Style="{StaticResource FilesPrimaryButtonStyle}" Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}" Content="恢复" />
+                    <Button Click="DeletePermanent_OnClick" Style="{StaticResource FilesToolButtonStyle}" ToolTipService.ToolTip="永久删除" Visibility="{x:Bind ViewModel.RecycleBinModeVisibility, Mode=OneWay}">
+                        <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                    </Button>
+                    <Button Click="ToggleRecycleBin_OnClick" Style="{StaticResource FilesToolButtonStyle}">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="14" Glyph="&#xE74D;" />
+                            <TextBlock Text="{x:Bind RecycleBinButtonText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
 
-        <StackPanel Grid.Row="4" Spacing="6">
-            <ProgressBar
-                Maximum="1"
-                Minimum="0"
-                Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}" />
-            <TextBlock
-                Opacity="0.8"
-                Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
-                TextWrapping="Wrap" />
-            <TextBlock
-                Foreground="{ThemeResource SystemFillColorCriticalBrush}"
-                Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
-                TextWrapping="Wrap" />
+        <Grid Grid.Row="2">
+            <GridView
+                x:Name="FileGrid"
+                Background="Transparent"
+                ContainerContentChanging="FileGrid_OnContainerContentChanging"
+                IsItemClickEnabled="True"
+                ItemClick="FileGrid_OnItemClick"
+                ItemsSource="{x:Bind ViewModel.Files, Mode=OneWay}"
+                ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                ScrollViewer.HorizontalScrollMode="Disabled"
+                ScrollViewer.VerticalScrollBarVisibility="Auto"
+                ScrollViewer.VerticalScrollMode="Enabled"
+                SelectionChanged="FileGrid_OnSelectionChanged"
+                SelectionMode="Single">
+                <GridView.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <ItemsWrapGrid Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </GridView.ItemsPanel>
+                <GridView.ItemContainerStyle>
+                    <Style TargetType="GridViewItem">
+                        <Setter Property="Padding" Value="0" />
+                        <Setter Property="Margin" Value="0,0,12,12" />
+                    </Style>
+                </GridView.ItemContainerStyle>
+                <GridView.ItemTemplate>
+                    <DataTemplate x:DataType="vm:FileItemViewModel">
+                        <Border
+                            Width="164"
+                            Height="184"
+                            Padding="12"
+                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="16">
+                            <Grid RowSpacing="7">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Border Background="{ThemeResource FilesSoftBrush}" CornerRadius="11">
+                                    <Grid HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <FontIcon FontSize="42" Glyph="{x:Bind IconGlyph}" Opacity="{x:Bind IconOpacity}" />
+                                        <controls:FastWin2DImage
+                                            Width="116"
+                                            Height="106"
+                                            CornerRadius="10"
+                                            DecodeWidth="232"
+                                            EnableFadeIn="True"
+                                            FallbackSource="{x:Bind ThumbnailFallbackUrl}"
+                                            ShowPlaceholder="False"
+                                            Source="{x:Bind ThumbnailUrl, Mode=OneWay}"
+                                            Stretch="UniformToFill" />
+                                    </Grid>
+                                </Border>
+                                <TextBlock Grid.Row="1" FontWeight="SemiBold" Text="{x:Bind Name}" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
+                                <Grid Grid.Row="2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Opacity="0.62" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind SizeText}" />
+                                    <TextBlock Grid.Column="1" Opacity="0.55" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DateText}" TextTrimming="CharacterEllipsis" />
+                                </Grid>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </GridView.ItemTemplate>
+            </GridView>
+
+        </Grid>
+
+        <StackPanel Grid.Row="3" Spacing="6">
+            <ProgressBar Maximum="1" Minimum="0" Value="{x:Bind ViewModel.UploadProgress, Mode=OneWay}" />
+            <TextBlock Opacity="0.78" Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}" TextWrapping="Wrap" />
+            <TextBlock Foreground="{ThemeResource SystemFillColorCriticalBrush}" Text="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}" TextWrapping="Wrap" />
         </StackPanel>
     </Grid>
 </Page>

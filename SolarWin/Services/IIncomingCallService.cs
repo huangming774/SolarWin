@@ -18,6 +18,12 @@ public interface IIncomingCallService
     /// <summary>Manually raise an invite (e.g. local test or parsed notification).</summary>
     void PresentInvite(IncomingCallInfo info);
 
+    /// <summary>Prevent the locally initiated call from being presented as an incoming invite.</summary>
+    void MarkOutgoingCall(Guid roomId, Guid? callId = null);
+
+    /// <summary>Remove the short-lived room suppression when creating a call failed.</summary>
+    void CancelOutgoingCall(Guid roomId);
+
     void Decline();
 
     /// <summary>
@@ -29,6 +35,9 @@ public interface IIncomingCallService
 public sealed class IncomingCallInfo
 {
     public required Guid RoomId { get; init; }
+
+    /// <summary>Server-side call session id when supplied by the invite event.</summary>
+    public Guid? CallId { get; init; }
 
     public string? RoomTitle { get; init; }
 

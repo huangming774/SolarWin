@@ -1,0 +1,350 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.ChatDataCenterPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SolarWin.Controls"
+    xmlns:converters="using:SolarWin.Converters"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:lvc="using:LiveChartsCore.SkiaSharpView.WinUI"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    AutomationProperties.Name="聊天数据中心"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolVisibility" />
+        <converters:BoolToVisibilityConverter x:Key="InverseBoolVisibility" Invert="True" />
+        <converters:TrendGranularityToTextConverter x:Key="GranularityText" />
+        <Style x:Key="AnalyticsCardStyle" TargetType="Border">
+            <Setter Property="Padding" Value="20" />
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+        </Style>
+        <Style x:Key="MetricCardStyle" TargetType="Border" BasedOn="{StaticResource AnalyticsCardStyle}">
+            <Setter Property="Padding" Value="18" />
+        </Style>
+    </Page.Resources>
+
+    <Grid Padding="24,18,24,28" RowSpacing="14">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <Grid ColumnSpacing="14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Spacing="4">
+                <TextBlock FontSize="28" FontWeight="SemiBold" Text="数据中心" />
+                <TextBlock
+                    Opacity="0.66"
+                    Text="所有统计均在本地完成，不会上传聊天内容"
+                    TextWrapping="Wrap" />
+                <TextBlock
+                    Opacity="0.55"
+                    Style="{StaticResource CaptionTextBlockStyle}"
+                    Text="{x:Bind ViewModel.SummaryText, Mode=OneWay}" />
+            </StackPanel>
+            <ProgressRing
+                Grid.Column="1"
+                Width="28"
+                Height="28"
+                VerticalAlignment="Center"
+                AutomationProperties.Name="正在加载聊天统计"
+                IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}" />
+        </Grid>
+
+        <!-- Filters are horizontally scrollable at the smallest supported window size. -->
+        <Border Grid.Row="1" Padding="14" Style="{StaticResource AnalyticsCardStyle}">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" HorizontalScrollMode="Auto">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <StackPanel Spacing="4">
+                        <TextBlock Opacity="0.62" Style="{StaticResource CaptionTextBlockStyle}" Text="起始日期" />
+                        <DatePicker
+                            Width="158"
+                            AutomationProperties.Name="统计起始日期"
+                            Date="{x:Bind ViewModel.StartDate, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Opacity="0.62" Style="{StaticResource CaptionTextBlockStyle}" Text="结束日期" />
+                        <DatePicker
+                            Width="158"
+                            AutomationProperties.Name="统计结束日期"
+                            Date="{x:Bind ViewModel.EndDate, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Opacity="0.62" Style="{StaticResource CaptionTextBlockStyle}" Text="会话范围" />
+                        <ComboBox
+                            Width="220"
+                            AutomationProperties.Name="选择聊天会话"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{x:Bind ViewModel.Conversations, Mode=OneWay}"
+                            SelectedItem="{x:Bind ViewModel.SelectedConversation, Mode=TwoWay}" />
+                    </StackPanel>
+                    <StackPanel Spacing="4">
+                        <TextBlock Opacity="0.62" Style="{StaticResource CaptionTextBlockStyle}" Text="趋势粒度" />
+                        <ComboBox
+                            Width="110"
+                            AutomationProperties.Name="选择趋势粒度"
+                            ItemsSource="{x:Bind ViewModel.Granularities}"
+                            SelectedItem="{x:Bind ViewModel.SelectedGranularity, Mode=TwoWay}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding Converter={StaticResource GranularityText}}" />
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                    </StackPanel>
+                    <ToggleSwitch
+                        MinWidth="150"
+                        VerticalAlignment="Bottom"
+                        AutomationProperties.Name="仅统计我发送的消息"
+                        Header="仅看我发送"
+                        IsOn="{x:Bind ViewModel.OnlyCurrentUser, Mode=TwoWay}" />
+                    <Button
+                        MinWidth="90"
+                        VerticalAlignment="Bottom"
+                        AutomationProperties.Name="重置统计筛选"
+                        Command="{x:Bind ViewModel.ResetFilterCommand}"
+                        Content="重置" />
+                    <Button
+                        MinWidth="100"
+                        VerticalAlignment="Bottom"
+                        AutomationProperties.Name="刷新聊天统计"
+                        Command="{x:Bind ViewModel.RefreshCommand}"
+                        Content="刷新"
+                        Style="{StaticResource AccentButtonStyle}" />
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <ScrollViewer
+            Grid.Row="2"
+            HorizontalScrollBarVisibility="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            VerticalScrollMode="Auto">
+            <Grid x:Name="ContentRoot" MaxWidth="1320" HorizontalAlignment="Center" RowSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <InfoBar
+                    Grid.Row="0"
+                    IsClosable="False"
+                    IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                    Severity="Error"
+                    Title="部分统计加载失败">
+                    <InfoBar.ActionButton>
+                        <Button Command="{x:Bind ViewModel.RefreshCommand}" Content="重试" />
+                    </InfoBar.ActionButton>
+                </InfoBar>
+
+                <!-- Four summary cards -->
+                <Grid x:Name="MetricGrid" Grid.Row="1" ColumnSpacing="12" RowSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="0" />
+                        <ColumnDefinition Width="0" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border x:Name="TotalCard" Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Opacity="0.62" Text="总消息数" />
+                            <TextBlock FontSize="28" FontWeight="SemiBold" Text="{x:Bind ViewModel.TotalMessagesText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="AverageCard" Grid.Column="1" Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Opacity="0.62" Text="日均消息数" />
+                            <TextBlock FontSize="28" FontWeight="SemiBold" Text="{x:Bind ViewModel.DailyAverageText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="DayCard" Grid.Row="1" Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Opacity="0.62" Text="最活跃星期" />
+                            <TextBlock FontSize="24" FontWeight="SemiBold" Text="{x:Bind ViewModel.MostActiveDayText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="PeriodCard" Grid.Row="1" Grid.Column="1" Style="{StaticResource MetricCardStyle}">
+                        <StackPanel Spacing="6">
+                            <TextBlock Opacity="0.62" Text="最活跃时段" />
+                            <TextBlock FontSize="24" FontWeight="SemiBold" Text="{x:Bind ViewModel.PeakPeriodText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Message trend -->
+                <Border Grid.Row="2" Style="{StaticResource AnalyticsCardStyle}">
+                    <Grid RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="300" />
+                        </Grid.RowDefinitions>
+                        <StackPanel Spacing="2">
+                            <TextBlock FontSize="19" FontWeight="SemiBold" Text="消息量趋势" />
+                            <TextBlock Opacity="0.62" Text="日期范围内缺失的时间桶会自动补零" />
+                        </StackPanel>
+                        <Grid Grid.Row="1">
+                            <lvc:CartesianChart
+                                AutomationProperties.Name="消息量趋势折线图"
+                                Series="{x:Bind ViewModel.MessageTrendSeries, Mode=OneWay}"
+                                XAxes="{x:Bind ViewModel.MessageTrendXAxesSource, Mode=OneWay}"
+                                YAxes="{x:Bind ViewModel.MessageTrendYAxesSource, Mode=OneWay}" />
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                Opacity="0.62"
+                                Text="当前筛选范围内没有趋势数据"
+                                Visibility="{x:Bind ViewModel.HasTrendData, Mode=OneWay, Converter={StaticResource InverseBoolVisibility}}" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- Heatmap + hourly polar chart -->
+                <Grid x:Name="ActivityGrid" Grid.Row="3" ColumnSpacing="16" RowSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="0" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource AnalyticsCardStyle}">
+                        <Grid RowSpacing="12">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="19" FontWeight="SemiBold" Text="聊天活跃度热力图" />
+                                <TextBlock Opacity="0.62" Text="星期一至星期日 × 00:00 至 23:59" />
+                            </StackPanel>
+                            <controls:ActivityHeatmapControl
+                                Grid.Row="1"
+                                MinHeight="285"
+                                AutomationProperties.Name="24小时乘7天聊天活跃热力图"
+                                CellClickCommand="{x:Bind ViewModel.HeatmapCellClickCommand}"
+                                ItemsSource="{x:Bind ViewModel.HeatmapCells, Mode=OneWay}" />
+                        </Grid>
+                    </Border>
+                    <Border x:Name="HourlyCard" Grid.Row="1" Style="{StaticResource AnalyticsCardStyle}">
+                        <Grid RowSpacing="10">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="300" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="19" FontWeight="SemiBold" Text="活跃时段雷达图" />
+                                <TextBlock Opacity="0.62" Text="24 小时分布，标签每 3 小时显示一次" />
+                            </StackPanel>
+                            <Grid Grid.Row="1">
+                                <lvc:PolarChart
+                                    AutomationProperties.Name="24小时活跃时段雷达图"
+                                    AngleAxes="{x:Bind ViewModel.HourlyAngleAxesSource, Mode=OneWay}"
+                                    RadiusAxes="{x:Bind ViewModel.HourlyRadiusAxesSource, Mode=OneWay}"
+                                    Series="{x:Bind ViewModel.HourlyActivitySeries, Mode=OneWay}" />
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    IsHitTestVisible="False"
+                                    Opacity="0.62"
+                                    Text="暂无活跃时段数据"
+                                    Visibility="{x:Bind ViewModel.HasHourlyData, Mode=OneWay, Converter={StaticResource InverseBoolVisibility}}" />
+                            </Grid>
+                            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="18">
+                                <TextBlock Text="最活跃小时：" />
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.PeakHourText, Mode=OneWay}" />
+                                <TextBlock Text="连续三小时：" />
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.PeakPeriodText, Mode=OneWay}" />
+                                <TextBlock Text="平均每小时：" />
+                                <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.HourlyAverageText, Mode=OneWay}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- Local word cloud -->
+                <Border Grid.Row="4" Style="{StaticResource AnalyticsCardStyle}">
+                    <Grid RowSpacing="12">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="330" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Spacing="2">
+                                <TextBlock FontSize="19" FontWeight="SemiBold" Text="高频词汇云图" />
+                                <TextBlock Opacity="0.62" Text="本地分词 · 最多读取最近 100,000 条文字消息" />
+                            </StackPanel>
+                            <ProgressRing
+                                Grid.Column="1"
+                                Width="22"
+                                Height="22"
+                                AutomationProperties.Name="正在分析词频"
+                                IsActive="{x:Bind ViewModel.IsWordCloudLoading, Mode=OneWay}" />
+                        </Grid>
+                        <Grid Grid.Row="1">
+                            <controls:WordCloudControl
+                                x:Name="WordCloud"
+                                AutomationProperties.Name="聊天高频词云"
+                                ItemsSource="{x:Bind ViewModel.WordCloudItems, Mode=OneWay}"
+                                RelayoutRequested="WordCloud_OnRelayoutRequested"
+                                WordClickCommand="{x:Bind ViewModel.WordClickCommand}" />
+                            <TextBlock
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                IsHitTestVisible="False"
+                                Opacity="0.62"
+                                Text="当前筛选范围内没有足够的文字内容"
+                                Visibility="{x:Bind ViewModel.HasWordCloudData, Mode=OneWay, Converter={StaticResource InverseBoolVisibility}}" />
+                        </Grid>
+                        <TextBlock Grid.Row="2" Opacity="0.62" Text="{x:Bind ViewModel.SelectedInsightText, Mode=OneWay}" TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+
+                <VisualStateManager.VisualStateGroups>
+                    <VisualStateGroup>
+                        <VisualState x:Name="NarrowLayout" />
+                        <VisualState x:Name="WideLayout">
+                            <VisualState.StateTriggers>
+                                <AdaptiveTrigger MinWindowWidth="1120" />
+                            </VisualState.StateTriggers>
+                            <VisualState.Setters>
+                                <Setter Target="MetricGrid.ColumnDefinitions[2].Width" Value="*" />
+                                <Setter Target="MetricGrid.ColumnDefinitions[3].Width" Value="*" />
+                                <Setter Target="DayCard.(Grid.Row)" Value="0" />
+                                <Setter Target="DayCard.(Grid.Column)" Value="2" />
+                                <Setter Target="PeriodCard.(Grid.Row)" Value="0" />
+                                <Setter Target="PeriodCard.(Grid.Column)" Value="3" />
+                                <Setter Target="ActivityGrid.ColumnDefinitions[1].Width" Value="*" />
+                                <Setter Target="HourlyCard.(Grid.Row)" Value="0" />
+                                <Setter Target="HourlyCard.(Grid.Column)" Value="1" />
+                            </VisualState.Setters>
+                        </VisualState>
+                    </VisualStateGroup>
+                </VisualStateManager.VisualStateGroups>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</Page>

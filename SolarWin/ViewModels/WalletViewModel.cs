@@ -26,6 +26,8 @@ public partial class WalletViewModel : ObservableObject
     public ObservableCollection<WalletTransactionItemViewModel> Transactions { get; } = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
+    [NotifyPropertyChangedFor(nameof(EmptyVisibility))]
     public partial bool IsBusy { get; set; }
 
     [ObservableProperty]
@@ -33,6 +35,8 @@ public partial class WalletViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasError))]
+    [NotifyPropertyChangedFor(nameof(IsEmpty))]
+    [NotifyPropertyChangedFor(nameof(EmptyVisibility))]
     public partial string? ErrorMessage { get; set; }
 
     [ObservableProperty]
@@ -45,6 +49,7 @@ public partial class WalletViewModel : ObservableObject
     public partial string BalanceText { get; set; } = "-";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WalletMetaVisibility))]
     public partial string WalletMetaText { get; set; } = string.Empty;
 
     [ObservableProperty]
@@ -53,6 +58,9 @@ public partial class WalletViewModel : ObservableObject
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
     public bool IsEmpty => !IsBusy && !HasError && Transactions.Count == 0;
     public Visibility EmptyVisibility => IsEmpty ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility WalletMetaVisibility => string.IsNullOrWhiteSpace(WalletMetaText)
+        ? Visibility.Collapsed
+        : Visibility.Visible;
     public bool HasMore => _hasMore;
     public Visibility LoadMoreVisibility => _hasMore ? Visibility.Visible : Visibility.Collapsed;
 

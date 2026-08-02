@@ -1,4 +1,5 @@
 using H.NotifyIcon;
+using H.NotifyIcon.Core;
 using Microsoft.UI;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
@@ -13,6 +14,7 @@ namespace SolarWin.Services;
 public sealed class TrayService : ITrayService
 {
     private TaskbarIcon? _icon;
+    private System.Drawing.Icon? _notificationIcon;
     private bool _disposed;
     private string? _lastError;
 
@@ -82,7 +84,10 @@ public sealed class TrayService : ITrayService
 
             _icon?.ShowNotification(
                 title: string.IsNullOrWhiteSpace(title) ? "Solar Network" : title,
-                message: text ?? string.Empty);
+                message: text ?? string.Empty,
+                icon: NotificationIcon.None,
+                customIconHandle: GetNotificationIconHandle(),
+                largeIcon: true);
         }
         catch (Exception ex)
         {
@@ -125,6 +130,8 @@ public sealed class TrayService : ITrayService
         }
 
         _icon = null;
+        _notificationIcon?.Dispose();
+        _notificationIcon = null;
     }
 
     /// <summary>
@@ -213,6 +220,35 @@ public sealed class TrayService : ITrayService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Native balloon notifications do not inherit <see cref="TaskbarIcon.IconSource"/>.
+    /// Keep the HICON alive for the tray lifetime so Windows shows the SolarWin logo
+    /// instead of the library's default informational dot.
+    /// </summary>
+    private IntPtr? GetNotificationIconHandle()
+    {
+        if (_notificationIcon is not null)
+        {
+            return _notificationIcon.Handle;
+        }
+
+        var icoPath = ResolveTrayIcoPath();
+        if (icoPath is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            _notificationIcon = new System.Drawing.Icon(icoPath, new System.Drawing.Size(64, 64));
+            return _notificationIcon.Handle;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static void ShowMainWindow()

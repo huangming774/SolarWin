@@ -5,9 +5,34 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="using:SolarWin.Controls"
     xmlns:vm="using:SolarWin.ViewModels"
     xmlns:svc="using:SolarWin.Services"
     mc:Ignorable="d">
+
+    <Page.Resources>
+        <Style x:Key="ChatHeaderIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style x:Key="ComposerIconButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="12" />
+        </Style>
+        <Style x:Key="MessageActionButtonStyle" TargetType="Button">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="Padding" Value="9,4" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+    </Page.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -22,74 +47,108 @@
             <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
 
-        <Grid
+        <Border
             Grid.ColumnSpan="2"
-            Padding="12,8"
-            ColumnSpacing="8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <Button Click="BackButton_OnClick" Content="返回" />
-            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                <TextBlock
-                    Style="{StaticResource SubtitleTextBlockStyle}"
-                    Text="{x:Bind ViewModel.RoomTitle, Mode=OneWay}"
-                    TextTrimming="CharacterEllipsis" />
-                <StackPanel Orientation="Horizontal" Spacing="10">
-                    <TextBlock
-                        Opacity="0.65"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.OnlineStatusText, Mode=OneWay}" />
-                    <TextBlock
-                        Opacity="0.65"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.MembersSummaryText, Mode=OneWay}" />
-                    <TextBlock
-                        Opacity="0.65"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.PinnedSummaryText, Mode=OneWay}" />
-                    <TextBlock
-                        Opacity="0.75"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.RealtimeModeText, Mode=OneWay}" />
-                </StackPanel>
-            </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="6">
+            Margin="12,8,12,4"
+            Padding="12,10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="14">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
                 <Button
-                    Command="{x:Bind ViewModel.CycleNotifyCommand}"
-                    Content="{x:Bind ViewModel.NotifyModeText, Mode=OneWay}" />
-                <Button Command="{x:Bind ViewModel.ToggleMembersPanelCommand}" Content="成员" />
-                <Button Command="{x:Bind ViewModel.ToggleCallPanelCommand}" Content="通话" />
-                <Button Command="{x:Bind ViewModel.LeaveRoomCommand}" Content="退出" />
-                <ProgressRing
-                    Width="24"
-                    Height="24"
-                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-            </StackPanel>
-        </Grid>
-
-        <!-- Tools row -->
-        <StackPanel
-            Grid.Row="1"
-            Grid.ColumnSpan="2"
-            Padding="12,0,12,8"
-            Orientation="Horizontal"
-            Spacing="6">
-            <Button Command="{x:Bind ViewModel.SendTypingPlaceholderCommand}" Content="Placeholder" />
-            <Button Command="{x:Bind ViewModel.EnableE2eeCommand}" Content="启用E2EE" />
-            <Button Command="{x:Bind ViewModel.EnableMlsCommand}" Content="启用MLS" />
-            <TextBox
-                MinWidth="180"
-                PlaceholderText="redirect message ids"
-                Text="{x:Bind ViewModel.RedirectMessageIdsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-            <Button Command="{x:Bind ViewModel.RedirectMessagesCommand}" Content="Redirect" />
-            <TextBlock
-                VerticalAlignment="Center"
-                Opacity="0.7"
-                Text="{x:Bind ViewModel.E2eeStatusText, Mode=OneWay}" />
-        </StackPanel>
+                    Click="BackButton_OnClick"
+                    Style="{StaticResource ChatHeaderIconButtonStyle}"
+                    ToolTipService.ToolTip="返回">
+                    <FontIcon FontSize="16" Glyph="&#xE72B;" />
+                </Button>
+                <Border
+                    Grid.Column="1"
+                    Width="42"
+                    Height="42"
+                    Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                    CornerRadius="12">
+                    <FontIcon
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        FontSize="19"
+                        Glyph="&#xE8BD;" />
+                </Border>
+                <StackPanel Grid.Column="2" VerticalAlignment="Center" Spacing="3">
+                    <TextBlock
+                        FontSize="18"
+                        FontWeight="SemiBold"
+                        Text="{x:Bind ViewModel.RoomTitle, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                    <StackPanel Orientation="Horizontal" Spacing="9">
+                        <TextBlock
+                            Opacity="0.66"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.OnlineStatusText, Mode=OneWay}" />
+                        <TextBlock
+                            Opacity="0.66"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.MembersSummaryText, Mode=OneWay}" />
+                        <TextBlock
+                            Opacity="0.66"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.PinnedSummaryText, Mode=OneWay}" />
+                        <TextBlock
+                            Opacity="0.66"
+                            Style="{StaticResource CaptionTextBlockStyle}"
+                            Text="{x:Bind ViewModel.RealtimeModeText, Mode=OneWay}" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="6">
+                    <Button
+                        Command="{x:Bind ViewModel.CycleNotifyCommand}"
+                        ToolTipService.ToolTip="切换通知模式">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                            <FontIcon FontSize="14" Glyph="&#xEA8F;" />
+                            <TextBlock Text="{x:Bind ViewModel.NotifyModeText, Mode=OneWay}" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.ToggleMembersPanelCommand}"
+                        Style="{StaticResource ChatHeaderIconButtonStyle}"
+                        ToolTipService.ToolTip="成员">
+                        <FontIcon Glyph="&#xE716;" />
+                    </Button>
+                    <Button
+                        Command="{x:Bind ViewModel.ToggleCallPanelCommand}"
+                        Style="{StaticResource ChatHeaderIconButtonStyle}"
+                        ToolTipService.ToolTip="语音和视频通话">
+                        <FontIcon Glyph="&#xE717;" />
+                    </Button>
+                    <Button
+                        Click="EncryptionSettings_OnClick"
+                        Style="{StaticResource ChatHeaderIconButtonStyle}"
+                        ToolTipService.ToolTip="加密与解密">
+                        <FontIcon Glyph="&#xE72E;" />
+                    </Button>
+                    <Button Style="{StaticResource ChatHeaderIconButtonStyle}" ToolTipService.ToolTip="更多">
+                        <FontIcon Glyph="&#xE712;" />
+                        <Button.Flyout>
+                            <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                <MenuFlyoutItem
+                                    Command="{x:Bind ViewModel.LeaveRoomCommand}"
+                                    Text="退出会话" />
+                            </MenuFlyout>
+                        </Button.Flyout>
+                    </Button>
+                    <ProgressRing
+                        Width="22"
+                        Height="22"
+                        IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                </StackPanel>
+            </Grid>
+        </Border>
 
         <!--
           ListView keeps its internal ScrollViewer (do NOT wrap in an outer ScrollViewer)
@@ -98,13 +157,22 @@
         <ListView
             x:Name="MessageList"
             Grid.Row="2"
-            Padding="12,4"
+            Padding="24,8,18,8"
             IsItemClickEnabled="False"
             ItemsSource="{x:Bind ViewModel.Messages, Mode=OneWay}"
             SelectionMode="None">
             <ListView.ItemTemplate>
                 <DataTemplate x:DataType="vm:MessageItemViewModel">
                     <Grid Margin="0,6" ColumnSpacing="8" HorizontalAlignment="{x:Bind Alignment}">
+                        <Grid.Transitions>
+                            <TransitionCollection>
+                                <EntranceThemeTransition
+                                    FromHorizontalOffset="{x:Bind EntranceOffset}"
+                                    FromVerticalOffset="8"
+                                    IsStaggeringEnabled="False" />
+                                <RepositionThemeTransition IsStaggeringEnabled="False" />
+                            </TransitionCollection>
+                        </Grid.Transitions>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -122,12 +190,12 @@
                             IsEnabled="{x:Bind CanOpenSenderProfile}"
                             Opacity="{x:Bind SenderNameOpacity}"
                             Tag="{x:Bind}"
+                            Visibility="{x:Bind SenderChromeVisibility}"
                             ToolTipService.ToolTip="查看主页">
                             <Grid Width="36" Height="36">
                                 <Border
                                     Background="{ThemeResource AccentFillColorSecondaryBrush}"
-                                    CornerRadius="18"
-                                    Opacity="{x:Bind InitialsOpacity, Mode=OneWay}">
+                                    CornerRadius="18">
                                     <TextBlock
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
@@ -135,25 +203,29 @@
                                         FontWeight="SemiBold"
                                         Text="{x:Bind Initials}" />
                                 </Border>
-                                <Ellipse Opacity="{x:Bind AvatarOpacity, Mode=OneWay}">
-                                    <Ellipse.Fill>
-                                        <ImageBrush
-                                            ImageSource="{x:Bind AvatarImage, Mode=OneWay}"
-                                            Stretch="UniformToFill" />
-                                    </Ellipse.Fill>
-                                </Ellipse>
+                                <controls:FastWin2DImage
+                                    Width="36"
+                                    Height="36"
+                                    CornerRadius="18"
+                                    DecodeWidth="96"
+                                    EnableFadeIn="True"
+                                    ShowPlaceholder="False"
+                                    Source="{x:Bind AvatarUrl}"
+                                    Stretch="UniformToFill" />
                             </Grid>
                         </Button>
 
                         <Border
                             Grid.Column="1"
-                            MaxWidth="420"
-                            Padding="10,8"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            MaxWidth="520"
+                            Padding="12,9"
+                            Background="{x:Bind BubbleBackground}"
+                            BorderBrush="{x:Bind BubbleStroke}"
                             BorderThickness="1"
-                            CornerRadius="12"
-                            Opacity="{x:Bind BubbleOpacity}">
+                            CornerRadius="{x:Bind BubbleCornerRadius}"
+                            Loaded="MessageBubble_OnLoaded"
+                            Opacity="{x:Bind BubbleOpacity}"
+                            Tag="{x:Bind}">
                             <Border.ContextFlyout>
                                 <MenuFlyout>
                                     <MenuFlyoutItem
@@ -183,7 +255,8 @@
                                 <TextBlock
                                     Opacity="{x:Bind SenderNameOpacity}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind SenderName}" />
+                                    Text="{x:Bind SenderName}"
+                                    Visibility="{x:Bind SenderChromeVisibility}" />
 
                                 <!-- Quoted reply -->
                                 <Border
@@ -202,12 +275,71 @@
                                         MaxLines="2" />
                                 </Border>
 
-                                <!-- Text (stickers stripped when rendered as images) -->
-                                <TextBlock
+                                <!-- Forwarded chat message -->
+                                <Border
+                                    Padding="10,8"
+                                    Background="{ThemeResource LayerFillColorDefaultBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Visibility="{x:Bind ForwardedPreviewVisibility}">
+                                    <StackPanel Spacing="5">
+                                        <TextBlock
+                                            FontSize="11"
+                                            FontWeight="SemiBold"
+                                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                                            Text="转发的消息" />
+                                        <Grid ColumnSpacing="10">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock
+                                                FontSize="12"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind ForwardedSenderName}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <TextBlock
+                                                Grid.Column="1"
+                                                FontSize="11"
+                                                Opacity="0.55"
+                                                Text="{x:Bind ForwardedTimeText}" />
+                                        </Grid>
+                                        <TextBlock
+                                            FontSize="13"
+                                            IsTextSelectionEnabled="True"
+                                            MaxLines="10"
+                                            Text="{x:Bind ForwardedContent}"
+                                            TextTrimming="CharacterEllipsis"
+                                            TextWrapping="WrapWholeWords" />
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Text + fenced code cards (stickers stripped when rendered as images) -->
+                                <ItemsControl
+                                    ItemsSource="{x:Bind ContentBlocks}"
                                     Opacity="{x:Bind TextOpacity}"
-                                    IsTextSelectionEnabled="True"
-                                    Text="{x:Bind Content}"
-                                    TextWrapping="WrapWholeWords" />
+                                    HorizontalContentAlignment="Stretch">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MessageContentBlockViewModel">
+                                            <Grid Margin="0,0,0,6">
+                                                <TextBlock
+                                                    IsTextSelectionEnabled="True"
+                                                    Text="{x:Bind Content}"
+                                                    TextWrapping="WrapWholeWords"
+                                                    Visibility="{x:Bind TextVisibility}" />
+                                                <controls:CodeSnippetCard
+                                                    Code="{x:Bind Content}"
+                                                    CodeLanguage="{x:Bind Language}"
+                                                    Visibility="{x:Bind CodeVisibility}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <controls:LinkPreviewCard
+                                    Url="{x:Bind LinkPreviewUrl, Mode=OneWay}"
+                                    Visibility="{x:Bind LinkPreviewVisibility, Mode=OneWay}" />
 
                                 <!-- Stickers (:prefix+slug: → image) -->
                                 <ItemsControl
@@ -229,15 +361,19 @@
                                                     CornerRadius="8">
                                                     <Grid>
                                                         <ProgressRing
+                                                            x:Name="StickerRing"
                                                             Width="24"
                                                             Height="24"
                                                             HorizontalAlignment="Center"
                                                             VerticalAlignment="Center"
-                                                            IsActive="{x:Bind IsLoading, Mode=OneWay}" />
-                                                        <Image
-                                                            Stretch="Uniform"
-                                                            Opacity="{x:Bind ImageOpacity, Mode=OneWay}"
-                                                            Source="{x:Bind Image, Mode=OneWay}" />
+                                                            IsActive="{Binding IsLoading, ElementName=StickerImg, Mode=OneWay}" />
+                                                        <controls:FastWin2DImage
+                                                            x:Name="StickerImg"
+                                                            DecodeWidth="256"
+                                                            EnableFadeIn="True"
+                                                            ShowPlaceholder="False"
+                                                            Source="{x:Bind FileId, Mode=OneWay}"
+                                                            Stretch="Uniform" />
                                                     </Grid>
                                                 </Border>
                                             </Grid>
@@ -252,33 +388,81 @@
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate x:DataType="vm:MessageAttachmentViewModel">
                                             <StackPanel Margin="0,2" Spacing="4">
-                                                <Grid MaxWidth="280" Opacity="{x:Bind ImageAreaOpacity}">
+                                                <Grid MaxWidth="280" Visibility="{x:Bind ImageAreaVisibility}">
                                                     <Border
                                                         Background="{ThemeResource LayerFillColorDefaultBrush}"
                                                         CornerRadius="8"
-                                                        MinHeight="80">
+                                                        MinHeight="80"
+                                                        Tag="{x:Bind}"
+                                                        Tapped="AttachmentImage_OnTapped">
                                                         <Grid>
                                                             <ProgressRing
                                                                 Width="28"
                                                                 Height="28"
                                                                 HorizontalAlignment="Center"
                                                                 VerticalAlignment="Center"
-                                                                IsActive="{x:Bind IsLoading, Mode=OneWay}" />
-                                                            <Image
+                                                                IsActive="{Binding IsLoading, ElementName=AttImg, Mode=OneWay}" />
+                                                            <controls:FastWin2DImage
+                                                                x:Name="AttImg"
                                                                 MaxHeight="240"
-                                                                Stretch="Uniform"
-                                                                Opacity="{x:Bind ImageOpacity, Mode=OneWay}"
-                                                                Source="{x:Bind Image, Mode=OneWay}"
-                                                                Tapped="AttachmentImage_OnTapped"
-                                                                Tag="{x:Bind}" />
+                                                                CornerRadius="8"
+                                                                DecodeWidth="640"
+                                                                EnableFadeIn="True"
+                                                                ShowPlaceholder="True"
+                                                                Source="{x:Bind ImageSourceKey}"
+                                                                Stretch="Uniform" />
                                                         </Grid>
                                                     </Border>
                                                 </Grid>
                                                 <Border
+                                                    MaxWidth="320"
+                                                    MinWidth="220"
+                                                    Height="180"
+                                                    Background="#22000000"
+                                                    CornerRadius="8"
+                                                    Loaded="AttachmentVideo_OnLoaded"
+                                                    Tag="{x:Bind}"
+                                                    Tapped="AttachmentVideo_OnTapped"
+                                                    Visibility="{x:Bind VideoAreaVisibility}">
+                                                    <Grid>
+                                                        <controls:FastWin2DImage
+                                                            CornerRadius="8"
+                                                            DecodeWidth="640"
+                                                            EnableFadeIn="True"
+                                                            ShowPlaceholder="False"
+                                                            Source="{x:Bind VideoThumbnailPath, Mode=OneWay}"
+                                                            Stretch="UniformToFill" />
+                                                        <Border
+                                                            Width="52"
+                                                            Height="52"
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Background="#AA000000"
+                                                            CornerRadius="26">
+                                                            <FontIcon
+                                                                HorizontalAlignment="Center"
+                                                                VerticalAlignment="Center"
+                                                                FontSize="24"
+                                                                Foreground="White"
+                                                                Glyph="&#xE768;" />
+                                                        </Border>
+                                                        <Border
+                                                            Padding="8,4"
+                                                            VerticalAlignment="Bottom"
+                                                            Background="#99000000"
+                                                            CornerRadius="0,0,8,8">
+                                                            <TextBlock
+                                                                Foreground="White"
+                                                                Text="{x:Bind Name}"
+                                                                TextTrimming="CharacterEllipsis" />
+                                                        </Border>
+                                                    </Grid>
+                                                </Border>
+                                                <Border
                                                     Padding="8,4"
                                                     Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                                     CornerRadius="6"
-                                                    Opacity="{x:Bind FileChipOpacity}">
+                                                    Visibility="{x:Bind FileChipVisibility}">
                                                     <TextBlock
                                                         Style="{StaticResource CaptionTextBlockStyle}"
                                                         Text="{x:Bind Name}"
@@ -295,44 +479,89 @@
                                     Text="{x:Bind ReactionText, Mode=OneWay}"
                                     Visibility="{x:Bind ReactionVisibility, Mode=OneWay}" />
 
-                                <TextBlock
-                                    HorizontalAlignment="Right"
-                                    Opacity="0.55"
-                                    Style="{StaticResource CaptionTextBlockStyle}"
-                                    Text="{x:Bind TimeText}" />
+                                <Grid HorizontalAlignment="{x:Bind FooterAlignment}" ColumnSpacing="7">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock
+                                        VerticalAlignment="Center"
+                                        Opacity="0.52"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind TimeText}" />
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Orientation="Horizontal" Spacing="4" Visibility="{x:Bind MineChromeVisibility}">
+                                        <ProgressRing Width="11" Height="11" IsActive="{x:Bind IsPending}" Visibility="{x:Bind PendingVisibility}" />
+                                        <FontIcon FontSize="10" Glyph="&#xE73E;" Opacity="0.64" Visibility="{x:Bind SentVisibility}" />
+                                        <TextBlock Opacity="0.58" Style="{StaticResource CaptionTextBlockStyle}" Text="{x:Bind DeliveryStatusText}" />
+                                    </StackPanel>
+                                </Grid>
 
-                                <StackPanel Orientation="Horizontal" Spacing="4">
-                                    <Button
-                                        Click="ReplyMessage_OnClick"
-                                        Content="回复"
-                                        FontSize="11"
-                                        Padding="8,2"
-                                        Tag="{x:Bind}" />
-                                    <Button
-                                        Click="ReactMessage_OnClick"
-                                        Content="赞"
-                                        FontSize="11"
-                                        Padding="8,2"
-                                        Tag="{x:Bind}" />
-                                    <Button
-                                        Click="PinMessage_OnClick"
-                                        Content="置顶"
-                                        FontSize="11"
-                                        Padding="8,2"
-                                        Tag="{x:Bind}" />
-                                    <Button
-                                        Click="EditMessage_OnClick"
-                                        Content="改"
-                                        FontSize="11"
-                                        Padding="8,2"
-                                        Tag="{x:Bind}" />
-                                    <Button
-                                        Click="DeleteMessage_OnClick"
-                                        Content="删"
-                                        FontSize="11"
-                                        Padding="8,2"
-                                        Tag="{x:Bind}" />
-                                </StackPanel>
+                                <!-- Compact action tray; all actions also remain available from the context menu. -->
+                                <Border
+                                    Margin="0,2,0,0"
+                                    Padding="3"
+                                    HorizontalAlignment="{x:Bind FooterAlignment}"
+                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                                    BorderThickness="1"
+                                    CornerRadius="11"
+                                    Opacity="0.9">
+                                    <StackPanel Orientation="Horizontal" Spacing="1">
+                                        <Button
+                                            Click="ReplyMessage_OnClick"
+                                            Style="{StaticResource MessageActionButtonStyle}"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="回复此消息">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon FontSize="12" Glyph="&#xE97A;" />
+                                                <TextBlock VerticalAlignment="Center" Text="回复" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            Click="ReactMessage_OnClick"
+                                            Style="{StaticResource MessageActionButtonStyle}"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="点赞此消息">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon FontSize="12" Glyph="&#xE8E1;" />
+                                                <TextBlock VerticalAlignment="Center" Text="点赞" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Button
+                                            Click="PinMessage_OnClick"
+                                            Style="{StaticResource MessageActionButtonStyle}"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="置顶此消息">
+                                            <StackPanel Orientation="Horizontal" Spacing="5">
+                                                <FontIcon FontSize="12" Glyph="&#xE718;" />
+                                                <TextBlock VerticalAlignment="Center" Text="置顶" />
+                                            </StackPanel>
+                                        </Button>
+                                        <Rectangle
+                                            Width="1"
+                                            Height="16"
+                                            Margin="3,0"
+                                            VerticalAlignment="Center"
+                                            Fill="{ThemeResource DividerStrokeColorDefaultBrush}"
+                                            Visibility="{x:Bind MineChromeVisibility}" />
+                                        <Button
+                                            Click="EditMessage_OnClick"
+                                            Style="{StaticResource MessageActionButtonStyle}"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="编辑"
+                                            Visibility="{x:Bind MineChromeVisibility}">
+                                            <FontIcon FontSize="12" Glyph="&#xE70F;" />
+                                        </Button>
+                                        <Button
+                                            Click="DeleteMessage_OnClick"
+                                            Style="{StaticResource MessageActionButtonStyle}"
+                                            Tag="{x:Bind}"
+                                            ToolTipService.ToolTip="删除"
+                                            Visibility="{x:Bind MineChromeVisibility}">
+                                            <FontIcon FontSize="12" Glyph="&#xE74D;" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
                     </Grid>
@@ -390,7 +619,12 @@
                                 CornerRadius="8"
                                 Background="{ThemeResource SubtleFillColorSecondaryBrush}">
                                 <Grid>
-                                    <Image Stretch="Uniform" Source="{x:Bind Image, Mode=OneWay}" />
+                                    <controls:FastWin2DImage
+                                        DecodeWidth="256"
+                                        EnableFadeIn="False"
+                                        ShowPlaceholder="True"
+                                        Source="{x:Bind ImageFileId}"
+                                        Stretch="Uniform" />
                                     <TextBlock
                                         VerticalAlignment="Bottom"
                                         FontSize="9"
@@ -872,7 +1106,7 @@
                 Orientation="Horizontal"
                 Spacing="8"
                 Opacity="{x:Bind ViewModel.PendingImagePanelOpacity, Mode=OneWay}">
-                <FontIcon Glyph="&#xEB9F;" />
+                <FontIcon Glyph="&#xE723;" />
                 <TextBlock
                     VerticalAlignment="Center"
                     Opacity="0.85"
@@ -907,11 +1141,15 @@
                 IsActive="{x:Bind ViewModel.IsSendingVoice, Mode=OneWay}" />
         </StackPanel>
 
-        <StackPanel
+        <Border
             Grid.Row="4"
             Grid.ColumnSpan="2"
-            Background="{ThemeResource LayerFillColorDefaultBrush}"
-            Spacing="0">
+            Margin="12,4,12,10"
+            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+            BorderThickness="1"
+            CornerRadius="16">
+            <StackPanel Spacing="0">
             <!-- Reply banner -->
             <Grid
                 Padding="12,8,12,4"
@@ -941,7 +1179,7 @@
                     Padding="10,4" />
             </Grid>
 
-            <Grid Padding="12" ColumnSpacing="8">
+            <Grid Padding="9" ColumnSpacing="7">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -952,40 +1190,50 @@
                 </Grid.ColumnDefinitions>
                 <Button
                     Click="PickImage_OnClick"
-                    Content="图片"
                     IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                    ToolTipService.ToolTip="发送图片" />
+                    Style="{StaticResource ComposerIconButtonStyle}"
+                    ToolTipService.ToolTip="发送图片或视频">
+                    <FontIcon Glyph="&#xE723;" />
+                </Button>
                 <Button
                     Grid.Column="1"
                     Command="{x:Bind ViewModel.ToggleStickerPanelCommand}"
-                    Content="贴纸"
                     IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                    ToolTipService.ToolTip="表情包 / 贴图" />
+                    Style="{StaticResource ComposerIconButtonStyle}"
+                    ToolTipService.ToolTip="表情包 / 贴图">
+                    <FontIcon Glyph="&#xE76E;" />
+                </Button>
                 <Button
                     Grid.Column="2"
                     Command="{x:Bind ViewModel.ToggleVoiceRecordCommand}"
-                    Content="{x:Bind ViewModel.RecordButtonText, Mode=OneWay}" />
+                    Content="{x:Bind ViewModel.RecordButtonText, Mode=OneWay}"
+                    CornerRadius="12" />
                 <Button
                     Grid.Column="3"
                     Command="{x:Bind ViewModel.ToggleBotPanelCommand}"
-                    Content="命令"
                     IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
-                    ToolTipService.ToolTip="机器人命令面板（也可用 / 触发）" />
+                    Style="{StaticResource ComposerIconButtonStyle}"
+                    ToolTipService.ToolTip="机器人命令面板（也可用 / 触发）">
+                    <FontIcon Glyph="&#xE943;" />
+                </Button>
                 <TextBox
                     x:Name="DraftBox"
                     Grid.Column="4"
                     AcceptsReturn="False"
                     IsEnabled="{x:Bind ViewModel.IsComposerEnabled, Mode=OneWay}"
                     KeyDown="DraftBox_OnKeyDown"
-                    PlaceholderText="输入消息… 贴纸 / 右键回复 · / 命令 · @ 提及"
+                    CornerRadius="12"
+                    PlaceholderText="输入消息…  使用 / 命令，@ 提及成员"
                     Text="{x:Bind ViewModel.Draft, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                 <Button
                     Grid.Column="5"
                     MinWidth="88"
                     Command="{x:Bind ViewModel.SendCommand}"
                     Content="发送"
+                    CornerRadius="12"
                     Style="{StaticResource AccentButtonStyle}" />
             </Grid>
-        </StackPanel>
+            </StackPanel>
+        </Border>
     </Grid>
 </Page>

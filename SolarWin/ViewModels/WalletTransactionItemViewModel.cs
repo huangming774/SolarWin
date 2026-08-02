@@ -1,3 +1,4 @@
+using Microsoft.UI.Xaml.Media;
 using SolarWin.Models;
 
 namespace SolarWin.ViewModels;
@@ -10,6 +11,12 @@ public sealed class WalletTransactionItemViewModel
         var incoming = transaction.PayeeWalletId == walletId;
         var sign = incoming ? "+" : "-";
         var amount = Math.Abs(transaction.Amount);
+
+        DirectionText = incoming ? "收入" : "支出";
+        IconGlyph = incoming ? "\uE896" : "\uE898";
+        AmountForeground = incoming ? IncomingForeground : OutgoingForeground;
+        IconForeground = AmountForeground;
+        IconBackground = incoming ? IncomingBackground : OutgoingBackground;
 
         Title = string.IsNullOrWhiteSpace(transaction.Remarks)
             ? TypeText(transaction.Type)
@@ -28,6 +35,25 @@ public sealed class WalletTransactionItemViewModel
     public string TimeText { get; }
 
     public string StatusText { get; }
+
+    public string DirectionText { get; }
+
+    public string IconGlyph { get; }
+
+    public Brush AmountForeground { get; }
+
+    public Brush IconForeground { get; }
+
+    public Brush IconBackground { get; }
+
+    private static readonly Brush IncomingForeground = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(255, 16, 137, 85));
+    private static readonly Brush IncomingBackground = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(30, 16, 185, 129));
+    private static readonly Brush OutgoingForeground = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(255, 220, 74, 74));
+    private static readonly Brush OutgoingBackground = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(30, 239, 68, 68));
 
     private static string TypeText(int type)
         => type switch

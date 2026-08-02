@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
 using SolarWin.Models;
@@ -19,16 +20,46 @@ public partial class MessageItemViewModel : ObservableObject
     private static readonly Regex StickerPlaceholderRegex = new(
         @":([-\w]*\+[-\w]*):",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex FencedCodeRegex = new(
+        @"```(?<language>[^`\r\n]*)\r?\n(?<code>[\s\S]*?)```",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+    private static readonly Regex WebUrlRegex = new(
+        @"https?://[^\s<>""']+",
+        RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    private static readonly Brush MineBubbleBrush = new LinearGradientBrush
+    {
+        StartPoint = new Windows.Foundation.Point(0, 0),
+        EndPoint = new Windows.Foundation.Point(1, 1),
+        GradientStops =
+        {
+            new GradientStop { Offset = 0, Color = Microsoft.UI.ColorHelper.FromArgb(74, 0, 120, 212) },
+            new GradientStop { Offset = 1, Color = Microsoft.UI.ColorHelper.FromArgb(58, 109, 74, 219) },
+        },
+    };
+    private static readonly Brush MineBubbleStroke = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(112, 0, 120, 212));
+    private static readonly Brush OtherBubbleBrush = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(24, 128, 128, 128));
+    private static readonly Brush OtherBubbleStroke = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(40, 128, 128, 128));
 
-    public MessageItemViewModel(SnChatMessage message, Guid? currentAccountId, DysonFileImageLoader imageLoader)
+    private bool _playSendAnimation;
+
+    public MessageItemViewModel(
+        SnChatMessage message,
+        Guid? currentAccountId,
+        DysonFileImageLoader imageLoader,
+        bool playSendAnimation = false)
     {
         Message = message;
         IsMine = IsSentByCurrentUser(message, currentAccountId);
+        _playSendAnimation = playSendAnimation && IsMine;
         Alignment = IsMine ? HorizontalAlignment.Right : HorizontalAlignment.Left;
 
         var isImageType = string.Equals(message.Type, "image", StringComparison.OrdinalIgnoreCase)
             || string.Equals(message.Type, "media", StringComparison.OrdinalIgnoreCase)
             || string.Equals(message.Type, "sticker", StringComparison.OrdinalIgnoreCase);
+        var isVideoType = string.Equals(message.Type, "video", StringComparison.OrdinalIgnoreCase);
 
         var rawContent = string.IsNullOrWhiteSpace(message.Content)
             ? (message.IsEncrypted
@@ -42,7 +73,7 @@ public partial class MessageItemViewModel : ObservableObject
         StickerPlaceholders = ExtractStickerPlaceholders(rawContent);
         if (StickerPlaceholders.Count > 0)
         {
-            var stripped = StickerPlaceholderRegex.Replace(rawContent, string.Empty).Trim();
+            var stripped = StripStickerPlaceholders(rawContent).Trim();
             Content = stripped;
             IsStickerOnly = string.IsNullOrWhiteSpace(stripped)
                             && (message.Attachments is null || message.Attachments.Count == 0);
@@ -57,6 +88,7 @@ public partial class MessageItemViewModel : ObservableObject
 
         HasText = !string.IsNullOrWhiteSpace(Content);
         TextOpacity = HasText ? 1.0 : 0.0;
+        RefreshContentBlocks();
 
         SenderName = message.Sender?.Nick
             ?? message.Sender?.Username
@@ -68,6 +100,8 @@ public partial class MessageItemViewModel : ObservableObject
         SenderAccountId = message.Sender?.Account?.Id
             ?? (message.Sender?.AccountId is { } aid && aid != Guid.Empty ? aid : null);
         TimeText = FormatTime(message.CreatedAt);
+        IsPending = IsMine && message.Id == Guid.Empty;
+        DeliveryStatusText = IsPending ? "同步中" : "已发送";
         ShowSenderName = !IsMine;
         SenderNameOpacity = IsMine ? 0.0 : 0.65;
         BubbleOpacity = IsMine ? 1.0 : 0.95;
@@ -76,18 +110,10 @@ public partial class MessageItemViewModel : ObservableObject
         AvatarUrl = CloudFileUrlHelper.ResolveAccountAvatar(message.Sender?.Account)
             ?? CloudFileUrlHelper.Resolve(message.Sender?.Account?.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-        // BitmapImage is a WinRT object with UI-thread affinity. Only touch the cache on the UI thread.
-        var onUi = SolarWin.App.DispatcherQueue is null || SolarWin.App.DispatcherQueue.HasThreadAccess;
-        if (HasAvatar && onUi && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth) && cachedAvatar is not null)
-        {
-            SetAuthenticatedAvatar(cachedAvatar);
-        }
-        else
-        {
-            // Initials until the authenticated download lands; a bare UriSource would 401 on private drive files.
-            AvatarOpacity = 0.0;
-            InitialsOpacity = 1.0;
-        }
+        // Avatars paint via FastWin2DImage + AvatarUrl (GPU). Initials show underneath until bitmap arrives.
+        _ = imageLoader;
+        AvatarOpacity = 0.0;
+        InitialsOpacity = 1.0;
         Initials = string.IsNullOrWhiteSpace(SenderName) ? "?" : SenderName[..1].ToUpperInvariant();
 
         // Attachments (hard cap for ItemsControl under virtualized ListView)
@@ -101,7 +127,7 @@ public partial class MessageItemViewModel : ObservableObject
                     break;
                 }
 
-                var vm = new MessageAttachmentViewModel(att);
+                var vm = new MessageAttachmentViewModel(att, isVideoType);
                 // Force image when message type says so
                 if (isImageType && !vm.IsImage && !string.IsNullOrWhiteSpace(vm.FileId ?? vm.Url))
                 {
@@ -166,13 +192,81 @@ public partial class MessageItemViewModel : ObservableObject
             HasReplyPreview = false;
             ReplyPreviewOpacity = 0.0;
         }
+
+        // Forwarded message preview. The API already supplies forwarded_message (or an id-only
+        // placeholder), but without explicit UI properties the forwarded body becomes invisible.
+        if (message.ForwardedMessage is { } forwarded)
+        {
+            ForwardedSenderName = ResolveSenderName(forwarded, "未知用户");
+            ForwardedContent = BuildForwardedContent(forwarded);
+            ForwardedTimeText = FormatTime(forwarded.CreatedAt);
+            HasForwardedPreview = true;
+        }
+        else if (message.ForwardedMessageId is { } forwardedId && forwardedId != Guid.Empty)
+        {
+            ForwardedSenderName = "转发的消息";
+            ForwardedContent = "原消息内容暂不可用";
+            ForwardedTimeText = string.Empty;
+            HasForwardedPreview = true;
+        }
+        else
+        {
+            ForwardedSenderName = string.Empty;
+            ForwardedContent = string.Empty;
+            ForwardedTimeText = string.Empty;
+            HasForwardedPreview = false;
+        }
     }
 
     public SnChatMessage Message { get; }
 
+    /// <summary>
+    /// Returns true once for a newly sent local echo. ListView recycling and server
+    /// reconciliation must not replay the entrance animation.
+    /// </summary>
+    public bool ConsumeSendAnimation()
+    {
+        if (!_playSendAnimation)
+        {
+            return false;
+        }
+
+        _playSendAnimation = false;
+        return true;
+    }
+
     public Guid MessageId => Message.Id;
 
     public bool IsMine { get; }
+
+    public bool IsPending { get; }
+
+    public string DeliveryStatusText { get; }
+
+    public Visibility MineChromeVisibility => IsMine ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility OtherChromeVisibility => IsMine ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility PendingVisibility => IsPending ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility SentVisibility => IsMine && !IsPending ? Visibility.Visible : Visibility.Collapsed;
+
+    public CornerRadius BubbleCornerRadius => IsMine
+        ? new CornerRadius(18, 18, 5, 18)
+        : new CornerRadius(18, 18, 18, 5);
+
+    public double EntranceOffset => IsMine ? 34 : -22;
+
+    public HorizontalAlignment FooterAlignment => IsMine
+        ? HorizontalAlignment.Right
+        : HorizontalAlignment.Left;
+
+    public Visibility SenderChromeVisibility =>
+        IsMine ? Visibility.Collapsed : Visibility.Visible;
+
+    public Brush BubbleBackground => IsMine ? MineBubbleBrush : OtherBubbleBrush;
+
+    public Brush BubbleStroke => IsMine ? MineBubbleStroke : OtherBubbleStroke;
 
     /// <summary>True when this bubble quotes another message.</summary>
     public bool HasReplyPreview { get; }
@@ -180,6 +274,18 @@ public partial class MessageItemViewModel : ObservableObject
     public double ReplyPreviewOpacity { get; }
 
     public string ReplyPreviewText { get; }
+
+    /// <summary>True when this bubble forwards another chat message.</summary>
+    public bool HasForwardedPreview { get; }
+
+    public Visibility ForwardedPreviewVisibility =>
+        HasForwardedPreview ? Visibility.Visible : Visibility.Collapsed;
+
+    public string ForwardedSenderName { get; }
+
+    public string ForwardedContent { get; }
+
+    public string ForwardedTimeText { get; }
 
     public bool ShowSenderName { get; }
 
@@ -216,6 +322,14 @@ public partial class MessageItemViewModel : ObservableObject
     public HorizontalAlignment Alignment { get; }
 
     public string Content { get; set; }
+
+    public ObservableCollection<MessageContentBlockViewModel> ContentBlocks { get; } = [];
+
+    public string? LinkPreviewUrl { get; private set; }
+
+    public Visibility LinkPreviewVisibility => string.IsNullOrWhiteSpace(LinkPreviewUrl)
+        ? Visibility.Collapsed
+        : Visibility.Visible;
 
     public bool HasText { get; set; }
 
@@ -271,14 +385,85 @@ public partial class MessageItemViewModel : ObservableObject
         var placeholders = ExtractStickerPlaceholders(text ?? string.Empty);
         // StickerPlaceholders is init-only; rebuild display text only.
         var stripped = placeholders.Count > 0
-            ? StickerPlaceholderRegex.Replace(text ?? string.Empty, string.Empty).Trim()
+            ? StripStickerPlaceholders(text ?? string.Empty).Trim()
             : (text ?? string.Empty);
         Content = stripped;
         HasText = !string.IsNullOrWhiteSpace(Content);
         TextOpacity = HasText ? 1.0 : 0.0;
+        RefreshContentBlocks();
         OnPropertyChanged(nameof(Content));
         OnPropertyChanged(nameof(HasText));
         OnPropertyChanged(nameof(TextOpacity));
+    }
+
+    private void RefreshContentBlocks()
+    {
+        const int maxCodeBlocksPerMessage = 8;
+        ContentBlocks.Clear();
+        LinkPreviewUrl = ExtractFirstWebUrl(Content);
+        OnPropertyChanged(nameof(LinkPreviewUrl));
+        OnPropertyChanged(nameof(LinkPreviewVisibility));
+        if (string.IsNullOrEmpty(Content))
+        {
+            return;
+        }
+
+        var cursor = 0;
+        var codeBlockCount = 0;
+        foreach (Match match in FencedCodeRegex.Matches(Content))
+        {
+            if (codeBlockCount >= maxCodeBlocksPerMessage)
+            {
+                // Preserve the remaining markdown as selectable text without creating more cards.
+                AddTextBlock(Content[cursor..]);
+                return;
+            }
+
+            AddTextBlock(Content[cursor..match.Index]);
+
+            var language = match.Groups["language"].Value.Trim();
+            var code = match.Groups["code"].Value.TrimEnd('\r', '\n');
+            ContentBlocks.Add(MessageContentBlockViewModel.Code(code, language));
+            codeBlockCount++;
+            cursor = match.Index + match.Length;
+        }
+
+        AddTextBlock(Content[cursor..]);
+    }
+
+    private void AddTextBlock(string text)
+    {
+        var normalized = text.Trim('\r', '\n');
+        if (!string.IsNullOrWhiteSpace(normalized))
+        {
+            ContentBlocks.Add(MessageContentBlockViewModel.Text(normalized));
+        }
+    }
+
+    private static string? ExtractFirstWebUrl(string content)
+    {
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return null;
+        }
+
+        var codeBlocks = FencedCodeRegex.Matches(content);
+        foreach (Match match in WebUrlRegex.Matches(content))
+        {
+            if (IsInsideCodeBlock(match.Index, codeBlocks))
+            {
+                continue;
+            }
+
+            var candidate = match.Value.TrimEnd('.', ',', '!', '?', ';', ':', ')', ']', '}');
+            if (Uri.TryCreate(candidate, UriKind.Absolute, out var uri)
+                && uri.Scheme is "http" or "https")
+            {
+                return uri.AbsoluteUri;
+            }
+        }
+
+        return null;
     }
 
     /// <summary>Attach a resolved sticker bitmap slot (file id known; image loaded later).</summary>
@@ -359,16 +544,40 @@ public partial class MessageItemViewModel : ObservableObject
             return [];
         }
 
+        var codeBlocks = FencedCodeRegex.Matches(content);
         var list = new List<string>();
         foreach (Match m in StickerPlaceholderRegex.Matches(content))
         {
-            if (m.Success && !list.Contains(m.Value, StringComparer.OrdinalIgnoreCase))
+            if (m.Success
+                && !IsInsideCodeBlock(m.Index, codeBlocks)
+                && !list.Contains(m.Value, StringComparer.OrdinalIgnoreCase))
             {
                 list.Add(m.Value);
             }
         }
 
         return list;
+    }
+
+    private static string StripStickerPlaceholders(string content)
+    {
+        var codeBlocks = FencedCodeRegex.Matches(content);
+        return StickerPlaceholderRegex.Replace(
+            content,
+            match => IsInsideCodeBlock(match.Index, codeBlocks) ? match.Value : string.Empty);
+    }
+
+    private static bool IsInsideCodeBlock(int index, MatchCollection codeBlocks)
+    {
+        foreach (Match codeBlock in codeBlocks)
+        {
+            if (index >= codeBlock.Index && index < codeBlock.Index + codeBlock.Length)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public long RoomSequence => Message.RoomSequence;
@@ -504,6 +713,53 @@ public partial class MessageItemViewModel : ObservableObject
         return false;
     }
 
+    private static string ResolveSenderName(SnChatMessage message, string fallback)
+        => message.Sender?.Nick
+           ?? message.Sender?.Username
+           ?? message.Sender?.Account?.Nick
+           ?? message.Sender?.Account?.Name
+           ?? fallback;
+
+    private static string BuildForwardedContent(SnChatMessage message)
+    {
+        if (message.DeletedAt is not null)
+        {
+            return "原消息已删除";
+        }
+
+        var body = message.Content?.Trim();
+        var attachmentCount = message.Attachments?.Count ?? 0;
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            if (message.IsEncrypted)
+            {
+                body = "[加密消息]";
+            }
+            else if (attachmentCount > 0)
+            {
+                var hasImage = message.Attachments!.Any(CloudFileUrlHelper.IsLikelyImage);
+                body = hasImage ? $"[图片 ×{attachmentCount}]" : $"[附件 ×{attachmentCount}]";
+            }
+            else
+            {
+                body = message.Type?.ToLowerInvariant() switch
+                {
+                    "sticker" => "[贴纸]",
+                    "audio" or "voice" => "[语音消息]",
+                    "video" => "[视频]",
+                    _ => "[消息]",
+                };
+            }
+        }
+        else if (attachmentCount > 0)
+        {
+            body += $"\n[附件 ×{attachmentCount}]";
+        }
+
+        const int maxLength = 500;
+        return body.Length > maxLength ? body[..maxLength] + "…" : body;
+    }
+
     private static string FormatTime(DateTimeOffset? time)
     {
         if (time is null)
@@ -515,7 +771,31 @@ public partial class MessageItemViewModel : ObservableObject
     }
 }
 
-/// <summary>Resolved or pending sticker image inside a chat bubble.</summary>
+/// <summary>A plain-text or fenced-code section within one message body.</summary>
+public sealed class MessageContentBlockViewModel
+{
+    private MessageContentBlockViewModel(string content, string language, bool isCode)
+    {
+        Content = content;
+        Language = language;
+        TextVisibility = isCode ? Visibility.Collapsed : Visibility.Visible;
+        CodeVisibility = isCode ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    public string Content { get; }
+
+    public string Language { get; }
+
+    public Visibility TextVisibility { get; }
+
+    public Visibility CodeVisibility { get; }
+
+    public static MessageContentBlockViewModel Text(string content) => new(content, string.Empty, false);
+
+    public static MessageContentBlockViewModel Code(string content, string language) => new(content, language, true);
+}
+
+/// <summary>Resolved or pending sticker image inside a chat bubble (GPU via FileId + FastWin2DImage).</summary>
 public partial class MessageStickerViewModel : ObservableObject
 {
     public MessageStickerViewModel(string placeholder, string? fileId, bool large)
@@ -527,11 +807,14 @@ public partial class MessageStickerViewModel : ObservableObject
 
     public string Placeholder { get; }
 
-    public string? FileId { get; set; }
+    /// <summary>DysonFS file id / URL for <c>FastWin2DImage.Source</c>.</summary>
+    [ObservableProperty]
+    public partial string? FileId { get; set; }
 
-    /// <summary>Max pixel side — large for sticker-only bubbles, smaller for inline emotes.</summary>
+    /// <summary>Max layout side — large for sticker-only bubbles, smaller for inline emotes.</summary>
     public double MaxSide { get; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path; kept for compile compatibility).</summary>
     [ObservableProperty]
     public partial BitmapImage? Image { get; set; }
 

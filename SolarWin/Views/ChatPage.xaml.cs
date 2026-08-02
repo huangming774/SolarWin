@@ -65,6 +65,24 @@ public sealed partial class ChatPage : Page
         }
     }
 
+    private void MoveRoomToGroup_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChatRoomListItem room }
+            && ViewModel.MoveRoomToCurrentGroupCommand.CanExecute(room))
+        {
+            ViewModel.MoveRoomToCurrentGroupCommand.Execute(room);
+        }
+    }
+
+    private void RemoveRoomFromGroup_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: ChatRoomListItem room }
+            && ViewModel.RemoveRoomFromGroupCommand.CanExecute(room))
+        {
+            ViewModel.RemoveRoomFromGroupCommand.Execute(room);
+        }
+    }
+
     private void UserSearchBox_OnKeyDown(object sender, KeyRoutedEventArgs e)
     {
         if (e.Key == VirtualKey.Enter)

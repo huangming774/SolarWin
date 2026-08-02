@@ -16,7 +16,6 @@ public partial class HomeViewModel : ObservableObject
     private readonly ISolarApiClient _api;
     private readonly IAuthService _authService;
     private readonly IToastService _toast;
-    private readonly DysonFileImageLoader _imageLoader;
     private readonly ChatViewModel _chat;
     private readonly HashSet<int> _loadedSections = [];
     private readonly SemaphoreSlim _loadGate = new(1, 1);
@@ -29,13 +28,11 @@ public partial class HomeViewModel : ObservableObject
         ISolarApiClient api,
         IAuthService authService,
         IToastService toast,
-        DysonFileImageLoader imageLoader,
         ChatViewModel chat)
     {
         _api = api;
         _authService = authService;
         _toast = toast;
-        _imageLoader = imageLoader;
         _chat = chat;
     }
 
@@ -231,7 +228,7 @@ public partial class HomeViewModel : ObservableObject
 
     public async Task LoadSectionAsync(int sectionIndex)
     {
-        if (sectionIndex is < 0 or > 8)
+        if (sectionIndex is < 0 or > 7)
         {
             return;
         }
@@ -315,7 +312,6 @@ public partial class HomeViewModel : ObservableObject
         5 => LoadCalendarAsync,
         6 => LoadTicketsAsync,
         7 => LoadNearbyAsync,
-        8 => LoadUserNotableDaysAsync,
         _ => null,
     };
 
@@ -331,7 +327,6 @@ public partial class HomeViewModel : ObservableObject
     {
         await LoadFortunePreviewAsync().ConfigureAwait(true);
         await LoadIpCheckAsync().ConfigureAwait(true);
-        await LoadRewindAsync().ConfigureAwait(true);
     }
 
     private async Task LoadOverviewAsync()
@@ -506,7 +501,7 @@ public partial class HomeViewModel : ObservableObject
             {
                 MyRealms.Add(new SocialListItemViewModel(
                     r.Id.ToString("D"),
-                    r.Name ?? r.Slug ?? "Realm",
+                    r.Name ?? r.Slug ?? "领域",
                     r.Slug is { } s ? $"/{s}" : "",
                     r.IsPublic ? "Public" : "Private",
                     r)
@@ -527,7 +522,7 @@ public partial class HomeViewModel : ObservableObject
             {
                 PublicRealms.Add(new SocialListItemViewModel(
                     r.Id.ToString("D"),
-                    r.Name ?? r.Slug ?? "Realm",
+                    r.Name ?? r.Slug ?? "领域",
                     r.Description ?? (r.Slug is { } s ? $"/{s}" : ""),
                     $"Boost Lv{r.BoostLevel}",
                     r)
@@ -566,11 +561,11 @@ public partial class HomeViewModel : ObservableObject
             var quota = await _api.GetRealmQuotaAsync().ConfigureAwait(true);
             RealmQuotaText = quota is null
                 ? "Quota unknown"
-                : $"Realm quota {quota.Used}/{quota.Total} (left {quota.Remaining})";
+                : $"领域配额 {quota.Used}/{quota.Total}（剩余 {quota.Remaining}）";
         }
         catch (SolarApiException)
         {
-            RealmQuotaText = "Quota unavailable";
+            RealmQuotaText = "领域配额暂不可用";
         }
     }
 
@@ -1323,12 +1318,8 @@ public partial class HomeViewModel : ObservableObject
             var list = await _api.SearchAccountsAsync(SearchQuery.Trim(), take: 20).ConfigureAwait(true);
             foreach (var acc in list)
             {
-                var item = new UserSearchResultItem(acc, _imageLoader);
+                var item = new UserSearchResultItem(acc);
                 SearchResults.Add(item);
-                if (item.HasAvatar && item.AvatarUrl is { } url)
-                {
-                    _ = LoadSearchAvatarAsync(item, url);
-                }
             }
         }
         catch (SolarApiException ex)
@@ -1339,21 +1330,6 @@ public partial class HomeViewModel : ObservableObject
         finally
         {
             IsBusy = false;
-        }
-    }
-
-    private async Task LoadSearchAvatarAsync(UserSearchResultItem item, string url)
-    {
-        try
-        {
-            var img = await _imageLoader.LoadAsync(url, DysonFileImageLoader.AvatarDecodeWidth).ConfigureAwait(true);
-            if (img is not null)
-            {
-                item.AvatarImage = img;
-            }
-        }
-        catch
-        {
         }
     }
 
@@ -1589,14 +1565,18 @@ public partial class HomeViewModel : ObservableObject
     [RelayCommand]
     private async Task AcceptFriendAsync(SocialListItemViewModel? item)
     {
-        if (item?.AccountId is not { } id)
+        var id = item?.Payload is SnAccountRelationship request
+            ? request.AccountId
+            : item?.AccountId;
+        if (id is not { } requesterId || requesterId == Guid.Empty)
         {
+            _toast.Warning("无法识别好友请求的发起人");
             return;
         }
 
         try
         {
-            await _api.AcceptFriendRequestAsync(id).ConfigureAwait(true);
+            await _api.AcceptFriendRequestAsync(requesterId).ConfigureAwait(true);
             _toast.Success("已接受");
             await LoadFriendsAsync().ConfigureAwait(true);
         }
@@ -1609,14 +1589,18 @@ public partial class HomeViewModel : ObservableObject
     [RelayCommand]
     private async Task DeclineFriendAsync(SocialListItemViewModel? item)
     {
-        if (item?.AccountId is not { } id)
+        var id = item?.Payload is SnAccountRelationship request
+            ? request.AccountId
+            : item?.AccountId;
+        if (id is not { } requesterId || requesterId == Guid.Empty)
         {
+            _toast.Warning("无法识别好友请求的发起人");
             return;
         }
 
         try
         {
-            await _api.DeclineFriendRequestAsync(id).ConfigureAwait(true);
+            await _api.DeclineFriendRequestAsync(requesterId).ConfigureAwait(true);
             _toast.Success("已拒绝");
             await LoadFriendsAsync().ConfigureAwait(true);
         }
@@ -1778,7 +1762,7 @@ public partial class HomeViewModel : ObservableObject
         var slug = item?.Slug;
         if (string.IsNullOrWhiteSpace(slug))
         {
-            _toast.Warning("缺少 Realm slug");
+            _toast.Warning("缺少领域标识");
             return;
         }
 
@@ -1811,7 +1795,7 @@ public partial class HomeViewModel : ObservableObject
                 IsPublic = true,
                 IsCommunity = true,
             }).ConfigureAwait(true);
-            _toast.Success("已创建 Realm");
+            _toast.Success("已创建领域");
             NewRealmSlug = string.Empty;
             NewRealmName = string.Empty;
             await LoadRealmsAsync().ConfigureAwait(true);
@@ -1911,7 +1895,7 @@ public partial class HomeViewModel : ObservableObject
     {
         if (string.IsNullOrWhiteSpace(SelectedRealmSlug))
         {
-            _toast.Warning("请先选择 Realm");
+            _toast.Warning("请先选择领域");
             return;
         }
 

@@ -11,11 +11,16 @@ namespace SolarWin.Services;
 /// </summary>
 public sealed class IncomingCallService : IIncomingCallService, IDisposable
 {
+    private static readonly TimeSpan CallSuppressionDuration = TimeSpan.FromHours(4);
+    private static readonly TimeSpan RoomSuppressionDuration = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan DeclinedRoomSuppressionDuration = TimeSpan.FromMinutes(30);
+
     private readonly IChatWebSocketService _ws;
     private readonly IAuthService _auth;
     private readonly ISystemNotificationService _system;
     private readonly IToastService _toast;
     private readonly object _gate = new();
+    private readonly Dictionary<string, DateTimeOffset> _suppressedInvites = new(StringComparer.OrdinalIgnoreCase);
     private bool _hooked;
     private IncomingCallInfo? _current;
     private CancellationTokenSource? _ringCts;
@@ -33,7 +38,7 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         _toast = toast;
     }
 
-    public bool HasIncoming => _current is not null;
+    public bool HasIncoming => Current is not null;
 
     public IncomingCallInfo? Current
     {
@@ -98,7 +103,21 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
 
         lock (_gate)
         {
-            // Replace older invite for same room
+            PruneSuppressedInvites_NoLock();
+            var inviteKey = GetInviteKey(info);
+            if (IsSuppressed_NoLock(inviteKey)
+                || IsSuppressed_NoLock(GetRoomKey(info.RoomId)))
+            {
+                return;
+            }
+
+            // Repeated state packets for one invite must not restart ringing/toasts.
+            if (_current is { } current
+                && string.Equals(GetInviteKey(current), inviteKey, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
             _current = info;
         }
 
@@ -119,10 +138,62 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         Changed?.Invoke(this, EventArgs.Empty);
     }
 
+    public void MarkOutgoingCall(Guid roomId, Guid? callId = null)
+    {
+        if (roomId == Guid.Empty)
+        {
+            return;
+        }
+
+        var clearedCurrent = false;
+        lock (_gate)
+        {
+            PruneSuppressedInvites_NoLock();
+            _suppressedInvites[GetRoomKey(roomId)] = DateTimeOffset.UtcNow + RoomSuppressionDuration;
+            if (callId is { } id && id != Guid.Empty)
+            {
+                _suppressedInvites[$"call:{id:N}"] = DateTimeOffset.UtcNow + CallSuppressionDuration;
+            }
+
+            if (_current is { } current
+                && (current.RoomId == roomId
+                    || (callId is { } currentCallId && current.CallId == currentCallId)))
+            {
+                _current = null;
+                clearedCurrent = true;
+            }
+        }
+
+        if (clearedCurrent)
+        {
+            StopRing();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void CancelOutgoingCall(Guid roomId)
+    {
+        if (roomId == Guid.Empty)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            _suppressedInvites.Remove(GetRoomKey(roomId));
+        }
+    }
+
     public void Decline()
     {
+        lock (_gate)
+        {
+            SuppressCurrentInvite_NoLock();
+            _current = null;
+        }
+
         StopRing();
-        Clear(raise: true);
+        Changed?.Invoke(this, EventArgs.Empty);
     }
 
     public IncomingCallInfo? Accept()
@@ -132,6 +203,7 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         lock (_gate)
         {
             info = _current;
+            SuppressCurrentInvite_NoLock();
             _current = null;
         }
 
@@ -153,6 +225,12 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
 
     private void OnPacket(object? sender, ChatWsPacket packet)
     {
+        if (LooksLikeCallEnded(packet.Type))
+        {
+            HandleCallEnded(packet);
+            return;
+        }
+
         if (!LooksLikeCallInvite(packet.Type))
         {
             // Some deployments embed invite in notification / message meta
@@ -187,13 +265,30 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         }
 
         var t = text.ToLowerInvariant();
-        return t.Contains("realtime", StringComparison.Ordinal)
-               || t.Contains("call.invite", StringComparison.Ordinal)
+        return t.Contains("call.invite", StringComparison.Ordinal)
                || t.Contains("call_invite", StringComparison.Ordinal)
-               || t.Contains("voice.call", StringComparison.Ordinal)
-               || t.Contains("chat.realtime", StringComparison.Ordinal)
+               || t.Contains("realtime.invite", StringComparison.Ordinal)
+               || t.Contains("realtime_invite", StringComparison.Ordinal)
+               || string.Equals(t.Trim(), "chat.realtime", StringComparison.Ordinal)
                || (t.Contains("invite", StringComparison.Ordinal) && t.Contains("call", StringComparison.Ordinal))
-               || (t.Contains("invite", StringComparison.Ordinal) && t.Contains("realtime", StringComparison.Ordinal));
+               || (t.Contains("invite", StringComparison.Ordinal) && t.Contains("realtime", StringComparison.Ordinal))
+               || (t.Contains("ring", StringComparison.Ordinal) && t.Contains("call", StringComparison.Ordinal));
+    }
+
+    private static bool LooksLikeCallEnded(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        var t = text.ToLowerInvariant();
+        var isCall = t.Contains("call", StringComparison.Ordinal)
+                     || t.Contains("realtime", StringComparison.Ordinal);
+        return isCall
+               && (t.Contains("ended", StringComparison.Ordinal)
+                   || t.Contains("terminated", StringComparison.Ordinal)
+                   || t.Contains("hangup", StringComparison.Ordinal));
     }
 
     private static bool TryParseInvite(ChatWsPacket packet, out IncomingCallInfo? info)
@@ -241,10 +336,12 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
                            ?? TryNestedId(root, "caller", "from", "sender", "inviter", "account");
             var title = TryGetString(root, "room_title", "room_name", "title")
                         ?? TryNestedName(root, "room", "chat_room");
+            var callId = TryGetGuid(root, "call_id", "callId", "session_id", "sessionId");
 
             info = new IncomingCallInfo
             {
                 RoomId = roomId.Value,
+                CallId = callId,
                 RoomTitle = title,
                 CallerName = caller,
                 CallerId = callerId,
@@ -341,6 +438,7 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         lock (_gate)
         {
             _current = null;
+            _suppressedInvites.Clear();
         }
 
         if (raise)
@@ -349,12 +447,86 @@ public sealed class IncomingCallService : IIncomingCallService, IDisposable
         }
     }
 
+    private void HandleCallEnded(ChatWsPacket packet)
+    {
+        if (!TryParseInvite(packet, out var ended) || ended is null)
+        {
+            return;
+        }
+
+        var changed = false;
+        lock (_gate)
+        {
+            var callKey = ended.CallId is { } callId && callId != Guid.Empty
+                ? $"call:{callId:N}"
+                : null;
+            if (callKey is not null)
+            {
+                _suppressedInvites.Remove(callKey);
+            }
+
+            _suppressedInvites.Remove($"room:{ended.RoomId:N}");
+            if (_current is { } current
+                && (current.RoomId == ended.RoomId
+                    || (ended.CallId is { } endedCallId && current.CallId == endedCallId)))
+            {
+                _current = null;
+                changed = true;
+            }
+        }
+
+        if (changed)
+        {
+            StopRing();
+            Changed?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    private void SuppressCurrentInvite_NoLock()
+    {
+        if (_current is not { } current)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        _suppressedInvites[GetRoomKey(current.RoomId)] = now + DeclinedRoomSuppressionDuration;
+        if (current.CallId is { } callId && callId != Guid.Empty)
+        {
+            _suppressedInvites[GetInviteKey(current)] = now + CallSuppressionDuration;
+        }
+        PruneSuppressedInvites_NoLock();
+    }
+
+    private bool IsSuppressed_NoLock(string key)
+        => _suppressedInvites.TryGetValue(key, out var until)
+           && until > DateTimeOffset.UtcNow;
+
+    private void PruneSuppressedInvites_NoLock()
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var key in _suppressedInvites
+                     .Where(pair => pair.Value <= now)
+                     .Select(pair => pair.Key)
+                     .ToList())
+        {
+            _suppressedInvites.Remove(key);
+        }
+    }
+
+    private static string GetInviteKey(IncomingCallInfo info)
+        => info.CallId is { } callId && callId != Guid.Empty
+            ? $"call:{callId:N}"
+            : GetRoomKey(info.RoomId);
+
+    private static string GetRoomKey(Guid roomId) => $"room:{roomId:N}";
+
     private void StartRing()
     {
         StopRing();
         _ringCts = new CancellationTokenSource();
         var ct = _ringCts.Token;
-        _ = Task.Run(() => RingLoopAsync(ct), ct);
+        _ = RingLoopAsync(ct);
     }
 
     private async Task RingLoopAsync(CancellationToken ct)

@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Media.Imaging;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
@@ -16,14 +15,14 @@ public partial class PostsViewModel : ObservableObject
 
     /// <summary>In-memory feed window — drop oldest when LoadMore grows past this (memory review #14).</summary>
     private const int MaxFeedItems = 120;
+    public const int MaxPendingAttachments = 9;
+    private const long MaxPostImageBytes = 25L * 1024 * 1024;
+    private const long MaxPostVideoBytes = 512L * 1024 * 1024;
 
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly IAuthService _auth;
-    private readonly Dictionary<PostItemViewModel, CancellationTokenSource> _imageRequests = [];
-    private HashSet<PostItemViewModel> _imageWindow = [];
-    private int _imageWindowVersion;
 
     private int _offset;
     private bool _usingTimeline = true;
@@ -73,11 +72,13 @@ public partial class PostsViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPost))]
+    [NotifyPropertyChangedFor(nameof(CanAddAttachments))]
     public partial bool IsPosting { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanPost))]
     [NotifyPropertyChangedFor(nameof(IsComposerEnabled))]
+    [NotifyPropertyChangedFor(nameof(CanAddAttachments))]
     public partial bool IsUploadingImage { get; set; }
 
     [ObservableProperty]
@@ -102,6 +103,8 @@ public partial class PostsViewModel : ObservableObject
         && (!string.IsNullOrWhiteSpace(NewPostContent) || PendingAttachments.Count > 0);
 
     public bool IsComposerEnabled => !IsPosting && !IsUploadingImage;
+
+    public bool CanAddAttachments => IsComposerEnabled && PendingAttachments.Count < MaxPendingAttachments;
 
     public Microsoft.UI.Xaml.Visibility PendingAttachmentsVisibility =>
         PendingAttachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -129,7 +132,6 @@ public partial class PostsViewModel : ObservableObject
         {
             IsBusy = true;
             ErrorMessage = null;
-            ClearImageWindow(clearImages: true);
             Items.Clear();
             _offset = 0;
             OnPropertyChanged(nameof(IsEmpty));
@@ -245,7 +247,7 @@ public partial class PostsViewModel : ObservableObject
 
             try
             {
-                Items.Add(new PostItemViewModel(post, _imageLoader, bindCachedImages: true));
+                Items.Add(new PostItemViewModel(post, _imageLoader));
             }
             catch
             {
@@ -261,18 +263,37 @@ public partial class PostsViewModel : ObservableObject
     {
         while (Items.Count > MaxFeedItems)
         {
-            var old = Items[0];
-            CancelImageRequest(old);
-            _imageWindow.Remove(old);
-            old.FirstImage = null;
-            old.AvatarImage = null;
             Items.RemoveAt(0);
         }
     }
 
     /// <summary>Upload a local image to Drive and queue it as a post attachment.</summary>
     public async Task AttachLocalImageAsync(Stream stream, string fileName, string contentType, long size)
+        => await AttachLocalMediaAsync(stream, fileName, contentType, size, isVideo: false).ConfigureAwait(true);
+
+    public async Task AttachLocalVideoAsync(Stream stream, string fileName, string contentType, long size)
+        => await AttachLocalMediaAsync(stream, fileName, contentType, size, isVideo: true).ConfigureAwait(true);
+
+    private async Task AttachLocalMediaAsync(
+        Stream stream,
+        string fileName,
+        string contentType,
+        long size,
+        bool isVideo)
     {
+        if (PendingAttachments.Count >= MaxPendingAttachments)
+        {
+            _toast.Warning($"每条帖子最多添加 {MaxPendingAttachments} 个附件");
+            return;
+        }
+
+        var maxBytes = isVideo ? MaxPostVideoBytes : MaxPostImageBytes;
+        if (size > maxBytes)
+        {
+            _toast.Warning(isVideo ? "单个视频不能超过 512 MB" : "单张图片不能超过 25 MB");
+            return;
+        }
+
         if (IsPosting || IsUploadingImage)
         {
             return;
@@ -285,14 +306,12 @@ public partial class PostsViewModel : ObservableObject
             ErrorMessage = null;
 
             var progress = new Progress<double>(p => UploadProgress = p);
-            var file = await _api.UploadFileDirectAsync(
-                stream,
-                fileName,
-                contentType,
-                size,
-                parentId: null,
-                progress,
-                CancellationToken.None).ConfigureAwait(true);
+            const long chunkedUploadThreshold = 5L * 1024 * 1024;
+            var file = size >= chunkedUploadThreshold
+                ? await _api.UploadFileChunkedAsync(
+                    stream, fileName, contentType, size, parentId: null, progress, CancellationToken.None).ConfigureAwait(true)
+                : await _api.UploadFileDirectAsync(
+                    stream, fileName, contentType, size, parentId: null, progress, CancellationToken.None).ConfigureAwait(true);
 
             var id = file.Id ?? CloudFileUrlHelper.ResolveFileId(file);
             if (string.IsNullOrWhiteSpace(id))
@@ -300,36 +319,26 @@ public partial class PostsViewModel : ObservableObject
                 throw new SolarApiException("上传成功但未返回文件 id。");
             }
 
-            // Local preview from cloud id (authenticated)
-            BitmapImage? preview = null;
-            try
-            {
-                preview = await _imageLoader.LoadSafeAsync(id, DysonFileImageLoader.FeedImageDecodeWidth).ConfigureAwait(true);
-            }
-            catch
-            {
-                // preview optional
-            }
-
             PendingAttachments.Add(new PendingPostAttachment
             {
                 FileId = id,
                 FileName = file.Name ?? fileName,
-                Preview = preview,
+                MimeType = file.MimeType ?? contentType,
+                IsVideo = isVideo,
             });
             UploadProgress = 1;
             NotifyComposer();
-            _toast.Success("图片已添加");
+            _toast.Success(isVideo ? "视频已添加" : "图片已添加");
         }
         catch (SolarApiException ex)
         {
             ErrorMessage = ex.Message;
-            _toast.Error("图片上传失败：" + (ex.ApiMessage ?? ex.Message));
+            _toast.Error((isVideo ? "视频" : "图片") + "上传失败：" + (ex.ApiMessage ?? ex.Message));
         }
         catch (Exception ex)
         {
             ErrorMessage = ex.Message;
-            _toast.Error("图片上传失败");
+            _toast.Error((isVideo ? "视频" : "图片") + "上传失败");
         }
         finally
         {
@@ -361,6 +370,7 @@ public partial class PostsViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(CanPost));
         OnPropertyChanged(nameof(IsComposerEnabled));
+        OnPropertyChanged(nameof(CanAddAttachments));
         OnPropertyChanged(nameof(PendingAttachmentsVisibility));
         OnPropertyChanged(nameof(UploadProgressVisibility));
         CreatePostCommand.NotifyCanExecuteChanged();
@@ -550,219 +560,6 @@ public partial class PostsViewModel : ObservableObject
         return _publisherName;
     }
 
-    public void UpdateVisibleImageWindow(
-        IReadOnlyCollection<PostItemViewModel> visibleItems,
-        int prefetchCount)
-    {
-        var indexes = visibleItems
-            .Select(item => Items.IndexOf(item))
-            .Where(index => index >= 0)
-            .ToList();
-
-        if (indexes.Count == 0)
-        {
-            // Keep already-decoded bitmaps while briefly empty (virtualization churn).
-            // Full clear only happens on page leave / reload.
-            return;
-        }
-
-        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
-        var end = Math.Min(Items.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
-        var window = Items
-            .Skip(start)
-            .Take(end - start + 1)
-            .ToHashSet();
-
-        var changed = !_imageWindow.SetEquals(window);
-        if (changed)
-        {
-            foreach (var item in _imageRequests.Keys.ToList())
-            {
-                if (!window.Contains(item))
-                {
-                    CancelImageRequest(item);
-                }
-            }
-
-            // Do not null AvatarImage / FirstImage when scrolling away — re-fetch was the
-            // main reason feed images felt slow. Memory is bounded by MaxFeedItems + LRU.
-            _imageWindow = window;
-        }
-
-        var version = _imageWindowVersion;
-        foreach (var item in window)
-        {
-            LoadImagesForVisibleItem(item, version);
-        }
-    }
-
-    public void ClearVisibleImageWindow()
-        => ClearImageWindow(clearImages: true);
-
-    private void LoadImagesForVisibleItem(PostItemViewModel item, int version)
-    {
-        if (_imageRequests.ContainsKey(item))
-        {
-            return;
-        }
-
-        if (!NeedsImageLoad(item))
-        {
-            return;
-        }
-
-        var cts = new CancellationTokenSource();
-        _imageRequests[item] = cts;
-        _ = LoadItemImagesAsync(item, version, cts);
-    }
-
-    private async Task LoadItemImagesAsync(
-        PostItemViewModel item,
-        int version,
-        CancellationTokenSource requestCts)
-    {
-        try
-        {
-            Task<BitmapImage?>? avatarTask = null;
-            Task<BitmapImage?>? imageTask = null;
-
-            if (item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl))
-            {
-                if (_imageLoader.TryGetCached(
-                        item.AvatarUrl,
-                        out var cachedAvatar,
-                        DysonFileImageLoader.AvatarDecodeWidth)
-                    && cachedAvatar is not null)
-                {
-                    if (CanApplyImage(item, version, requestCts))
-                    {
-                        item.AvatarImage = cachedAvatar;
-                    }
-                }
-                else
-                {
-                    avatarTask = _imageLoader.LoadSafeAsync(
-                        item.AvatarUrl,
-                        DysonFileImageLoader.AvatarDecodeWidth,
-                        requestCts.Token);
-                }
-            }
-
-            if (item.HasImages && item.FirstImage is null && item.ImageUrls.Count > 0)
-            {
-                var url = item.ImageUrls[0];
-                if (_imageLoader.TryGetCached(
-                        url,
-                        out var cachedImage,
-                        DysonFileImageLoader.FeedImageDecodeWidth)
-                    && cachedImage is not null)
-                {
-                    if (CanApplyImage(item, version, requestCts))
-                    {
-                        item.FirstImage = cachedImage;
-                    }
-                }
-                else
-                {
-                    imageTask = _imageLoader.LoadSafeAsync(
-                        url,
-                        DysonFileImageLoader.FeedImageDecodeWidth,
-                        requestCts.Token);
-                }
-            }
-
-            // Avatar + post image in parallel (was sequential → ~2× wait per card).
-            if (avatarTask is not null && imageTask is not null)
-            {
-                await Task.WhenAll(avatarTask, imageTask).ConfigureAwait(true);
-            }
-            else if (avatarTask is not null)
-            {
-                await avatarTask.ConfigureAwait(true);
-            }
-            else if (imageTask is not null)
-            {
-                await imageTask.ConfigureAwait(true);
-            }
-
-            if (avatarTask is not null
-                && avatarTask.IsCompletedSuccessfully
-                && avatarTask.Result is { } avatar
-                && CanApplyImage(item, version, requestCts))
-            {
-                item.AvatarImage = avatar;
-            }
-
-            if (imageTask is not null
-                && imageTask.IsCompletedSuccessfully
-                && imageTask.Result is { } image
-                && CanApplyImage(item, version, requestCts))
-            {
-                item.FirstImage = image;
-            }
-        }
-        finally
-        {
-            var shouldRetry = false;
-            if (_imageRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
-            {
-                _imageRequests.Remove(item);
-                shouldRetry = requestCts.IsCancellationRequested
-                              && _imageWindow.Contains(item)
-                              && Items.Contains(item);
-            }
-
-            requestCts.Dispose();
-            if (shouldRetry)
-            {
-                LoadImagesForVisibleItem(item, _imageWindowVersion);
-            }
-        }
-    }
-
-    private bool CanApplyImage(
-        PostItemViewModel item,
-        int version,
-        CancellationTokenSource requestCts)
-        => !requestCts.IsCancellationRequested
-           && version == _imageWindowVersion
-           && _imageWindow.Contains(item)
-           && Items.Contains(item);
-
-    private static bool NeedsImageLoad(PostItemViewModel item)
-        => item.HasAvatar && item.AvatarImage is null && !string.IsNullOrWhiteSpace(item.AvatarUrl)
-           || item.HasImages && item.FirstImage is null;
-
-    private void CancelImageRequest(PostItemViewModel item)
-    {
-        if (_imageRequests.TryGetValue(item, out var cts))
-        {
-            cts.Cancel();
-        }
-    }
-
-    private void ClearImageWindow(bool clearImages)
-    {
-        _imageWindowVersion++;
-        foreach (var cts in _imageRequests.Values)
-        {
-            cts.Cancel();
-        }
-
-        _imageRequests.Clear();
-        _imageWindow = [];
-
-        if (!clearImages)
-        {
-            return;
-        }
-
-        foreach (var item in Items)
-        {
-            item.AvatarImage = null;
-            item.FirstImage = null;
-        }
-    }
 }
 
 /// <summary>Local compose attachment after Drive upload.</summary>
@@ -772,5 +569,14 @@ public sealed class PendingPostAttachment
 
     public required string FileName { get; init; }
 
-    public BitmapImage? Preview { get; init; }
+    public string MimeType { get; init; } = string.Empty;
+
+    public bool IsVideo { get; init; }
+
+    public Visibility ImageVisibility => IsVideo ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility VideoVisibility => IsVideo ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>FastWin2DImage resolves this id and releases its GPU lease offscreen.</summary>
+    public string PreviewSource => FileId;
 }

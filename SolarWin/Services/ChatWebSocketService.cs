@@ -1,6 +1,8 @@
 using System.Net.WebSockets;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Channels;
 using SolarWin.Helpers;
 
 namespace SolarWin.Services;
@@ -11,13 +13,16 @@ namespace SolarWin.Services;
 public sealed class ChatWebSocketService : IChatWebSocketService
 {
     public const string WsUrl = "wss://api.solian.app/ws";
+    private const int PacketQueueCapacity = 256;
 
     private readonly ITokenStorage _tokenStorage;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private ClientWebSocket? _socket;
     private CancellationTokenSource? _loopCts;
     private Task? _receiveTask;
+    private Task? _packetTask;
     private Task? _heartbeatTask;
+    private Channel<string>? _packetChannel;
     private int _generation;
 
     public ChatWebSocketService(ITokenStorage tokenStorage)
@@ -77,8 +82,17 @@ public sealed class ChatWebSocketService : IChatWebSocketService
             SetState(ChatWsConnectionState.Connected);
             _loopCts = new CancellationTokenSource();
             var loopToken = _loopCts.Token;
-            _receiveTask = Task.Run(() => ReceiveLoopAsync(gen, loopToken), loopToken);
-            _heartbeatTask = Task.Run(() => HeartbeatLoopAsync(gen, loopToken), loopToken);
+            _packetChannel = Channel.CreateBounded<string>(new BoundedChannelOptions(PacketQueueCapacity)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                AllowSynchronousContinuations = false,
+                // Never lose ordered chat events: apply backpressure to the receive loop.
+                FullMode = BoundedChannelFullMode.Wait,
+            });
+            _packetTask = ProcessPacketsAsync(gen, _packetChannel.Reader, loopToken);
+            _receiveTask = ReceiveLoopAsync(gen, _packetChannel.Writer, loopToken);
+            _heartbeatTask = HeartbeatLoopAsync(gen, loopToken);
         }
         finally
         {
@@ -129,7 +143,10 @@ public sealed class ChatWebSocketService : IChatWebSocketService
         }
     }
 
-    private async Task ReceiveLoopAsync(int generation, CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(
+        int generation,
+        ChannelWriter<string> packetWriter,
+        CancellationToken cancellationToken)
     {
         var buffer = new byte[64 * 1024];
         var sb = new StringBuilder();
@@ -151,7 +168,8 @@ public sealed class ChatWebSocketService : IChatWebSocketService
                     result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), cancellationToken).ConfigureAwait(false);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await DisconnectAsync().ConfigureAwait(false);
+                        packetWriter.TryComplete();
+                        SetState(ChatWsConnectionState.Disconnected);
                         _ = TryReconnectAsync();
                         return;
                     }
@@ -160,7 +178,7 @@ public sealed class ChatWebSocketService : IChatWebSocketService
                 }
                 while (!result.EndOfMessage);
 
-                HandleRawPacket(sb.ToString());
+                await packetWriter.WriteAsync(sb.ToString(), cancellationToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -176,6 +194,39 @@ public sealed class ChatWebSocketService : IChatWebSocketService
 
                 break;
             }
+        }
+
+        packetWriter.TryComplete();
+    }
+
+    private async Task ProcessPacketsAsync(
+        int generation,
+        ChannelReader<string> packetReader,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (var raw in packetReader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (generation != _generation)
+                {
+                    break;
+                }
+
+                try
+                {
+                    HandleRawPacket(raw);
+                }
+                catch (Exception ex)
+                {
+                    // A subscriber must not kill the sole packet consumer and stall receive.
+                    Debug.WriteLine($"[ChatWebSocket] Packet dispatch failed: {ex.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // normal shutdown
         }
     }
 
@@ -277,6 +328,7 @@ public sealed class ChatWebSocketService : IChatWebSocketService
         try
         {
             _loopCts?.Cancel();
+            _packetChannel?.Writer.TryComplete();
         }
         catch
         {
@@ -307,10 +359,24 @@ public sealed class ChatWebSocketService : IChatWebSocketService
             }
         }
 
+        if (_packetTask is not null)
+        {
+            try
+            {
+                await _packetTask.ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
         _loopCts?.Dispose();
         _loopCts = null;
         _receiveTask = null;
+        _packetTask = null;
         _heartbeatTask = null;
+        _packetChannel = null;
 
         if (_socket is not null)
         {

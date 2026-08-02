@@ -1,8 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
-using Microsoft.UI.Xaml.Input;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
 using SolarWin.Helpers;
 using SolarWin.Models;
@@ -13,11 +11,9 @@ namespace SolarWin.Views;
 
 public sealed partial class PostDetailPage : Page
 {
-    private const int ReplyAvatarPrefetchItemCount = 12;
-
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
-    private readonly HashSet<PostItemViewModel> _visibleReplyItems = [];
+    private CancellationTokenSource? _thumbnailLoadCts;
 
     public PostDetailViewModel ViewModel { get; }
 
@@ -34,7 +30,7 @@ public sealed partial class PostDetailPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
-        _visibleReplyItems.Clear();
+        ResetThumbnailLoads();
         if (e.Parameter is PostItemViewModel item)
         {
             ViewModel.Initialize(item);
@@ -43,39 +39,97 @@ public sealed partial class PostDetailPage : Page
 
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
-        _visibleReplyItems.Clear();
-        ViewModel.ClearVisibleReplyImageWindow();
+        CancelThumbnailLoads();
+        // Cancel in-flight API/image work and clear media bindings before the visual tree tears down.
+        ViewModel.Cleanup();
         base.OnNavigatedFrom(e);
     }
 
     private async void PostImage_OnClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement { Tag: BitmapImage image })
+        if (sender is not FrameworkElement { Tag: string url } || string.IsNullOrWhiteSpace(url))
         {
             return;
         }
 
         await ImagePreviewHelper.ShowAsync(
             XamlRoot,
-            image,
+            imageUrl: url,
             title: "图片预览",
+            fullResUrl: url,
             imageLoader: _imageLoader).ConfigureAwait(true);
     }
 
-    private async void PostImage_OnDoubleTapped(object sender, DoubleTappedRoutedEventArgs e)
+    private async void PostVideo_OnLoaded(object sender, RoutedEventArgs e)
     {
-        e.Handled = true;
-        if (sender is not FrameworkElement { Tag: BitmapImage image })
-        {
-            return;
-        }
+        if (sender is not FrameworkElement element
+            || string.IsNullOrWhiteSpace(ViewModel.VideoSourceKey)
+            || !string.IsNullOrWhiteSpace(ViewModel.VideoThumbnailPath)) return;
 
-        await ImagePreviewHelper.ShowAsync(
-            XamlRoot,
-            image,
-            title: "图片预览",
-            imageLoader: _imageLoader).ConfigureAwait(true);
+        var pageToken = _thumbnailLoadCts?.Token ?? new CancellationToken(canceled: true);
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(pageToken);
+        void CancelRequest(object sender, RoutedEventArgs args) => requestCancellation.Cancel();
+        element.Unloaded += CancelRequest;
+        try
+        {
+            var cache = App.Services.GetRequiredService<VideoMediaCache>();
+            var thumbnailPath = await cache.GetThumbnailAsync(
+                ViewModel.VideoSourceKey,
+                ViewModel.VideoName,
+                ViewModel.VideoMimeType,
+                960,
+                540,
+                requestCancellation.Token).ConfigureAwait(true);
+            if (!requestCancellation.IsCancellationRequested
+                && XamlRoot is not null
+                && !string.IsNullOrWhiteSpace(thumbnailPath))
+            {
+                ViewModel.VideoThumbnailPath = thumbnailPath;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the page is left.
+        }
+        catch
+        {
+            // Keep the play overlay when thumbnail extraction fails.
+        }
+        finally
+        {
+            element.Unloaded -= CancelRequest;
+        }
     }
+
+    private void ResetThumbnailLoads()
+    {
+        CancelThumbnailLoads();
+        _thumbnailLoadCts = new CancellationTokenSource();
+    }
+
+    private void CancelThumbnailLoads()
+    {
+        var cancellation = Interlocked.Exchange(ref _thumbnailLoadCts, null);
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+
+    private async void PostVideo_OnClick(object sender, RoutedEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(ViewModel.VideoSourceKey)) return;
+        var cache = App.Services.GetRequiredService<VideoMediaCache>();
+        if (!await VideoPreviewHelper.ShowAsync(
+                XamlRoot,
+                ViewModel.VideoSourceKey,
+                ViewModel.VideoName,
+                ViewModel.VideoMimeType,
+                cache).ConfigureAwait(true))
+        {
+            _toast.Error("视频暂时无法播放");
+        }
+    }
+
     private void BackButton_OnClick(object sender, RoutedEventArgs e)
     {
         if (Frame?.CanGoBack == true)
@@ -92,25 +146,7 @@ public sealed partial class PostDetailPage : Page
         ListViewBase sender,
         ContainerContentChangingEventArgs args)
     {
-        if (args.Item is not PostItemViewModel item)
-        {
-            return;
-        }
-
-        if (args.InRecycleQueue)
-        {
-            _visibleReplyItems.Remove(item);
-            ViewModel.UpdateVisibleReplyImageWindow(
-                _visibleReplyItems,
-                ReplyAvatarPrefetchItemCount);
-            return;
-        }
-
-        _visibleReplyItems.RemoveWhere(candidate => !ViewModel.Replies.Contains(candidate));
-        _visibleReplyItems.Add(item);
-        ViewModel.UpdateVisibleReplyImageWindow(
-            _visibleReplyItems,
-            ReplyAvatarPrefetchItemCount);
+        // GpuImage owns reply-avatar load / lease release via EffectiveViewport + Unloaded.
     }
 
     private void ReplyAuthorAvatar_OnClick(object sender, RoutedEventArgs e)
@@ -148,9 +184,10 @@ public sealed partial class PostDetailPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
-        _visibleReplyItems.Clear();
-        ViewModel.ClearVisibleReplyImageWindow();
-        ViewModel.NavigateToUserProfile -= OnNavigateToUserProfile;
+        CancelThumbnailLoads();
         Unloaded -= OnUnloaded;
+        ViewModel.NavigateToUserProfile -= OnNavigateToUserProfile;
+        // Safety net if navigated-from was skipped (rare frame edge cases).
+        ViewModel.Cleanup();
     }
 }

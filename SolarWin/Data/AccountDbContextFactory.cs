@@ -257,8 +257,9 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
     private DbContextOptions<SolarWinDbContext> BuildOptions(Guid accountId)
     {
         var path = GetDatabasePath(accountId);
-        // Cache=Shared cooperates with WAL multi-reader (design v1.0 §7).
-        var connectionString = $"Data Source={path};Cache=Shared";
+        // WAL already provides concurrent readers. Microsoft.Data.Sqlite explicitly
+        // discourages combining WAL with SQLite's legacy shared-cache mode.
+        var connectionString = $"Data Source={path};Pooling=True;Default Timeout=5";
 
         var builder = new DbContextOptionsBuilder<SolarWinDbContext>();
         builder.UseSqlite(connectionString);

@@ -2,9 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Media;
-using Microsoft.UI.Xaml.Media.Imaging;
 using Microsoft.UI.Xaml.Navigation;
-using Microsoft.UI.Xaml.Shapes;
+using SolarWin.Controls;
+using SolarWin.Helpers;
 using SolarWin.ViewModels;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -69,19 +69,24 @@ public sealed partial class ProfilePage : Page
 
     private async void OnEditProfileRequested(object? sender, EventArgs e)
     {
-        var avatarPreview = new Ellipse
+        var avatarPreview = new FastWin2DImage
         {
             Width = 72,
             Height = 72,
+            CornerRadius = new CornerRadius(36),
+            DecodeWidth = DysonFileImageLoader.ProfileDecodeWidth,
+            Stretch = Stretch.UniformToFill,
+            ShowPlaceholder = true,
+            EnableFadeIn = true,
+            Source = ViewModel.EditAvatarUrl,
         };
-        UpdateEditAvatarEllipse(avatarPreview, ViewModel.EditAvatarPreview);
 
         var changeAvatarBtn = new Button { Content = "选择新头像" };
         changeAvatarBtn.Click += async (_, _) =>
         {
             if (await PickAndUploadAvatarAsync())
             {
-                UpdateEditAvatarEllipse(avatarPreview, ViewModel.EditAvatarPreview);
+                avatarPreview.Source = ViewModel.EditAvatarUrl;
             }
         };
 
@@ -180,21 +185,6 @@ public sealed partial class ProfilePage : Page
         picker.FileTypeFilter.Add(".gif");
         picker.FileTypeFilter.Add(".bmp");
         return picker;
-    }
-
-    private static void UpdateEditAvatarEllipse(Ellipse ellipse, BitmapImage? image)
-    {
-        if (image is null)
-        {
-            ellipse.Fill = new SolidColorBrush(Microsoft.UI.Colors.Gray);
-            return;
-        }
-
-        ellipse.Fill = new ImageBrush
-        {
-            ImageSource = image,
-            Stretch = Stretch.UniformToFill,
-        };
     }
 
     private void OpenSettings_OnClick(object sender, RoutedEventArgs e)

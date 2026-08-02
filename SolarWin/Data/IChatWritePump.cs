@@ -29,7 +29,7 @@ public interface IChatWritePump
     /// <summary>Total ops successfully written to the channel.</summary>
     long EnqueuedTotal { get; }
 
-    /// <summary>Ops dropped because the channel was closed / unavailable.</summary>
+    /// <summary>Ops dropped because the bounded channel evicted them or was unavailable.</summary>
     long DroppedTotal { get; }
 
     /// <summary>Batches that completed <c>SaveChanges</c> without throwing.</summary>

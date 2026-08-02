@@ -8,12 +8,10 @@ namespace SolarWin.ViewModels;
 
 public partial class NotificationItemViewModel : ObservableObject
 {
-    private readonly DysonFileImageLoader _imageLoader;
-
     public NotificationItemViewModel(SnNotification notification, DysonFileImageLoader imageLoader)
     {
         Notification = notification;
-        _imageLoader = imageLoader;
+        _ = imageLoader;
         Id = notification.Id;
         Title = string.IsNullOrWhiteSpace(notification.Title) ? "通知" : notification.Title!;
         Subtitle = notification.Subtitle ?? string.Empty;
@@ -26,17 +24,9 @@ public partial class NotificationItemViewModel : ObservableObject
         CardOpacity = IsUnread ? 1.0 : 0.85;
         AvatarUrl = FindAvatarUrl(notification.Meta);
         Initials = GetInitials(notification);
-
-        if (!string.IsNullOrWhiteSpace(AvatarUrl)
-            && _imageLoader.TryGetCached(AvatarUrl, out var cached, DysonFileImageLoader.AvatarDecodeWidth)
-            && cached is not null)
-        {
-            SetAvatar(cached);
-        }
-        else if (!string.IsNullOrWhiteSpace(AvatarUrl))
-        {
-            _ = LoadAvatarAsync(AvatarUrl);
-        }
+        // Avatar paints via FastWin2DImage + AvatarUrl (GPU); no BitmapImage prefetch.
+        AvatarOpacity = 0;
+        InitialsOpacity = 1;
     }
 
     public SnNotification Notification { get; }
@@ -49,6 +39,7 @@ public partial class NotificationItemViewModel : ObservableObject
     public string Initials { get; }
     public string? AvatarUrl { get; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
     public partial BitmapImage? AvatarImage { get; set; }
 
@@ -78,24 +69,6 @@ public partial class NotificationItemViewModel : ObservableObject
         OnPropertyChanged(nameof(CardOpacity));
         OnPropertyChanged(nameof(TitleWeightName));
         OnPropertyChanged(nameof(UnreadLabel));
-    }
-
-    private async Task LoadAvatarAsync(string url)
-    {
-        var image = await _imageLoader
-            .LoadSafeAsync(url, DysonFileImageLoader.AvatarDecodeWidth)
-            .ConfigureAwait(true);
-        if (image is not null)
-        {
-            SetAvatar(image);
-        }
-    }
-
-    private void SetAvatar(BitmapImage image)
-    {
-        AvatarImage = image;
-        AvatarOpacity = 1.0;
-        InitialsOpacity = 0.0;
     }
 
     private static string GetInitials(SnNotification notification)

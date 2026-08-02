@@ -1,6 +1,9 @@
+using System.Numerics;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.UI.Composition;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Hosting;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
@@ -18,6 +21,9 @@ public sealed partial class ChatDetailPage : Page
     private readonly IToastService _toast;
     private ScrollViewer? _messageScrollViewer;
     private bool _scrollHooked;
+    private bool _windowActivationHooked;
+    private bool _windowWasInactive;
+    private CancellationTokenSource? _thumbnailLoadCts;
 
     public ChatDetailViewModel ViewModel { get; }
 
@@ -35,6 +41,7 @@ public sealed partial class ChatDetailPage : Page
     protected override void OnNavigatedTo(NavigationEventArgs e)
     {
         base.OnNavigatedTo(e);
+        ResetThumbnailLoads();
 
         if (e.Parameter is ChatRoomListItem item)
         {
@@ -56,15 +63,49 @@ public sealed partial class ChatDetailPage : Page
     protected override void OnNavigatedFrom(NavigationEventArgs e)
     {
         base.OnNavigatedFrom(e);
+        CancelThumbnailLoads();
         ViewModel.StopPolling();
         ViewModel.CancelPendingLoads();
         ViewModel.Unhook();
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e) => TryHookScrollViewer();
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        TryHookScrollViewer();
+        if (!_windowActivationHooked)
+        {
+            _windowActivationHooked = true;
+            App.Window.Activated += Window_OnActivated;
+        }
+    }
+
+    private void Window_OnActivated(object sender, WindowActivatedEventArgs args)
+    {
+        if (args.WindowActivationState == WindowActivationState.Deactivated)
+        {
+            _windowWasInactive = true;
+            return;
+        }
+
+        if (!_windowWasInactive)
+        {
+            return;
+        }
+
+        _windowWasInactive = false;
+        _ = ViewModel.CompensateAfterResumeAsync();
+    }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        if (_windowActivationHooked)
+        {
+            _windowActivationHooked = false;
+            App.Window.Activated -= Window_OnActivated;
+        }
+
+        _windowWasInactive = false;
+        CancelThumbnailLoads();
         ViewModel.StopPolling();
         ViewModel.CancelPendingLoads();
         ViewModel.Unhook();
@@ -95,6 +136,11 @@ public sealed partial class ChatDetailPage : Page
         }
     }
 
+    private void EncryptionSettings_OnClick(object sender, RoutedEventArgs e)
+    {
+        Frame?.Navigate(typeof(ChatEncryptionPage), ViewModel);
+    }
+
     private void SenderAvatar_OnClick(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement { Tag: MessageItemViewModel item })
@@ -110,6 +156,49 @@ public sealed partial class ChatDetailPage : Page
         }
 
         Frame?.Navigate(typeof(UserProfilePage), args);
+    }
+
+    private void MessageBubble_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Border
+            {
+                Tag: MessageItemViewModel item,
+                ActualWidth: > 0,
+                ActualHeight: > 0,
+            } bubble
+            || !item.ConsumeSendAnimation())
+        {
+            return;
+        }
+
+        var visual = ElementCompositionPreview.GetElementVisual(bubble);
+        var compositor = visual.Compositor;
+        visual.CenterPoint = new Vector3(
+            item.IsMine ? (float)bubble.ActualWidth : 0f,
+            (float)bubble.ActualHeight,
+            0f);
+
+        SpringVector3NaturalMotionAnimation scale = compositor.CreateSpringVector3Animation();
+        scale.InitialValue = new Vector3(0.72f, 0.72f, 1f);
+        scale.FinalValue = Vector3.One;
+        scale.DampingRatio = 0.72f;
+        scale.Period = TimeSpan.FromMilliseconds(180);
+
+        var restingOffset = visual.Offset;
+        SpringVector3NaturalMotionAnimation lift = compositor.CreateSpringVector3Animation();
+        lift.InitialValue = restingOffset + new Vector3(item.IsMine ? 18f : -18f, 10f, 0f);
+        lift.FinalValue = restingOffset;
+        lift.DampingRatio = 0.78f;
+        lift.Period = TimeSpan.FromMilliseconds(210);
+
+        ScalarKeyFrameAnimation fade = compositor.CreateScalarKeyFrameAnimation();
+        fade.InsertKeyFrame(0f, 0f);
+        fade.InsertKeyFrame(1f, (float)item.BubbleOpacity);
+        fade.Duration = TimeSpan.FromMilliseconds(110);
+
+        visual.StartAnimation(nameof(visual.Scale), scale);
+        visual.StartAnimation(nameof(visual.Offset), lift);
+        visual.StartAnimation(nameof(visual.Opacity), fade);
     }
 
     private void DraftBox_OnKeyDown(object sender, KeyRoutedEventArgs e)
@@ -200,6 +289,12 @@ public sealed partial class ChatDetailPage : Page
         picker.FileTypeFilter.Add(".gif");
         picker.FileTypeFilter.Add(".webp");
         picker.FileTypeFilter.Add(".bmp");
+        picker.FileTypeFilter.Add(".mp4");
+        picker.FileTypeFilter.Add(".mov");
+        picker.FileTypeFilter.Add(".mkv");
+        picker.FileTypeFilter.Add(".webm");
+        picker.FileTypeFilter.Add(".avi");
+        picker.FileTypeFilter.Add(".m4v");
 
         var file = await picker.PickSingleFileAsync();
         if (file is null)
@@ -211,10 +306,8 @@ public sealed partial class ChatDetailPage : Page
         {
             var props = await file.GetBasicPropertiesAsync();
             await using var stream = await file.OpenStreamForReadAsync();
-            var contentType = string.IsNullOrWhiteSpace(file.ContentType)
-                ? "image/jpeg"
-                : file.ContentType;
-            await ViewModel.AttachLocalImageAsync(stream, file.Name, contentType, (long)props.Size);
+            var contentType = ResolveMediaContentType(file.Name, file.ContentType);
+            await ViewModel.AttachLocalMediaAsync(stream, file.Name, contentType, (long)props.Size);
         }
         catch (Exception ex)
         {
@@ -222,11 +315,104 @@ public sealed partial class ChatDetailPage : Page
         }
     }
 
+    private static string ResolveMediaContentType(string fileName, string? contentType)
+    {
+        if (!string.IsNullOrWhiteSpace(contentType)
+            && !string.Equals(contentType, "application/octet-stream", StringComparison.OrdinalIgnoreCase))
+        {
+            return contentType;
+        }
+
+        return Path.GetExtension(fileName).ToLowerInvariant() switch
+        {
+            ".png" => "image/png",
+            ".gif" => "image/gif",
+            ".webp" => "image/webp",
+            ".bmp" => "image/bmp",
+            ".mp4" or ".m4v" => "video/mp4",
+            ".mov" => "video/quicktime",
+            ".mkv" => "video/x-matroska",
+            ".webm" => "video/webm",
+            ".avi" => "video/x-msvideo",
+            _ => "image/jpeg",
+        };
+    }
+
     private void AttachmentImage_OnTapped(object sender, TappedRoutedEventArgs e)
     {
         if (sender is FrameworkElement { Tag: MessageAttachmentViewModel att })
         {
             ViewModel.RequestOpenImage(att);
+            e.Handled = true;
+        }
+    }
+
+    private async void AttachmentVideo_OnLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MessageAttachmentViewModel att } element
+            || !att.IsVideo
+            || !string.IsNullOrWhiteSpace(att.VideoThumbnailPath)
+            || string.IsNullOrWhiteSpace(att.VideoSourceKey)
+            || att.File.Size > 128L * 1024 * 1024)
+        {
+            return;
+        }
+
+        var pageToken = _thumbnailLoadCts?.Token ?? new CancellationToken(canceled: true);
+        using var requestCancellation = CancellationTokenSource.CreateLinkedTokenSource(pageToken);
+        void CancelRequest(object sender, RoutedEventArgs args) => requestCancellation.Cancel();
+        element.Unloaded += CancelRequest;
+        try
+        {
+            var cache = App.Services.GetRequiredService<VideoMediaCache>();
+            var thumbnailPath = await cache.GetThumbnailAsync(
+                att.VideoSourceKey, att.Name, att.MimeType, 640, 360, requestCancellation.Token).ConfigureAwait(true);
+            if (!requestCancellation.IsCancellationRequested
+                && element.XamlRoot is not null
+                && !string.IsNullOrWhiteSpace(thumbnailPath))
+            {
+                att.VideoThumbnailPath = thumbnailPath;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when the page is left or a recycled container no longer needs the result.
+        }
+        catch
+        {
+            // The play button remains available even when this codec has no thumbnail decoder.
+        }
+        finally
+        {
+            element.Unloaded -= CancelRequest;
+        }
+    }
+
+    private void ResetThumbnailLoads()
+    {
+        CancelThumbnailLoads();
+        _thumbnailLoadCts = new CancellationTokenSource();
+    }
+
+    private void CancelThumbnailLoads()
+    {
+        var cancellation = Interlocked.Exchange(ref _thumbnailLoadCts, null);
+        if (cancellation is null) return;
+        cancellation.Cancel();
+        cancellation.Dispose();
+    }
+
+    private async void AttachmentVideo_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (sender is FrameworkElement { Tag: MessageAttachmentViewModel att }
+            && !string.IsNullOrWhiteSpace(att.VideoSourceKey))
+        {
+            var cache = App.Services.GetRequiredService<VideoMediaCache>();
+            if (!await VideoPreviewHelper.ShowAsync(
+                    XamlRoot, att.VideoSourceKey, att.Name, att.MimeType, cache).ConfigureAwait(true))
+            {
+                _toast.Error("视频下载或解码失败");
+            }
             e.Handled = true;
         }
     }
@@ -395,46 +581,21 @@ public sealed partial class ChatDetailPage : Page
 
     private async void OnOpenImageRequested(object? sender, MessageAttachmentViewModel attachment)
     {
-        var image = attachment.Image;
-        if (image is null && !string.IsNullOrWhiteSpace(attachment.FileId ?? attachment.Url))
-        {
-            var loader = App.Services.GetRequiredService<DysonFileImageLoader>();
-            image = await loader.LoadAsync(attachment.FileId ?? attachment.Url, DysonFileImageLoader.DetailImageDecodeWidth);
-            if (image is not null)
-            {
-                attachment.Image = image;
-                attachment.ImageOpacity = 1;
-            }
-        }
-
-        if (image is null)
+        var loader = App.Services.GetRequiredService<DysonFileImageLoader>();
+        var key = attachment.ImageSourceKey;
+        if (string.IsNullOrWhiteSpace(key))
         {
             ViewModel.ErrorMessage = "无法加载图片。";
             return;
         }
 
-        var preview = new Image
-        {
-            Source = image,
-            Stretch = Microsoft.UI.Xaml.Media.Stretch.Uniform,
-            MaxWidth = 720,
-            MaxHeight = 720,
-        };
-
-        var dialog = new ContentDialog
-        {
-            Title = attachment.Name,
-            Content = new ScrollViewer
-            {
-                Content = preview,
-                HorizontalScrollMode = ScrollMode.Auto,
-                VerticalScrollMode = ScrollMode.Auto,
-            },
-            CloseButtonText = "关闭",
-            XamlRoot = XamlRoot,
-        };
-
-        await dialog.ShowAsync();
+        // Lightbox uses legacy BitmapImage path; single-dialog gate in ImagePreviewHelper.
+        await ImagePreviewHelper.ShowAsync(
+            XamlRoot,
+            imageUrl: key,
+            title: string.IsNullOrWhiteSpace(attachment.Name) ? "图片预览" : attachment.Name,
+            fullResUrl: key,
+            imageLoader: loader).ConfigureAwait(true);
     }
 
     private void TryHookScrollViewer()

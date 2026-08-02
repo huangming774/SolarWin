@@ -10,8 +10,91 @@
     mc:Ignorable="d">
 
     <Page.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.ThemeDictionaries>
+            <ResourceDictionary x:Key="Light">
+                <LinearGradientBrush x:Key="HomeHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Offset="0" Color="#EAF2FF" />
+                    <GradientStop Offset="0.55" Color="#F4EEFF" />
+                    <GradientStop Offset="1" Color="#FFF3F8" />
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="HomeTintCardBrush" Color="#F7F9FF" />
+                <SolidColorBrush x:Key="HomeSoftAccentBrush" Color="#E4EDFF" />
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="Dark">
+                <LinearGradientBrush x:Key="HomeHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Offset="0" Color="#252F43" />
+                    <GradientStop Offset="0.55" Color="#302A43" />
+                    <GradientStop Offset="1" Color="#3A2935" />
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="HomeTintCardBrush" Color="#1E2230" />
+                <SolidColorBrush x:Key="HomeSoftAccentBrush" Color="#293751" />
+            </ResourceDictionary>
+            <ResourceDictionary x:Key="Default">
+                <LinearGradientBrush x:Key="HomeHeroBrush" StartPoint="0,0" EndPoint="1,1">
+                    <GradientStop Offset="0" Color="#252F43" />
+                    <GradientStop Offset="0.55" Color="#302A43" />
+                    <GradientStop Offset="1" Color="#3A2935" />
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="HomeTintCardBrush" Color="#1E2230" />
+                <SolidColorBrush x:Key="HomeSoftAccentBrush" Color="#293751" />
+            </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        <Style x:Key="HomeCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="18" />
+        </Style>
+        <Style x:Key="HomeSectionCardStyle" TargetType="Border" BasedOn="{StaticResource HomeCardStyle}">
+            <Setter Property="Padding" Value="20" />
+        </Style>
+        <Style x:Key="HomeTintCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource HomeTintCardBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+            <Setter Property="Padding" Value="16" />
+        </Style>
+        <Style x:Key="HomeSectionTitleStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style x:Key="HomeSectionCaptionStyle" TargetType="TextBlock">
+            <Setter Property="Opacity" Value="0.62" />
+            <Setter Property="TextWrapping" Value="WrapWholeWords" />
+        </Style>
+        <Style x:Key="HomeListStyle" TargetType="ListView">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="14" />
+            <Setter Property="Padding" Value="4" />
+        </Style>
+        <Style x:Key="HomePrimaryButtonStyle" TargetType="Button" BasedOn="{StaticResource AccentButtonStyle}">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="16,8" />
+        </Style>
+        <Style x:Key="HomeButtonStyle" TargetType="Button">
+            <Setter Property="MinHeight" Value="36" />
+            <Setter Property="CornerRadius" Value="10" />
+            <Setter Property="Padding" Value="14,7" />
+        </Style>
+        <Style TargetType="Button" BasedOn="{StaticResource HomeButtonStyle}" />
+        <Style TargetType="ListView" BasedOn="{StaticResource HomeListStyle}" />
+        <Style TargetType="TextBox">
+            <Setter Property="MinHeight" Value="38" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style TargetType="ListViewItem">
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Margin" Value="0,2" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
         <DataTemplate x:Key="SocialRowTemplate" x:DataType="vm:SocialListItemViewModel">
-            <Grid Padding="4,8" ColumnSpacing="8">
+            <Grid Padding="8,7" ColumnSpacing="12">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -31,9 +114,14 @@
                     Text="{x:Bind Meta}" />
             </Grid>
         </DataTemplate>
+        </ResourceDictionary>
     </Page.Resources>
 
-    <Grid Padding="20" RowSpacing="12">
+    <Grid
+        MaxWidth="1320"
+        Padding="24,18,24,16"
+        HorizontalAlignment="Stretch"
+        RowSpacing="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
@@ -41,30 +129,61 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Grid ColumnSpacing="16">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <StackPanel Spacing="4">
-                <TextBlock Style="{StaticResource TitleTextBlockStyle}" Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
-                <TextBlock
-                    Style="{StaticResource SubtitleTextBlockStyle}"
-                    Text="{x:Bind ViewModel.WelcomeText, Mode=OneWay}" />
-                <TextBlock Opacity="0.75" Text="{x:Bind ViewModel.OverviewMeta, Mode=OneWay}" TextWrapping="Wrap" />
-            </StackPanel>
-            <StackPanel
-                Grid.Column="1"
-                Orientation="Horizontal"
-                Spacing="8"
-                VerticalAlignment="Top">
-                <Button Command="{x:Bind ViewModel.LoadCommand}" Content="刷新已访问" />
-                <ProgressRing
-                    Width="28"
-                    Height="28"
-                    IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-            </StackPanel>
-        </Grid>
+        <Border Padding="18,15" Style="{StaticResource HomeCardStyle}">
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border
+                    Width="48"
+                    Height="48"
+                    VerticalAlignment="Center"
+                    Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                    CornerRadius="15">
+                    <FontIcon
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        FontSize="21"
+                        Glyph="&#xE80F;" />
+                </Border>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock
+                        FontSize="24"
+                        FontWeight="SemiBold"
+                        Text="{x:Bind ViewModel.Title, Mode=OneWay}" />
+                    <TextBlock
+                        Opacity="0.78"
+                        Text="{x:Bind ViewModel.WelcomeText, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                    <TextBlock
+                        Opacity="0.55"
+                        Style="{StaticResource CaptionTextBlockStyle}"
+                        Text="{x:Bind ViewModel.OverviewMeta, Mode=OneWay}"
+                        TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+                <StackPanel
+                    Grid.Column="2"
+                    VerticalAlignment="Center"
+                    Orientation="Horizontal"
+                    Spacing="8">
+                    <ProgressRing
+                        Width="22"
+                        Height="22"
+                        IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    <Button
+                        Width="40"
+                        Height="40"
+                        Padding="0"
+                        Command="{x:Bind ViewModel.LoadCommand}"
+                        CornerRadius="10"
+                        ToolTipService.ToolTip="刷新当前已访问的数据">
+                        <FontIcon Glyph="&#xE72C;" />
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </Border>
 
         <StackPanel Grid.Row="1" Spacing="4">
             <TextBlock
@@ -87,47 +206,104 @@
             <PivotItem Header="概览">
                 <ScrollViewer Padding="0,8,0,0" HorizontalScrollBarVisibility="Disabled">
                     <StackPanel
-                        MaxWidth="880"
+                        MaxWidth="1080"
                         HorizontalAlignment="Center"
-                        Spacing="14">
+                        Spacing="16">
                         <Border
-                            Padding="20"
+                            Padding="24"
                             HorizontalAlignment="Stretch"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="8" HorizontalAlignment="Center">
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    Style="{StaticResource SubtitleTextBlockStyle}"
-                                    Text="成长概览" />
-                                <TextBlock HorizontalAlignment="Center" Text="{x:Bind ViewModel.LevelText, Mode=OneWay}" />
-                                <TextBlock HorizontalAlignment="Center" Text="{x:Bind ViewModel.CreditsText, Mode=OneWay}" />
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    Opacity="0.8"
-                                    Text="{x:Bind ViewModel.ProgressText, Mode=OneWay}" />
-                                <ProgressBar
-                                    Width="320"
-                                    Height="8"
-                                    HorizontalAlignment="Center"
-                                    Maximum="1"
-                                    Value="{x:Bind ViewModel.LevelProgress, Mode=OneWay}" />
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    Text="{x:Bind ViewModel.AchievementStatsText, Mode=OneWay}" />
-                            </StackPanel>
+                            Style="{StaticResource HomeCardStyle}">
+                            <Grid ColumnSpacing="28">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="1.35*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="12">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border
+                                            Width="38"
+                                            Height="38"
+                                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                            CornerRadius="12">
+                                            <FontIcon
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                FontSize="17"
+                                                Glyph="&#xE735;" />
+                                        </Border>
+                                        <StackPanel VerticalAlignment="Center" Spacing="1">
+                                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="成长概览" />
+                                            <TextBlock
+                                                Opacity="0.55"
+                                                Style="{StaticResource CaptionTextBlockStyle}"
+                                                Text="查看近期等级和经验进度" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                    <TextBlock
+                                        FontSize="22"
+                                        FontWeight="SemiBold"
+                                        Text="{x:Bind ViewModel.LevelText, Mode=OneWay}" />
+                                    <ProgressBar
+                                        Height="8"
+                                        Maximum="1"
+                                        Value="{x:Bind ViewModel.LevelProgress, Mode=OneWay}" />
+                                    <TextBlock
+                                        Opacity="0.68"
+                                        Text="{x:Bind ViewModel.ProgressText, Mode=OneWay}" />
+                                </StackPanel>
+                                <Grid Grid.Column="1" ColumnSpacing="10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border
+                                        Padding="14"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="12">
+                                        <StackPanel VerticalAlignment="Center" Spacing="5">
+                                            <FontIcon HorizontalAlignment="Left" FontSize="18" Glyph="&#xE8C7;" />
+                                            <TextBlock Opacity="0.58" Text="积分" />
+                                            <TextBlock
+                                                FontSize="16"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind ViewModel.CreditsText, Mode=OneWay}"
+                                                TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Border
+                                        Grid.Column="1"
+                                        Padding="14"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="12">
+                                        <StackPanel VerticalAlignment="Center" Spacing="5">
+                                            <FontIcon HorizontalAlignment="Left" FontSize="18" Glyph="&#xE734;" />
+                                            <TextBlock Opacity="0.58" Text="成就" />
+                                            <TextBlock
+                                                FontSize="16"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind ViewModel.AchievementStatsText, Mode=OneWay}"
+                                                TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Grid>
                         </Border>
 
-                        <!-- Fun extras grid: 运势 / IP / 回顾（纪念日与咒语在「趣味」页） -->
-                        <TextBlock
-                            HorizontalAlignment="Center"
-                            Style="{StaticResource SubtitleTextBlockStyle}"
-                            Text="趣味与工具" />
+                        <Grid ColumnSpacing="10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock FontSize="18" FontWeight="SemiBold" Text="今日工具" />
+                            <Rectangle
+                                Grid.Column="1"
+                                Height="1"
+                                VerticalAlignment="Center"
+                                Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+                        </Grid>
                         <Grid
                             HorizontalAlignment="Stretch"
-                            ColumnSpacing="12"
+                            ColumnSpacing="14"
                             RowSpacing="12">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -135,23 +311,21 @@
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
                             <!-- 运势 -->
                             <Border
                                 Grid.Row="0"
                                 Grid.Column="0"
-                                Padding="16"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="12"
-                                MinHeight="140">
-                                <StackPanel Spacing="8">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="16" Glyph="&#xE790;" />
-                                        <TextBlock FontWeight="SemiBold" Text="今日运势" />
+                                MinHeight="176"
+                                Padding="18"
+                                Style="{StaticResource HomeCardStyle}">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Width="34" Height="34" Background="{ThemeResource AccentFillColorSecondaryBrush}" CornerRadius="10">
+                                            <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Glyph="&#xE790;" />
+                                        </Border>
+                                        <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="今日运势" />
                                     </StackPanel>
                                     <TextBlock
                                         FontSize="15"
@@ -173,16 +347,15 @@
                             <Border
                                 Grid.Row="0"
                                 Grid.Column="1"
-                                Padding="16"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="12"
-                                MinHeight="140">
-                                <StackPanel Spacing="8">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="16" Glyph="&#xE968;" />
-                                        <TextBlock FontWeight="SemiBold" Text="IP 检测" />
+                                MinHeight="176"
+                                Padding="18"
+                                Style="{StaticResource HomeCardStyle}">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <Border Width="34" Height="34" Background="{ThemeResource AccentFillColorSecondaryBrush}" CornerRadius="10">
+                                            <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="16" Glyph="&#xE968;" />
+                                        </Border>
+                                        <TextBlock VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="IP 检测" />
                                     </StackPanel>
                                     <TextBlock
                                         FontWeight="SemiBold"
@@ -199,57 +372,8 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 回顾 -->
-                            <Border
-                                Grid.Row="1"
-                                Grid.Column="0"
-                                Grid.ColumnSpan="2"
-                                Padding="16"
-                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="12">
-                                <StackPanel Spacing="8">
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <FontIcon FontSize="16" Glyph="&#xE81C;" />
-                                        <TextBlock FontWeight="SemiBold" Text="年度回顾" />
-                                    </StackPanel>
-                                    <TextBlock
-                                        Text="{x:Bind ViewModel.RewindSummary, Mode=OneWay}"
-                                        TextWrapping="WrapWholeWords" />
-                                    <TextBlock
-                                        Opacity="0.7"
-                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                        Text="{x:Bind ViewModel.RewindCodeText, Mode=OneWay}"
-                                        TextWrapping="WrapWholeWords" />
-                                    <StackPanel Orientation="Horizontal" Spacing="8">
-                                        <NumberBox
-                                            Width="100"
-                                            Header="年份"
-                                            Maximum="2100"
-                                            Minimum="2000"
-                                            SpinButtonPlacementMode="Compact"
-                                            Value="{x:Bind ViewModel.RewindYear, Mode=TwoWay}" />
-                                        <Button
-                                            VerticalAlignment="Bottom"
-                                            Command="{x:Bind ViewModel.PublishRewindPublicCommand}"
-                                            Content="生成公开" />
-                                        <Button
-                                            VerticalAlignment="Bottom"
-                                            Command="{x:Bind ViewModel.PublishRewindPrivateCommand}"
-                                            Content="生成私密" />
-                                    </StackPanel>
-                                </StackPanel>
-                            </Border>
                         </Grid>
 
-                        <TextBlock
-                            HorizontalAlignment="Center"
-                            Opacity="0.65"
-                            TextAlignment="Center"
-                            TextWrapping="Wrap">
-                            运势、IP、回顾见上方；纪念日与咒语请到「趣味」标签；好友 / Realm / 成就 / 日历见其他标签。
-                        </TextBlock>
                     </StackPanel>
                 </ScrollViewer>
             </PivotItem>
@@ -257,25 +381,39 @@
             <!-- 找人 -->
             <PivotItem Header="找人">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBox
-                                Width="220"
-                                PlaceholderText="搜索用户名 / 昵称"
-                                Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Command="{x:Bind ViewModel.SearchPeopleCommand}" Content="搜索" />
-                            <TextBox
-                                Width="160"
-                                PlaceholderText="精确用户名"
-                                Text="{x:Bind ViewModel.ProfileLookupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button
-                                Command="{x:Bind ViewModel.LoadPersonProfileCommand}"
-                                Content="预览" />
-                            <Button
-                                Command="{x:Bind ViewModel.OpenViewedProfilePageCommand}"
-                                Content="打开资料页"
-                                Style="{StaticResource AccentButtonStyle}" />
-                        </StackPanel>
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE721;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="发现新朋友" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="搜索昵称或用户名，快速查看公开资料与建立联系。" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+
+                        <Border Style="{StaticResource HomeSectionCardStyle}">
+                            <Grid ColumnSpacing="12" RowSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox PlaceholderText="搜索用户名 / 昵称" Text="{x:Bind ViewModel.SearchQuery, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="1" Command="{x:Bind ViewModel.SearchPeopleCommand}" Content="搜索" Style="{StaticResource HomePrimaryButtonStyle}" />
+                                <TextBox Grid.Column="2" PlaceholderText="精确用户名" Text="{x:Bind ViewModel.ProfileLookupName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="3" Command="{x:Bind ViewModel.LoadPersonProfileCommand}" Content="预览" />
+                                <Button Grid.Column="4" Command="{x:Bind ViewModel.OpenViewedProfilePageCommand}" Content="打开资料页" />
+                            </Grid>
+                        </Border>
 
                         <ListView
                             MaxHeight="160"
@@ -356,8 +494,26 @@
             <!-- 好友 -->
             <PivotItem Header="好友">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{x:Bind ViewModel.FriendsSummary, Mode=OneWay}" />
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE716;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="好友与连接" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="管理好友请求、密友关系与日常联系。" />
+                                </StackPanel>
+                                <Border Grid.Column="2" Padding="14,8" VerticalAlignment="Center" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="12">
+                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.FriendsSummary, Mode=OneWay}" />
+                                </Border>
+                            </Grid>
+                        </Border>
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="好友请求" />
                         <ListView
                             MaxHeight="200"
@@ -446,24 +602,43 @@
                 </ScrollViewer>
             </PivotItem>
 
-            <!-- Realm -->
-            <PivotItem Header="Realm">
+            <!-- 领域 -->
+            <PivotItem Header="领域">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{x:Bind ViewModel.RealmQuotaText, Mode=OneWay}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBox
-                                Width="120"
-                                PlaceholderText="slug"
-                                Text="{x:Bind ViewModel.NewRealmSlug, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <TextBox
-                                Width="160"
-                                PlaceholderText="名称"
-                                Text="{x:Bind ViewModel.NewRealmName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Command="{x:Bind ViewModel.CreateRealmCommand}" Content="创建" />
-                        </StackPanel>
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE909;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="你的领域空间" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="创建兴趣空间，邀请成员，并探索公开社区。" />
+                                </StackPanel>
+                                <Border Grid.Column="2" Padding="14,8" VerticalAlignment="Center" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="12">
+                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.RealmQuotaText, Mode=OneWay}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource HomeSectionCardStyle}">
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="160" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox PlaceholderText="唯一标识 slug" Text="{x:Bind ViewModel.NewRealmSlug, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox Grid.Column="1" PlaceholderText="领域名称" Text="{x:Bind ViewModel.NewRealmName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="2" Command="{x:Bind ViewModel.CreateRealmCommand}" Content="创建领域" Style="{StaticResource HomePrimaryButtonStyle}" />
+                            </Grid>
+                        </Border>
 
-                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的 Realm" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的领域" />
                         <ListView
                             MaxHeight="180"
                             ItemsSource="{x:Bind ViewModel.MyRealms, Mode=OneWay}"
@@ -497,7 +672,7 @@
                             </ListView.ItemTemplate>
                         </ListView>
 
-                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="公开 Realm" />
+                        <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="公开领域" />
                         <ListView
                             MaxHeight="180"
                             ItemsSource="{x:Bind ViewModel.PublicRealms, Mode=OneWay}"
@@ -590,7 +765,22 @@
             <!-- 成长 -->
             <PivotItem Header="成长">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE735;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="记录每一步成长" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="在这里回顾徽章、经验、积分、成就和任务进度。" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="徽章墙" />
                         <ListView
                             MaxHeight="160"
@@ -640,15 +830,34 @@
             <!-- 日历 -->
             <PivotItem Header="日历">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{x:Bind ViewModel.CalendarDayText, Mode=OneWay}" />
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBox
-                                Width="240"
-                                PlaceholderText="新日程标题"
-                                Text="{x:Bind ViewModel.NewEventTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Command="{x:Bind ViewModel.CreateEventCommand}" Content="添加" Style="{StaticResource AccentButtonStyle}" />
-                        </StackPanel>
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE787;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="今天，由你安排" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="集中管理日程、倒计时与值得纪念的日子。" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" Text="{x:Bind ViewModel.CalendarDayText, Mode=OneWay}" />
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource HomeSectionCardStyle}">
+                            <Grid ColumnSpacing="10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox PlaceholderText="添加一条新日程…" Text="{x:Bind ViewModel.NewEventTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <Button Grid.Column="1" Command="{x:Bind ViewModel.CreateEventCommand}" Content="添加日程" Style="{StaticResource HomePrimaryButtonStyle}" />
+                            </Grid>
+                        </Border>
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="日程" />
                         <ListView
                             MaxHeight="220"
@@ -687,18 +896,34 @@
             <!-- 工单 -->
             <PivotItem Header="工单">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="{x:Bind ViewModel.TicketCountText, Mode=OneWay}" />
-                        <TextBox
-                            PlaceholderText="标题"
-                            Text="{x:Bind ViewModel.NewTicketTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                        <TextBox
-                            MinHeight="80"
-                            AcceptsReturn="True"
-                            PlaceholderText="描述"
-                            Text="{x:Bind ViewModel.NewTicketContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                            TextWrapping="Wrap" />
-                        <Button Command="{x:Bind ViewModel.CreateTicketCommand}" Content="提交工单" Style="{StaticResource AccentButtonStyle}" />
+                    <StackPanel MaxWidth="900" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE90F;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="需要帮助？" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="清晰描述你的问题，我们会通过工单持续跟进。" />
+                                </StackPanel>
+                                <Border Grid.Column="2" Padding="14,8" VerticalAlignment="Center" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="12">
+                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.TicketCountText, Mode=OneWay}" />
+                                </Border>
+                            </Grid>
+                        </Border>
+                        <Border Style="{StaticResource HomeSectionCardStyle}">
+                            <StackPanel Spacing="12">
+                                <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="创建新工单" />
+                                <TextBox PlaceholderText="一句话概括问题" Text="{x:Bind ViewModel.NewTicketTitle, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                <TextBox MinHeight="110" AcceptsReturn="True" PlaceholderText="补充问题详情、复现步骤或期待的结果…" Text="{x:Bind ViewModel.NewTicketContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" TextWrapping="Wrap" />
+                                <Button HorizontalAlignment="Right" Command="{x:Bind ViewModel.CreateTicketCommand}" Content="提交工单" Style="{StaticResource HomePrimaryButtonStyle}" />
+                            </StackPanel>
+                        </Border>
                         <ListView
                             MaxHeight="360"
                             ItemTemplate="{StaticResource SocialRowTemplate}"
@@ -711,19 +936,48 @@
             <!-- 附近 -->
             <PivotItem Header="附近">
                 <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel Spacing="12">
-                        <StackPanel Orientation="Horizontal" Spacing="8">
-                            <TextBox
-                                Width="180"
-                                PlaceholderText="Pin 名称"
-                                Text="{x:Bind ViewModel.NewPinName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Command="{x:Bind ViewModel.CreatePinCommand}" Content="创建 Pin" />
-                            <TextBox
-                                Width="180"
-                                PlaceholderText="聚会备注"
-                                Text="{x:Bind ViewModel.NewMeetNotes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                            <Button Command="{x:Bind ViewModel.CreateMeetCommand}" Content="创建聚会" />
-                        </StackPanel>
+                    <StackPanel MaxWidth="1120" HorizontalAlignment="Center" Spacing="16">
+                        <Border Padding="22" Background="{ThemeResource HomeHeroBrush}" CornerRadius="20">
+                            <Grid ColumnSpacing="16">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="48" Height="48" Background="{ThemeResource HomeSoftAccentBrush}" CornerRadius="15">
+                                    <FontIcon HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="21" Glyph="&#xE81D;" />
+                                </Border>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                    <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="探索身边的连接" />
+                                    <TextBlock Style="{StaticResource HomeSectionCaptionStyle}" Text="创建位置 Pin、发起聚会，看看附近正在发生什么。" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                        <Grid ColumnSpacing="14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Style="{StaticResource HomeSectionCardStyle}">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <FontIcon FontSize="17" Glyph="&#xE707;" />
+                                        <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="放置 Pin" />
+                                    </StackPanel>
+                                    <TextBox PlaceholderText="给这个地点起个名字" Text="{x:Bind ViewModel.NewPinName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button HorizontalAlignment="Right" Command="{x:Bind ViewModel.CreatePinCommand}" Content="创建 Pin" Style="{StaticResource HomePrimaryButtonStyle}" />
+                                </StackPanel>
+                            </Border>
+                            <Border Grid.Column="1" Style="{StaticResource HomeSectionCardStyle}">
+                                <StackPanel Spacing="10">
+                                    <StackPanel Orientation="Horizontal" Spacing="9">
+                                        <FontIcon FontSize="17" Glyph="&#xE716;" />
+                                        <TextBlock Style="{StaticResource HomeSectionTitleStyle}" Text="发起聚会" />
+                                    </StackPanel>
+                                    <TextBox PlaceholderText="简单说说聚会内容" Text="{x:Bind ViewModel.NewMeetNotes, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <Button HorizontalAlignment="Right" Command="{x:Bind ViewModel.CreateMeetCommand}" Content="创建聚会" Style="{StaticResource HomePrimaryButtonStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
                         <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="我的 Pin" />
                         <ListView
@@ -823,202 +1077,6 @@
                 </ScrollViewer>
             </PivotItem>
 
-            <!-- 趣味：fortune / IP / notable-days / rewind / spells -->
-            <PivotItem Header="趣味">
-                <ScrollViewer Padding="0,8,0,0">
-                    <StackPanel MaxWidth="900" Spacing="14">
-                        <TextBlock
-                            Opacity="0.7"
-                            Text="运势 · IP 检测 · 纪念日 · 年度回顾 · 咒语（Passport API）"
-                            TextWrapping="Wrap" />
-
-                        <!-- 运势 -->
-                        <Border
-                            Padding="18"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="10">
-                                <Grid>
-                                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="运势 / Fortune" />
-                                    <Button
-                                        HorizontalAlignment="Right"
-                                        Command="{x:Bind ViewModel.DrawFortuneCommand}"
-                                        Content="再抽一次"
-                                        Style="{StaticResource AccentButtonStyle}" />
-                                </Grid>
-                                <TextBlock
-                                    FontSize="18"
-                                    FontWeight="SemiBold"
-                                    Text="{x:Bind ViewModel.FortuneText, Mode=OneWay}"
-                                    TextWrapping="WrapWholeWords" />
-                                <TextBlock
-                                    Opacity="0.65"
-                                    Text="{x:Bind ViewModel.FortuneSourceText, Mode=OneWay}" />
-                                <ListView
-                                    MaxHeight="160"
-                                    ItemTemplate="{StaticResource SocialRowTemplate}"
-                                    ItemsSource="{x:Bind ViewModel.FortuneItems, Mode=OneWay}"
-                                    SelectionMode="None" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- IP -->
-                        <Border
-                            Padding="18"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="8">
-                                <Grid>
-                                    <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="IP 检测" />
-                                    <Button
-                                        HorizontalAlignment="Right"
-                                        Command="{x:Bind ViewModel.RefreshIpCheckCommand}"
-                                        Content="刷新" />
-                                </Grid>
-                                <TextBlock
-                                    FontSize="16"
-                                    FontWeight="SemiBold"
-                                    Text="{x:Bind ViewModel.IpCheckText, Mode=OneWay}" />
-                                <TextBlock
-                                    Opacity="0.8"
-                                    Text="{x:Bind ViewModel.IpGeoText, Mode=OneWay}"
-                                    TextWrapping="WrapWholeWords" />
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 纪念日 -->
-                        <Border
-                            Padding="18"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="10">
-                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="纪念日 / Notable days" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBox
-                                        Width="160"
-                                        PlaceholderText="名称"
-                                        Text="{x:Bind ViewModel.NewNotableName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <TextBox
-                                        Width="220"
-                                        PlaceholderText="描述（可选）"
-                                        Text="{x:Bind ViewModel.NewNotableDescription, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button
-                                        Command="{x:Bind ViewModel.CreateNotableDayCommand}"
-                                        Content="添加今天"
-                                        Style="{StaticResource AccentButtonStyle}" />
-                                </StackPanel>
-                                <ListView
-                                    MaxHeight="240"
-                                    ItemsSource="{x:Bind ViewModel.UserNotableDays, Mode=OneWay}"
-                                    SelectionMode="None">
-                                    <ListView.ItemTemplate>
-                                        <DataTemplate x:DataType="vm:SocialListItemViewModel">
-                                            <Grid Padding="4,8" ColumnSpacing="8">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="Auto" />
-                                                </Grid.ColumnDefinitions>
-                                                <StackPanel>
-                                                    <TextBlock FontWeight="SemiBold" Text="{x:Bind Title}" />
-                                                    <TextBlock Opacity="0.7" Text="{x:Bind Subtitle}" />
-                                                    <TextBlock
-                                                        Opacity="0.5"
-                                                        Style="{StaticResource CaptionTextBlockStyle}"
-                                                        Text="{x:Bind Meta}" />
-                                                </StackPanel>
-                                                <Button
-                                                    Grid.Column="1"
-                                                    Click="SocialAction_OnClick"
-                                                Tag="{x:Bind}"
-                                                AutomationProperties.Name="DeleteUserNotableDayCommand"
-                                                    Content="删除" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </ListView.ItemTemplate>
-                                </ListView>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 回顾 -->
-                        <Border
-                            Padding="18"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="10">
-                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="年度回顾 / Rewind" />
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.RewindSummary, Mode=OneWay}"
-                                    TextWrapping="WrapWholeWords" />
-                                <TextBlock
-                                    Opacity="0.7"
-                                    Text="{x:Bind ViewModel.RewindCodeText, Mode=OneWay}"
-                                    TextWrapping="WrapWholeWords" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <NumberBox
-                                        Width="110"
-                                        Header="年份"
-                                        Maximum="2100"
-                                        Minimum="2000"
-                                        SpinButtonPlacementMode="Compact"
-                                        Value="{x:Bind ViewModel.RewindYear, Mode=TwoWay}" />
-                                    <Button
-                                        VerticalAlignment="Bottom"
-                                        Command="{x:Bind ViewModel.PublishRewindPublicCommand}"
-                                        Content="生成公开回顾" />
-                                    <Button
-                                        VerticalAlignment="Bottom"
-                                        Command="{x:Bind ViewModel.PublishRewindPrivateCommand}"
-                                        Content="生成私密回顾" />
-                                </StackPanel>
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <TextBox
-                                        Width="240"
-                                        PlaceholderText="输入分享码查看回顾"
-                                        Text="{x:Bind ViewModel.RewindLookupCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <Button Command="{x:Bind ViewModel.LookupRewindCodeCommand}" Content="查询分享码" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- 咒语 -->
-                        <Border
-                            Padding="18"
-                            Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="12">
-                            <StackPanel Spacing="10">
-                                <TextBlock Style="{StaticResource SubtitleTextBlockStyle}" Text="咒语 / Magic spells" />
-                                <TextBox
-                                    PlaceholderText="咒语词 spellWord"
-                                    Text="{x:Bind ViewModel.SpellWord, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                <TextBox
-                                    PlaceholderText="新密码（重置类咒语可选，明文输入仅本地使用）"
-                                    Text="{x:Bind ViewModel.SpellPassword, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                <StackPanel Orientation="Horizontal" Spacing="8">
-                                    <Button Command="{x:Bind ViewModel.LookupSpellCommand}" Content="查询咒语" />
-                                    <Button
-                                        Command="{x:Bind ViewModel.ApplySpellCommand}"
-                                        Content="应用咒语"
-                                        Style="{StaticResource AccentButtonStyle}" />
-                                    <Button Command="{x:Bind ViewModel.ResendSpellActivationCommand}" Content="重发激活咒语" />
-                                </StackPanel>
-                                <TextBlock
-                                    Text="{x:Bind ViewModel.SpellResultText, Mode=OneWay}"
-                                    TextWrapping="WrapWholeWords" />
-                            </StackPanel>
-                        </Border>
-                    </StackPanel>
-                </ScrollViewer>
-            </PivotItem>
         </Pivot>
     </Grid>
 </Page>

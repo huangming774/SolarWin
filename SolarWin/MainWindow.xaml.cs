@@ -27,7 +27,14 @@ public sealed partial class MainWindow : Window
 
         ExtendsContentIntoTitleBar = true;
         SetTitleBar(AppTitleBar);
-        AppWindow.SetIcon("Assets/icon.ico");
+        // AppWindow resolves this from the process working directory. That is not
+        // necessarily the publish directory (for example when launched from a
+        // shortcut), so use the icon copied beside the executable explicitly.
+        var windowIconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "icon.ico");
+        if (File.Exists(windowIconPath))
+        {
+            AppWindow.SetIcon(windowIconPath);
+        }
 
         AppWindow.Resize(new SizeInt32(1180, 760));
         AppWindow.Changed += AppWindow_OnChanged;
@@ -188,18 +195,7 @@ public sealed partial class MainWindow : Window
     {
         _forceClose = true;
         _isInTray = false;
-        try
-        {
-            if (App.Services.GetService(typeof(ITrayService)) is ITrayService tray)
-            {
-                tray.Dispose();
-            }
-        }
-        catch
-        {
-            // ignore
-        }
-
+        DisposeBackgroundServices();
         Close();
     }
 
@@ -215,6 +211,41 @@ public sealed partial class MainWindow : Window
             args.Cancel = true;
             // Defer hide so Closing completes cancel first
             App.DispatcherQueue?.TryEnqueue(() => HideToTray());
+            return;
+        }
+
+        // TaskbarIcon uses a helper window for its context menu. If it is left alive,
+        // closing the main window can leave both the tray icon and process running.
+        _forceClose = true;
+        _isInTray = false;
+        DisposeBackgroundServices();
+    }
+
+    private static void DisposeBackgroundServices()
+    {
+        try
+        {
+            if (App.Services.GetService(typeof(ITrayService)) is ITrayService tray)
+            {
+                tray.Dispose();
+            }
+        }
+        catch
+        {
+            // Window shutdown must continue even if the shell already removed the icon.
+        }
+
+        try
+        {
+            if (App.Services.GetService(typeof(IMcpBridgeService)) is IMcpBridgeService mcp)
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                mcp.StopAsync(timeout.Token).GetAwaiter().GetResult();
+            }
+        }
+        catch
+        {
+            // Do not let a local integration server block application shutdown.
         }
     }
 

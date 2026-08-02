@@ -3,9 +3,9 @@
     x:Class="SolarWin.Views.PostDetailPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SolarWin.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:media="using:Microsoft.UI.Xaml.Media.Imaging"
     xmlns:vm="using:SolarWin.ViewModels"
     mc:Ignorable="d">
 
@@ -63,11 +63,19 @@
                             BorderThickness="0"
                             Command="{x:Bind ViewModel.OpenAuthorProfileCommand}"
                             ToolTipService.ToolTip="查看主页">
-                            <PersonPicture
-                                Width="48"
-                                Height="48"
-                                Initials="{x:Bind ViewModel.Initials, Mode=OneWay}"
-                                ProfilePicture="{x:Bind ViewModel.AvatarImage, Mode=OneWay}" />
+                            <Grid Width="48" Height="48">
+                                <PersonPicture
+                                    Width="48"
+                                    Height="48"
+                                    Initials="{x:Bind ViewModel.Initials, Mode=OneWay}" />
+                                <controls:FastWin2DImage
+                                    Width="48"
+                                    Height="48"
+                                    CornerRadius="24"
+                                    DecodeWidth="96"
+                                    Source="{x:Bind ViewModel.AvatarUrl, Mode=OneWay}"
+                                    Stretch="UniformToFill" />
+                            </Grid>
                         </Button>
                         <StackPanel
                             Grid.Column="1"
@@ -119,28 +127,70 @@
                     </Border>
 
                     <ItemsControl
-                        ItemsSource="{x:Bind ViewModel.Images, Mode=OneWay}"
+                        ItemsSource="{x:Bind ViewModel.ImageUrls, Mode=OneWay}"
                         Visibility="{x:Bind ViewModel.ImagesVisibility, Mode=OneWay}">
                         <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="media:BitmapImage">
+                            <DataTemplate x:DataType="x:String">
                                 <Button
                                     Padding="0"
                                     Background="Transparent"
                                     BorderThickness="0"
                                     Click="PostImage_OnClick"
-                                    DoubleTapped="PostImage_OnDoubleTapped"
                                     Tag="{x:Bind}"
-                                    ToolTipService.ToolTip="点击或双击放大">
-                                    <Image
+                                    ToolTipService.ToolTip="点击放大">
+                                    <controls:FastWin2DImage
                                         MaxWidth="560"
                                         MaxHeight="480"
                                         HorizontalAlignment="Left"
+                                        CornerRadius="8"
+                                        DecodeWidth="1440"
                                         Source="{x:Bind}"
                                         Stretch="Uniform" />
                                 </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
+
+                    <Button
+                        Width="560"
+                        Height="315"
+                        Padding="0"
+                        HorizontalAlignment="Left"
+                        Background="Black"
+                        BorderThickness="0"
+                        Click="PostVideo_OnClick"
+                        Loaded="PostVideo_OnLoaded"
+                        Visibility="{x:Bind ViewModel.VideoVisibility, Mode=OneWay}"
+                        ToolTipService.ToolTip="播放视频">
+                        <Grid>
+                            <controls:FastWin2DImage
+                                DecodeWidth="960"
+                                EnableFadeIn="True"
+                                ShowPlaceholder="False"
+                                Source="{x:Bind ViewModel.VideoThumbnailPath, Mode=OneWay}"
+                                Stretch="UniformToFill" />
+                            <Border
+                                Width="60"
+                                Height="60"
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Background="#B0000000"
+                                CornerRadius="30">
+                                <FontIcon
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="28"
+                                    Foreground="White"
+                                    Glyph="&#xE768;" />
+                            </Border>
+                            <TextBlock
+                                Margin="12"
+                                VerticalAlignment="Bottom"
+                                Foreground="White"
+                                Text="{x:Bind ViewModel.VideoName, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
+                        </Grid>
+                    </Button>
 
                     <TextBlock
                         Opacity="0.55"
@@ -279,11 +329,19 @@
                                             Click="ReplyAuthorAvatar_OnClick"
                                             Tag="{x:Bind}"
                                             ToolTipService.ToolTip="查看主页">
-                                            <PersonPicture
-                                                Width="36"
-                                                Height="36"
-                                                Initials="{x:Bind Initials}"
-                                                ProfilePicture="{x:Bind AvatarImage, Mode=OneWay}" />
+                                            <Grid Width="36" Height="36">
+                                                <PersonPicture
+                                                    Width="36"
+                                                    Height="36"
+                                                    Initials="{x:Bind Initials}" />
+                                                <controls:FastWin2DImage
+                                                    Width="36"
+                                                    Height="36"
+                                                    CornerRadius="18"
+                                                    DecodeWidth="96"
+                                                    Source="{x:Bind AvatarUrl}"
+                                                    Stretch="UniformToFill" />
+                                            </Grid>
                                         </Button>
                                         <StackPanel Grid.Column="1" Spacing="2">
                                             <StackPanel Orientation="Horizontal" Spacing="8">

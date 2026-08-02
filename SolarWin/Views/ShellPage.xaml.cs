@@ -35,6 +35,11 @@ public sealed partial class ShellPage : Page
     private void NavView_OnLoaded(object sender, RoutedEventArgs e)
     {
         ViewModel.RefreshFromAuth();
+        if (ViewModel.RefreshProfileCommand.CanExecute(null))
+        {
+            _ = ViewModel.RefreshProfileCommand.ExecuteAsync(null);
+        }
+
         _ = ViewModel.RefreshNotificationBadgeAsync();
 
         // Keep chat WebSocket + background DM notifications alive while shell is open
@@ -55,7 +60,6 @@ public sealed partial class ShellPage : Page
             // Content can stay clear for wallpaper; the pane gets its own contrast brush.
             ContentFrame.Background = new SolidColorBrush(Microsoft.UI.Colors.Transparent);
             ApplyNavChrome();
-            ApplyNavIcons();
         }
         catch
         {
@@ -69,14 +73,12 @@ public sealed partial class ShellPage : Page
             DispatcherQueue.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
             {
                 ApplyNavChrome();
-                ApplyNavIcons();
             });
         }
 
         ActualThemeChanged += (_, _) =>
         {
             ApplyNavChrome();
-            ApplyNavIcons();
         };
 
         WallpaperHelper.Changed += OnWallpaperSettingsChanged;
@@ -107,6 +109,11 @@ public sealed partial class ShellPage : Page
 
     private void NavigateContent(Type pageType, object? parameter = null)
     {
+        if (parameter is null && ContentFrame.CurrentSourcePageType == pageType)
+        {
+            return;
+        }
+
         if (!ContentFrame.Navigate(pageType, parameter))
         {
             return;
@@ -155,7 +162,6 @@ public sealed partial class ShellPage : Page
         DispatcherQueue.TryEnqueue(() =>
         {
             ApplyNavChrome();
-            ApplyNavIcons();
         });
     }
 
@@ -222,96 +228,6 @@ public sealed partial class ShellPage : Page
         }
     }
 
-    /// <summary>
-    /// Assign nav icons in code (most reliable on WinUI self-contained builds).
-    /// Prefers <see cref="SymbolIcon"/>; falls back to Segoe Fluent FontIcon; last resort uses app icon image.
-    /// Note: Assets/icon.ico is the app identity icon — not one unique glyph per menu item.
-    /// </summary>
-    private void ApplyNavIcons()
-    {
-        foreach (var item in NavView.MenuItems.OfType<NavigationViewItem>())
-        {
-            var tag = item.Tag as string ?? string.Empty;
-            item.Icon = CreateNavIcon(tag);
-        }
-    }
-
-    private static IconElement CreateNavIcon(string tag)
-    {
-        // 1) SymbolIcon — platform-backed, works without hard-coded glyph fonts.
-        // Use only long-stable Symbol values (WinUI Symbol surface varies by SDK).
-        Symbol? symbol = tag switch
-        {
-            "home" => Symbol.Home,
-            "chat" => Symbol.Message,
-            "posts" => Symbol.Document,
-            "explore" => Symbol.Find,
-            "thinking" => Symbol.Edit,
-            "weather" => Symbol.Globe,
-            "ai" => Symbol.Comment,
-            "files" => Symbol.Folder,
-            "notifications" => Symbol.Mail,
-            "wallet" => Symbol.Shop,
-            "profile" => Symbol.Contact,
-            _ => null,
-        };
-
-        if (symbol is { } s)
-        {
-            try
-            {
-                return new SymbolIcon(s);
-            }
-            catch
-            {
-                // fall through
-            }
-        }
-
-        // 2) FontIcon with explicit Fluent / MDL2 families (common on Windows 10/11).
-        var glyph = tag switch
-        {
-            "home" => "\uE80F",
-            "chat" => "\uE8BD",
-            "posts" => "\uE8A5",
-            "explore" => "\uE721",
-            "thinking" => "\uE70F",
-            "weather" => "\uE823",
-            "ai" => "\uE99A",
-            "files" => "\uE8B7",
-            "notifications" => "\uEA8F",
-            "wallet" => "\uE8C7",
-            "profile" => "\uE77B",
-            _ => "\uE8F1",
-        };
-
-        try
-        {
-            return new FontIcon
-            {
-                Glyph = glyph,
-                FontFamily = new FontFamily("Segoe Fluent Icons, Segoe MDL2 Assets"),
-                FontSize = 16,
-            };
-        }
-        catch
-        {
-            // 3) Last resort: show the app icon so the icon slot is never empty.
-            try
-            {
-                return new ImageIcon
-                {
-                    Source = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage(
-                        new Uri("ms-appx:///Assets/icon.ico")),
-                };
-            }
-            catch
-            {
-                return new FontIcon { Glyph = "•", FontSize = 16 };
-            }
-        }
-    }
-
     private void NavView_OnBackRequested(NavigationView sender, NavigationViewBackRequestedEventArgs args)
     {
         if (ContentFrame.CanGoBack)
@@ -339,6 +255,7 @@ public sealed partial class ShellPage : Page
         {
             "home" => typeof(HomePage),
             "chat" => typeof(ChatPage),
+            "data-center" => typeof(ChatDataCenterPage),
             "posts" => typeof(PostsPage),
             "explore" => typeof(SphereExplorePage),
             "thinking" => typeof(ThinkingPage),

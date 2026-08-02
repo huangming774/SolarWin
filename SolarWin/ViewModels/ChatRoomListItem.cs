@@ -17,18 +17,10 @@ public partial class ChatRoomListItem : ObservableObject
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
         Description = room.Description;
 
-        // Cache-first; a bare UriSource would 401 on private drive files. Initials until loaded.
-        if (HasAvatar && imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth) && cachedAvatar is not null)
-        {
-            AvatarImage = cachedAvatar;
-            InitialsOpacity = 0.0;
-            AvatarOpacity = 1.0;
-        }
-        else
-        {
-            InitialsOpacity = 1.0;
-            AvatarOpacity = 0.0;
-        }
+        // GPU path: FastWin2DImage loads AvatarUrl. Initials stay underneath until paint.
+        _ = imageLoader;
+        InitialsOpacity = 1.0;
+        AvatarOpacity = 0.0;
 
         if (summary?.LastMessage is { } last)
         {

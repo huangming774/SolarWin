@@ -15,7 +15,17 @@ public partial class FileItemViewModel : ObservableObject
         IsFolder = file.IsFolder;
         SizeText = file.IsFolder ? "—" : FormatSize(file.Size);
         DateText = FormatDate(file.UpdatedAt ?? file.CreatedAt);
-        ThumbnailUrl = ResolveThumbnail(file);
+        IsImage = !file.IsFolder && CloudFileUrlHelper.IsLikelyImage(file);
+        IsVideo = !file.IsFolder && IsLikelyVideo(file);
+        VideoSource = IsVideo ? CloudFileUrlHelper.Resolve(file) : null;
+        FullImageSource = IsImage
+            ? CloudFileUrlHelper.ResolveFileId(file) ?? CloudFileUrlHelper.Resolve(file)
+            : null;
+        ThumbnailUrl = ResolveThumbnail(file) ?? FullImageSource;
+        ThumbnailFallbackUrl = !string.IsNullOrWhiteSpace(FullImageSource)
+                               && !string.Equals(ThumbnailUrl, FullImageSource, StringComparison.OrdinalIgnoreCase)
+            ? FullImageSource
+            : null;
         CanLoadThumbnail = !string.IsNullOrWhiteSpace(ThumbnailUrl) && !file.IsFolder;
         IconGlyph = file.IsFolder ? "\uE8B7" : GuessFileGlyph(file.MimeType, file.Name);
         MimeType = file.MimeType ?? string.Empty;
@@ -30,11 +40,25 @@ public partial class FileItemViewModel : ObservableObject
 
     public bool IsFolder { get; }
 
+    public bool IsImage { get; }
+
+    public bool IsVideo { get; }
+
+    public string? VideoSource { get; }
+
     public string SizeText { get; }
 
     public string DateText { get; }
 
-    public string? ThumbnailUrl { get; }
+    /// <summary>GPU source for FastWin2DImage (thumb meta or image file id/url).</summary>
+    [ObservableProperty]
+    public partial string? ThumbnailUrl { get; set; }
+
+    /// <summary>Original image id / URL when a generated thumbnail is missing or broken.</summary>
+    public string? ThumbnailFallbackUrl { get; }
+
+    /// <summary>Full image source used by the lightbox.</summary>
+    public string? FullImageSource { get; }
 
     public bool CanLoadThumbnail { get; }
 
@@ -44,17 +68,23 @@ public partial class FileItemViewModel : ObservableObject
 
     public string? DownloadUrl { get; }
 
+    /// <summary>Legacy BitmapImage slot (unused on GPU path).</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasThumbnail))]
-    [NotifyPropertyChangedFor(nameof(ThumbnailOpacity))]
-    [NotifyPropertyChangedFor(nameof(IconOpacity))]
     public partial BitmapImage? Thumbnail { get; set; }
 
-    public bool HasThumbnail => Thumbnail is not null;
+    /// <summary>Icon stays visible under FastWin2DImage until the GPU bitmap paints over it.</summary>
+    public double IconOpacity => 1.0;
 
-    public double ThumbnailOpacity => HasThumbnail ? 1.0 : 0.0;
-
-    public double IconOpacity => HasThumbnail ? 0.0 : 1.0;
+    private static bool IsLikelyVideo(SnCloudFile file)
+    {
+        if (file.MimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true) return true;
+        var extension = Path.GetExtension(file.Name);
+        return string.Equals(extension, ".mp4", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".mov", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".mkv", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".webm", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(extension, ".avi", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string? ResolveThumbnail(SnCloudFile file)
     {
@@ -66,17 +96,26 @@ public partial class FileItemViewModel : ObservableObject
         // Prefer server-provided thumbnails/previews when the gateway includes them.
         if (file.FileMeta is not null)
         {
-            foreach (var key in new[] { "thumbnail_url", "thumb_url", "preview_url" })
+            foreach (var key in new[] { "thumbnail_url", "thumb_url", "preview_url", "thumbnail", "thumb" })
             {
                 if (file.FileMeta.TryGetValue(key, out var el) && el.ValueKind == System.Text.Json.JsonValueKind.String)
                 {
                     var s = el.GetString();
                     if (!string.IsNullOrWhiteSpace(s))
                     {
-                        return CloudFileUrlHelper.Normalize(s);
+                        return !s.Contains('/') && !s.Contains(':')
+                            ? CloudFileUrlHelper.DriveFileUrl(s)
+                            : CloudFileUrlHelper.Normalize(s);
                     }
                 }
             }
+        }
+
+        // Image files: load via DysonFS id/url through the shared GPU loader.
+        if (CloudFileUrlHelper.IsLikelyImage(file))
+        {
+            return CloudFileUrlHelper.ResolveFileId(file)
+                   ?? CloudFileUrlHelper.Resolve(file);
         }
 
         return null;

@@ -14,6 +14,8 @@
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.10" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
@@ -24,13 +26,17 @@
 
   <!-- Link pure helper / mapper sources (no WinUI / Windows Runtime package identity) -->
   <ItemGroup>
+    <Compile Include="..\SolarWin\Collections\ObservableRangeCollection.cs" Link="Collections\ObservableRangeCollection.cs" />
     <Compile Include="..\SolarWin\Helpers\ApiErrorParser.cs" Link="Helpers\ApiErrorParser.cs" />
     <Compile Include="..\SolarWin\Helpers\DeepLinkParser.cs" Link="Helpers\DeepLinkParser.cs" />
     <Compile Include="..\SolarWin\Helpers\JsonListParser.cs" Link="Helpers\JsonListParser.cs" />
     <Compile Include="..\SolarWin\Helpers\JsonDefaults.cs" Link="Helpers\JsonDefaults.cs" />
     <Compile Include="..\SolarWin\Helpers\FlexibleJsonConverters.cs" Link="Helpers\FlexibleJsonConverters.cs" />
     <Compile Include="..\SolarWin\Helpers\OfflineCache.cs" Link="Helpers\OfflineCache.cs" />
+    <Compile Include="..\SolarWin\Helpers\LeasedLruCache.cs" Link="Helpers\LeasedLruCache.cs" />
     <Compile Include="..\SolarWin\Helpers\AppPaths.cs" Link="Helpers\AppPaths.cs" />
+    <Compile Include="..\SolarWin\Helpers\AsyncConcurrencyHelper.cs" Link="Helpers\AsyncConcurrencyHelper.cs" />
+    <Compile Include="..\SolarWin\ViewModels\PostItemHandleRules.cs" Link="ViewModels\PostItemHandleRules.cs" />
     <Compile Include="..\SolarWin\Data\ChatMessageMapper.cs" Link="Data\ChatMessageMapper.cs" />
     <Compile Include="..\SolarWin\Data\Entities\ChatMessageEntity.cs" Link="Data\Entities\ChatMessageEntity.cs" />
     <Compile Include="..\SolarWin\Data\Entities\ChatMessageSource.cs" Link="Data\Entities\ChatMessageSource.cs" />
@@ -43,6 +49,28 @@
     <Compile Include="..\SolarWin\Models\SnAccountProfile.cs" Link="Models\SnAccountProfile.cs" />
     <Compile Include="..\SolarWin\Models\SnAccountStatus.cs" Link="Models\SnAccountStatus.cs" />
     <Compile Include="..\SolarWin\Models\SnRealm.cs" Link="Models\SnRealm.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\AnalyticsFilter.cs" Link="Models\Analytics\AnalyticsFilter.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\ActivityHeatmapCell.cs" Link="Models\Analytics\ActivityHeatmapCell.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\MessageTrendPoint.cs" Link="Models\Analytics\MessageTrendPoint.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\GroupContributionItem.cs" Link="Models\Analytics\GroupContributionItem.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\HourlyActivityPoint.cs" Link="Models\Analytics\HourlyActivityPoint.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\WordFrequencyItem.cs" Link="Models\Analytics\WordFrequencyItem.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\WordCloudItem.cs" Link="Models\Analytics\WordCloudItem.cs" />
+    <Compile Include="..\SolarWin\Models\Analytics\ChatAnalyticsSummary.cs" Link="Models\Analytics\ChatAnalyticsSummary.cs" />
+    <Compile Include="..\SolarWin\Data\IDbConnectionFactory.cs" Link="Data\IDbConnectionFactory.cs" />
+    <Compile Include="..\SolarWin\Repositories\IChatAnalyticsRepository.cs" Link="Repositories\IChatAnalyticsRepository.cs" />
+    <Compile Include="..\SolarWin\Repositories\ChatAnalyticsRepository.cs" Link="Repositories\ChatAnalyticsRepository.cs" />
+    <Compile Include="..\SolarWin\Services\ITextTokenizer.cs" Link="Services\ITextTokenizer.cs" />
+    <Compile Include="..\SolarWin\Services\LocalTextTokenizer.cs" Link="Services\LocalTextTokenizer.cs" />
+    <Compile Include="..\SolarWin\Services\IWordCloudLayoutService.cs" Link="Services\IWordCloudLayoutService.cs" />
+    <Compile Include="..\SolarWin\Services\IChatAnalyticsService.cs" Link="Services\IChatAnalyticsService.cs" />
+    <Compile Include="..\SolarWin\Services\ChatAnalyticsService.cs" Link="Services\ChatAnalyticsService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\SolarWin\Assets\stopwords-zh.txt" Link="Assets\stopwords-zh.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 
 </Project>

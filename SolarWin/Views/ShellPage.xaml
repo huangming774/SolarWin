@@ -3,14 +3,11 @@
     x:Class="SolarWin.Views.ShellPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:SolarWin.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <!--
-      Nav icons are assigned in code-behind (ApplyNavIcons).
-      Assets/icon.ico is the app/tray icon only — not per-menu glyphs.
-    -->
     <Grid x:Name="ShellRoot">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -40,15 +37,37 @@
                 <SolidColorBrush x:Key="NavigationViewExpandedPaneBackground" Color="Transparent" />
             </NavigationView.Resources>
             <NavigationView.MenuItems>
-                <NavigationViewItem Content="首页" Tag="home" />
-                <NavigationViewItem Content="聊天" Tag="chat" />
-                <NavigationViewItem Content="帖子" Tag="posts" />
-                <NavigationViewItem Content="探索" Tag="explore" />
-                <NavigationViewItem Content="寻思" Tag="thinking" />
-                <NavigationViewItem Content="天气" Tag="weather" />
-                <NavigationViewItem Content="AI" Tag="ai" />
-                <NavigationViewItem Content="文件" Tag="files" />
+                <NavigationViewItem Content="首页" Tag="home">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Home" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="聊天" Tag="chat">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Message" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="数据中心" Tag="data-center">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Bullets" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="帖子" Tag="posts">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Document" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="探索" Tag="explore">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Find" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="寻思" Tag="thinking">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Edit" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="天气" Tag="weather">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Globe" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="AI" Tag="ai">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Comment" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="文件" Tag="files">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Folder" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="NotificationsNavItem" Content="通知" Tag="notifications">
+                    <NavigationViewItem.Icon>
+                        <SymbolIcon Symbol="Mail" />
+                    </NavigationViewItem.Icon>
                     <NavigationViewItem.InfoBadge>
                         <InfoBadge
                             x:Name="NotificationInfoBadge"
@@ -56,26 +75,60 @@
                             Value="{x:Bind ViewModel.UnreadNotificationCount, Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
-                <NavigationViewItem Content="钱包" Tag="wallet" />
-                <NavigationViewItem Content="我的" Tag="profile" />
+                <NavigationViewItem Content="钱包" Tag="wallet">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Shop" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="我的" Tag="profile">
+                    <NavigationViewItem.Icon><SymbolIcon Symbol="Contact" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
             </NavigationView.MenuItems>
 
             <NavigationView.PaneFooter>
-                <StackPanel Padding="12" Spacing="4">
-                    <TextBlock
-                        FontWeight="SemiBold"
-                        Text="{x:Bind ViewModel.UserDisplayName, Mode=OneWay}"
-                        TextTrimming="CharacterEllipsis" />
-                    <TextBlock
-                        Opacity="0.7"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.UserHandle, Mode=OneWay}" />
-                    <TextBlock
-                        Opacity="0.6"
-                        Style="{StaticResource CaptionTextBlockStyle}"
-                        Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
-                        TextWrapping="Wrap" />
-                </StackPanel>
+                <Border
+                    Margin="4,4,4,8"
+                    Padding="8"
+                    Background="{ThemeResource ControlFillColorSecondaryBrush}"
+                    CornerRadius="8">
+                    <Grid MaxWidth="224" ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="40" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Grid Width="40" Height="40" VerticalAlignment="Center">
+                            <Border
+                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                CornerRadius="20">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind ViewModel.UserInitials, Mode=OneWay}" />
+                            </Border>
+                            <controls:FastWin2DImage
+                                Width="40"
+                                Height="40"
+                                CornerRadius="20"
+                                DecodeWidth="96"
+                                EnableFadeIn="True"
+                                ShowPlaceholder="False"
+                                Source="{x:Bind ViewModel.UserAvatarUrl, Mode=OneWay}"
+                                Stretch="UniformToFill" />
+                        </Grid>
+
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="1">
+                            <TextBlock
+                                FontWeight="SemiBold"
+                                Text="{x:Bind ViewModel.UserDisplayName, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
+                            <TextBlock
+                                Opacity="0.72"
+                                Style="{StaticResource CaptionTextBlockStyle}"
+                                Text="{x:Bind ViewModel.UserHandle, Mode=OneWay}"
+                                TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
             </NavigationView.PaneFooter>
 
             <Frame x:Name="ContentFrame" />

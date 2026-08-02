@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.UI.Xaml;
 using SolarWin.Data;
 using SolarWin.Helpers;
 using SolarWin.Models;
@@ -175,6 +176,22 @@ public partial class ChatViewModel : ObservableObject
     public partial string MoveRoomIdText { get; set; } = string.Empty;
 
     [ObservableProperty]
+    public partial string GroupEditName { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedGroupPanelVisibility))]
+    public partial ChatGroupItemViewModel? SelectedGroup { get; set; }
+
+    public Visibility SelectedGroupPanelVisibility =>
+        SelectedGroup is null ? Visibility.Collapsed : Visibility.Visible;
+
+    partial void OnSelectedGroupChanged(ChatGroupItemViewModel? value)
+    {
+        SelectedGroupIdText = value?.Id.ToString("D") ?? string.Empty;
+        GroupEditName = value?.Name ?? string.Empty;
+    }
+
+    [ObservableProperty]
     public partial string WsStatusText { get; set; } = "WS: 未连接";
 
     [ObservableProperty]
@@ -182,9 +199,13 @@ public partial class ChatViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasPendingInvites))]
+    [NotifyPropertyChangedFor(nameof(PendingInvitesVisibility))]
     public partial int PendingInviteCount { get; set; }
 
     public bool HasPendingInvites => PendingInviteCount > 0;
+
+    public Visibility PendingInvitesVisibility =>
+        HasPendingInvites ? Visibility.Visible : Visibility.Collapsed;
 
     public bool HasCache => Rooms.Count > 0 || _cache.TryGetRooms(out _);
 
@@ -512,9 +533,10 @@ public partial class ChatViewModel : ObservableObject
                 StatusText = "暂无会话";
             }
 
-            if (!_avatarsLoaded || next.Any(n => n.HasAvatar && n.AvatarImage is null))
+            // Room avatars paint via FastWin2DImage + AvatarUrl (no BitmapImage prefetch).
+            if (!_avatarsLoaded)
             {
-                _ = LoadAvatarsAuthenticatedAsync();
+                _avatarsLoaded = true;
             }
         }
         catch (Exception ex)
@@ -605,7 +627,7 @@ public partial class ChatViewModel : ObservableObject
     [RelayCommand]
     private async Task CreateGroupRoomAsync()
     {
-        var name = NewGroupName.Trim();
+        var name = GroupEditName.Trim();
         if (name.Length == 0)
         {
             _toast.Show("请输入群名称");
@@ -691,7 +713,7 @@ public partial class ChatViewModel : ObservableObject
                     continue;
                 }
 
-                UserSearchResults.Add(new UserSearchResultItem(acc, _imageLoader));
+                UserSearchResults.Add(new UserSearchResultItem(acc));
             }
 
             HasUserSearchResults = UserSearchResults.Count > 0;
@@ -830,26 +852,10 @@ public partial class ChatViewModel : ObservableObject
     /// <summary>Open a room (fires RoomSelected for ChatPage navigation).</summary>
     public void OpenRoomExternal(ChatRoomListItem item) => OpenRoom(item);
 
-    private async Task LoadUserSearchAvatarsAsync()
+    private Task LoadUserSearchAvatarsAsync()
     {
-        var pending = UserSearchResults
-            .Where(u => u.HasAvatar && u.AvatarImage is null && !string.IsNullOrWhiteSpace(u.AvatarUrl))
-            .Select(u => (Item: u, Task: _imageLoader.LoadSafeAsync(u.AvatarUrl!, DysonFileImageLoader.AvatarDecodeWidth)))
-            .ToList();
-
-        if (pending.Count == 0)
-        {
-            return;
-        }
-
-        await Task.WhenAll(pending.Select(p => p.Task)).ConfigureAwait(true);
-        foreach (var (item, task) in pending)
-        {
-            if (task.Result is { } bmp)
-            {
-                item.AvatarImage = bmp;
-            }
-        }
+        // Avatars: FastWin2DImage binds AvatarUrl (GPU). No BitmapImage prefetch.
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
@@ -964,6 +970,7 @@ public partial class ChatViewModel : ObservableObject
 
     private async Task RefreshGroupsAsync(int gen)
     {
+        var selectedId = SelectedGroup?.Id;
         try
         {
             var groups = await _api.GetChatGroupsAsync().ConfigureAwait(true);
@@ -978,6 +985,11 @@ public partial class ChatViewModel : ObservableObject
             {
                 Groups.Add(new ChatGroupItemViewModel(g));
             }
+
+            if (selectedId is { } id)
+            {
+                SelectedGroup = Groups.FirstOrDefault(group => group.Id == id);
+            }
         }
         catch
         {
@@ -989,6 +1001,11 @@ public partial class ChatViewModel : ObservableObject
                 foreach (var g in cached.OrderBy(x => x.Order).ThenBy(x => x.Name))
                 {
                     Groups.Add(new ChatGroupItemViewModel(g));
+                }
+
+                if (selectedId is { } id)
+                {
+                    SelectedGroup = Groups.FirstOrDefault(group => group.Id == id);
                 }
             }
         }
@@ -1142,7 +1159,7 @@ public partial class ChatViewModel : ObservableObject
         var name = NewGroupName.Trim();
         if (name.Length == 0)
         {
-            _toast.Show("请输入新分组名称（上面「新建群聊名称」输入框复用）");
+            _toast.Show("请输入新的分组名称");
             return;
         }
 
@@ -1170,6 +1187,7 @@ public partial class ChatViewModel : ObservableObject
         try
         {
             await _api.DeleteChatGroupAsync(groupId).ConfigureAwait(true);
+            SelectedGroup = null;
             await RefreshGroupsAsync(_loadGeneration).ConfigureAwait(true);
             _toast.Success("分组已删除");
         }
@@ -1215,8 +1233,44 @@ public partial class ChatViewModel : ObservableObject
             return;
         }
 
-        SelectedGroupIdText = group.Id.ToString("D");
-        NewGroupName = group.Name;
+        SelectedGroup = group;
+    }
+
+    [RelayCommand]
+    private async Task MoveRoomToCurrentGroupAsync(ChatRoomListItem? room)
+    {
+        if (room is null || SelectedGroup is null)
+        {
+            _toast.Show("请先在左侧选择一个分组");
+            return;
+        }
+
+        try
+        {
+            await _api.MoveRoomToGroupAsync(room.RoomId, SelectedGroup.Id).ConfigureAwait(true);
+            _toast.Success($"已移入「{SelectedGroup.Name}」");
+            await RefreshGroupsAsync(_loadGeneration).ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"移动失败：{ex.ApiMessage ?? ex.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveRoomFromGroupAsync(ChatRoomListItem? room)
+    {
+        if (room is null) return;
+        try
+        {
+            await _api.MoveRoomToGroupAsync(room.RoomId, null).ConfigureAwait(true);
+            _toast.Success("已移出分组");
+            await RefreshGroupsAsync(_loadGeneration).ConfigureAwait(true);
+        }
+        catch (SolarApiException ex)
+        {
+            _toast.Error($"移动失败：{ex.ApiMessage ?? ex.Message}");
+        }
     }
 
     private void MergeRooms(List<ChatRoomListItem> next)
@@ -1299,27 +1353,11 @@ public partial class ChatViewModel : ObservableObject
         return list;
     }
 
-    private async Task LoadAvatarsAuthenticatedAsync()
+    private Task LoadAvatarsAuthenticatedAsync()
     {
-        var pending = Rooms
-            .Where(r => !string.IsNullOrWhiteSpace(r.AvatarUrl) && r.AvatarImage is null)
-            .Select(r => (Room: r, Task: _imageLoader.LoadSafeAsync(r.AvatarUrl, DysonFileImageLoader.AvatarDecodeWidth)))
-            .ToList();
-
-        if (pending.Count > 0)
-        {
-            // Parallel download; apply in one UI turn so rows don't pop individually.
-            await Task.WhenAll(pending.Select(t => t.Task)).ConfigureAwait(true);
-            foreach (var (room, task) in pending)
-            {
-                if (task.Result is { } bmp)
-                {
-                    room.SetAuthenticatedAvatar(bmp);
-                }
-            }
-        }
-
+        // Avatars: FastWin2DImage binds AvatarUrl (GPU). No BitmapImage prefetch.
         _avatarsLoaded = true;
+        return Task.CompletedTask;
     }
 
     private static DateTimeOffset GetSortKey(SnChatRoom room, Dictionary<string, ChatSummaryResponse>? summary)

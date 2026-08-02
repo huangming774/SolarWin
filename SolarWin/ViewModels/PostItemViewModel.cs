@@ -6,7 +6,12 @@ using SolarWin.Models;
 
 namespace SolarWin.ViewModels;
 
-/// <summary>One row in the post feed (also reused for replies).</summary>
+/// <summary>
+/// One row in the post feed (also reused for replies).
+/// Posts UI binds <see cref="AvatarUrl"/> / <see cref="FirstImageUrl"/> to <c>GpuImage</c>;
+/// <see cref="AvatarImage"/> / <see cref="FirstImage"/> are legacy BitmapImage slots kept only for
+/// non-migrated consumers and are no longer filled on the posts path.
+/// </summary>
 public partial class PostItemViewModel : ObservableObject
 {
     /// <summary>
@@ -17,12 +22,15 @@ public partial class PostItemViewModel : ObservableObject
 
     public PostItemViewModel(
         SnPost post,
-        DysonFileImageLoader imageLoader,
+        DysonFileImageLoader? imageLoader = null,
         bool bindCachedImages = true)
     {
+        // imageLoader / bindCachedImages retained for call-site compatibility; posts path uses URLs + GpuImage.
+        _ = imageLoader;
+        _ = bindCachedImages;
         Post = post;
         Id = post.Id;
-        ApplyPost(post, bindCachedImages ? imageLoader : null);
+        ApplyPost(post);
     }
 
     public SnPost Post { get; private set; }
@@ -48,6 +56,7 @@ public partial class PostItemViewModel : ObservableObject
 
     public bool HasAvatar { get; private set; }
 
+    /// <summary>Legacy BitmapImage slot; posts pipeline uses <see cref="AvatarUrl"/> + GpuImage.</summary>
     [ObservableProperty]
     public partial BitmapImage? AvatarImage { get; set; }
 
@@ -104,6 +113,8 @@ public partial class PostItemViewModel : ObservableObject
     /// <summary>Full-resolution attachment URLs for detail / lightbox.</summary>
     public List<string> FullImageUrls { get; private set; } = [];
 
+    public string? FirstImageUrl => ImageUrls.Count > 0 ? ImageUrls[0] : null;
+
     public bool HasImages { get; private set; }
 
     public Visibility ImagesVisibility => HasImages ? Visibility.Visible : Visibility.Collapsed;
@@ -114,6 +125,20 @@ public partial class PostItemViewModel : ObservableObject
 
     public string ExtraImagesText { get; private set; } = string.Empty;
 
+    public string? VideoSourceKey { get; private set; }
+
+    public string VideoName { get; private set; } = string.Empty;
+
+    public string VideoMimeType { get; private set; } = string.Empty;
+
+    public bool HasVideo => !string.IsNullOrWhiteSpace(VideoSourceKey);
+
+    public Visibility VideoVisibility => HasVideo ? Visibility.Visible : Visibility.Collapsed;
+
+    [ObservableProperty]
+    public partial string? VideoThumbnailPath { get; set; }
+
+    /// <summary>Legacy BitmapImage slot; posts pipeline uses <see cref="FirstImageUrl"/> + GpuImage.</summary>
     [ObservableProperty]
     public partial BitmapImage? FirstImage { get; set; }
 
@@ -158,15 +183,18 @@ public partial class PostItemViewModel : ObservableObject
     /// <summary>Refresh display fields from a newer server post payload.</summary>
     public void UpdateFrom(SnPost post, DysonFileImageLoader? imageLoader = null)
     {
+        _ = imageLoader;
         Post = post;
         Id = post.Id;
-        ApplyPost(post, imageLoader);
+        ApplyPost(post);
         OnPropertyChanged(nameof(AuthorName));
         OnPropertyChanged(nameof(AuthorHandle));
         OnPropertyChanged(nameof(AuthorAccountName));
         OnPropertyChanged(nameof(AuthorAccountId));
         OnPropertyChanged(nameof(PublisherName));
         OnPropertyChanged(nameof(CanOpenAuthorProfile));
+        OnPropertyChanged(nameof(AvatarUrl));
+        OnPropertyChanged(nameof(HasAvatar));
         OnPropertyChanged(nameof(Initials));
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(HasTitle));
@@ -176,11 +204,19 @@ public partial class PostItemViewModel : ObservableObject
         OnPropertyChanged(nameof(HasForwarded));
         OnPropertyChanged(nameof(ForwardedVisibility));
         OnPropertyChanged(nameof(TimeText));
+        OnPropertyChanged(nameof(ImageUrls));
+        OnPropertyChanged(nameof(FullImageUrls));
+        OnPropertyChanged(nameof(FirstImageUrl));
         OnPropertyChanged(nameof(HasImages));
         OnPropertyChanged(nameof(ImagesVisibility));
         OnPropertyChanged(nameof(ExtraImagesText));
         OnPropertyChanged(nameof(HasExtraImages));
         OnPropertyChanged(nameof(ExtraImagesVisibility));
+        OnPropertyChanged(nameof(VideoSourceKey));
+        OnPropertyChanged(nameof(VideoName));
+        OnPropertyChanged(nameof(VideoMimeType));
+        OnPropertyChanged(nameof(HasVideo));
+        OnPropertyChanged(nameof(VideoVisibility));
         OnPropertyChanged(nameof(LikeLabel));
         OnPropertyChanged(nameof(BoostLabel));
         OnPropertyChanged(nameof(ReplyLabel));
@@ -202,13 +238,13 @@ public partial class PostItemViewModel : ObservableObject
     {
         // Passport GET /accounts/{name} needs the handle (Name), never display Nick (e.g. 清沫).
         var name = AuthorAccountName;
-        if (string.IsNullOrWhiteSpace(name) && LooksLikeAccountHandle(PublisherName))
+        if (string.IsNullOrWhiteSpace(name) && PostItemHandleRules.LooksLikeAccountHandle(PublisherName))
         {
             // Individual publishers often reuse the account handle as publisher name.
             name = PublisherName;
         }
 
-        if (string.IsNullOrWhiteSpace(name) || !LooksLikeAccountHandle(name))
+        if (string.IsNullOrWhiteSpace(name) || !PostItemHandleRules.LooksLikeAccountHandle(name))
         {
             return null;
         }
@@ -216,37 +252,11 @@ public partial class PostItemViewModel : ObservableObject
         return new UserProfileNavArgs(name.TrimStart('@'), AuthorAccountId, AuthorName);
     }
 
-    /// <summary>
-    /// Account/publisher handles are latin slug-like. Chinese nicknames must not hit /passport/accounts/{name}.
-    /// </summary>
+    /// <inheritdoc cref="PostItemHandleRules.LooksLikeAccountHandle"/>
     internal static bool LooksLikeAccountHandle(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
+        => PostItemHandleRules.LooksLikeAccountHandle(value);
 
-        var s = value.Trim().TrimStart('@');
-        if (s.Length is < 1 or > 64)
-        {
-            return false;
-        }
-
-        // Allow letters, digits, underscore, hyphen, period only (no CJK / spaces).
-        foreach (var ch in s)
-        {
-            if (char.IsAsciiLetterOrDigit(ch) || ch is '_' or '-' or '.')
-            {
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
-    }
-
-    private void ApplyPost(SnPost post, DysonFileImageLoader? imageLoader)
+    private void ApplyPost(SnPost post)
     {
         var publisher = post.Publisher;
         AuthorName = publisher?.Nick ?? publisher?.Name ?? "未知发布者";
@@ -260,7 +270,8 @@ public partial class PostItemViewModel : ObservableObject
             AuthorAccountName = accName;
         }
 
-        if (!string.IsNullOrWhiteSpace(AuthorAccountName) && !LooksLikeAccountHandle(AuthorAccountName))
+        if (!string.IsNullOrWhiteSpace(AuthorAccountName)
+            && !PostItemHandleRules.LooksLikeAccountHandle(AuthorAccountName))
         {
             AuthorAccountName = null;
         }
@@ -268,12 +279,6 @@ public partial class PostItemViewModel : ObservableObject
         AvatarUrl = CloudFileUrlHelper.Resolve(publisher?.Picture)
             ?? CloudFileUrlHelper.Resolve(publisher?.Account?.Profile?.Picture);
         HasAvatar = !string.IsNullOrWhiteSpace(AvatarUrl);
-
-        if (imageLoader is not null && HasAvatar && AvatarImage is null &&
-            imageLoader.TryGetCached(AvatarUrl, out var cachedAvatar, DysonFileImageLoader.AvatarDecodeWidth))
-        {
-            AvatarImage = cachedAvatar;
-        }
 
         Title = post.Title ?? string.Empty;
         HasTitle = !string.IsNullOrWhiteSpace(post.Title);
@@ -315,15 +320,20 @@ public partial class PostItemViewModel : ObservableObject
             .Cast<string>()
             .ToList();
         HasImages = ImageUrls.Count > 0;
-        if (imageLoader is not null && HasImages && FirstImage is null &&
-            imageLoader.TryGetCached(ImageUrls[0], out var cachedImage, DysonFileImageLoader.FeedImageDecodeWidth)
-            && cachedImage is not null)
-        {
-            FirstImage = cachedImage;
-        }
 
         ExtraImagesText = ImageUrls.Count > 1 ? $"+{ImageUrls.Count - 1}" : string.Empty;
         HasExtraImages = ImageUrls.Count > 1;
+
+        var video = (post.Attachments ?? []).FirstOrDefault(CloudFileUrlHelper.IsLikelyVideo);
+        VideoSourceKey = video is null
+            ? null
+            : CloudFileUrlHelper.ResolveFileId(video) ?? CloudFileUrlHelper.Resolve(video);
+        VideoName = video?.Name ?? "视频";
+        VideoMimeType = video?.MimeType ?? string.Empty;
+        if (video is null)
+        {
+            VideoThumbnailPath = null;
+        }
     }
 
     private void RefreshStatsText()

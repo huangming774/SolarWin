@@ -177,6 +177,14 @@ public static class CloudFileUrlHelper
         return false;
     }
 
+    public static bool IsLikelyVideo(SnCloudFile? file)
+    {
+        if (file is null) return false;
+        if (file.MimeType?.StartsWith("video/", StringComparison.OrdinalIgnoreCase) == true) return true;
+        var extension = Path.GetExtension(file.Name ?? string.Empty).ToLowerInvariant();
+        return extension is ".mp4" or ".mov" or ".mkv" or ".webm" or ".avi" or ".m4v";
+    }
+
     public static string? ResolveRoomAvatar(SnChatRoom room, Guid? currentAccountId = null)
     {
         var roomPic = Resolve(room.Picture);

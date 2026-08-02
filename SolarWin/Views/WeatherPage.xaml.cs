@@ -13,20 +13,24 @@ namespace SolarWin.Views;
 
 public sealed partial class WeatherPage : Page
 {
+    private bool _viewModelEventsHooked;
+
     public WeatherViewModel ViewModel { get; }
 
     public WeatherPage()
     {
         ViewModel = App.Services.GetRequiredService<WeatherViewModel>();
         InitializeComponent();
+        NavigationCacheMode = NavigationCacheMode.Required;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
+        HookViewModelEvents();
         CitySearchBox.ItemsSource = ViewModel.CitySuggestions;
     }
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
+        HookViewModelEvents();
         ApplyCinematicBackground();
         ApplyGlassToCards();
         EnsureCardShadows();
@@ -34,8 +38,29 @@ public sealed partial class WeatherPage : Page
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
     {
+        UnhookViewModelEvents();
+    }
+
+    private void HookViewModelEvents()
+    {
+        if (_viewModelEventsHooked)
+        {
+            return;
+        }
+
+        ViewModel.PropertyChanged += ViewModel_OnPropertyChanged;
+        _viewModelEventsHooked = true;
+    }
+
+    private void UnhookViewModelEvents()
+    {
+        if (!_viewModelEventsHooked)
+        {
+            return;
+        }
+
         ViewModel.PropertyChanged -= ViewModel_OnPropertyChanged;
-        Unloaded -= OnUnloaded;
+        _viewModelEventsHooked = false;
     }
 
     private void Page_OnActualThemeChanged(FrameworkElement sender, object args)
@@ -232,7 +257,10 @@ public sealed partial class WeatherPage : Page
         if (!ViewModel.HasData && ViewModel.LoadCommand.CanExecute(null))
         {
             ViewModel.LoadCommand.Execute(null);
+            return;
         }
+
+        _ = ViewModel.RefreshIfStaleAsync();
     }
 
     private void CitySearchBox_OnTextChanged(AutoSuggestBox sender, AutoSuggestBoxTextChangedEventArgs args)

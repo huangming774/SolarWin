@@ -167,17 +167,23 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
             return;
         }
 
-        var channel = Channel.CreateBounded<ChatWriteOp>(new BoundedChannelOptions(QueueCapacity)
-        {
-            SingleReader = true,
-            SingleWriter = false,
-            AllowSynchronousContinuations = false,
-            FullMode = BoundedChannelFullMode.DropOldest,
-        });
+        var channel = Channel.CreateBounded<ChatWriteOp>(
+            new BoundedChannelOptions(QueueCapacity)
+            {
+                SingleReader = true,
+                SingleWriter = false,
+                AllowSynchronousContinuations = false,
+                FullMode = BoundedChannelFullMode.DropOldest,
+            },
+            droppedOp =>
+            {
+                Interlocked.Increment(ref _droppedTotal);
+                Debug.WriteLine($"[ChatWritePump] Evicted queued op {droppedOp.GetType().Name}.");
+            });
         var cts = new CancellationTokenSource();
         _channel = channel;
         _cts = cts;
-        _consumer = Task.Run(() => ConsumeAsync(channel.Reader, cts.Token), CancellationToken.None);
+        _consumer = ConsumeAsync(channel.Reader, cts.Token);
 
         // One-shot full eviction after this account's migrate gate opens.
         ScheduleEvictionIfNeeded_NoLock(channel.Writer);
@@ -241,7 +247,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                     continue;
                 }
 
-                await RunBatchCountedAsync(batch, cancellationToken).ConfigureAwait(false);
+                await RunBatchCountedAsync(CoalesceBatch(batch), cancellationToken).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -268,7 +274,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
 
             if (tail.Count > 0)
             {
-                await RunBatchCountedAsync(tail, CancellationToken.None).ConfigureAwait(false);
+                await RunBatchCountedAsync(CoalesceBatch(tail), CancellationToken.None).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -292,6 +298,85 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Collapse idempotent updates before touching SQLite. Ordering-sensitive operations
+    /// (delete versus upsert, page replacement, eviction) deliberately remain in place.
+    /// </summary>
+    private static List<ChatWriteOp> CoalesceBatch(List<ChatWriteOp> batch)
+    {
+        if (batch.Count < 2)
+        {
+            return batch;
+        }
+
+        var keep = new bool[batch.Count];
+        Array.Fill(keep, true);
+        var messageUpdates = new HashSet<(Guid RoomId, string Key)>();
+        var roomReads = new Dictionary<Guid, int>();
+        var roomDeletes = new HashSet<Guid>();
+        var messageDeletes = new HashSet<(Guid RoomId, Guid MessageId, string ClientId)>();
+
+        for (var i = batch.Count - 1; i >= 0; i--)
+        {
+            switch (batch[i])
+            {
+                case UpsertMessageOp upsert:
+                {
+                    var roomId = upsert.RoomId != Guid.Empty ? upsert.RoomId : upsert.Message.ChatRoomId;
+                    var key = upsert.Message.Id != Guid.Empty
+                        ? "m:" + upsert.Message.Id.ToString("N")
+                        : !string.IsNullOrWhiteSpace(upsert.Message.ClientMessageId)
+                            ? "c:" + upsert.Message.ClientMessageId
+                            : null;
+                    if (roomId != Guid.Empty && key is not null
+                        && !messageUpdates.Add((roomId, key)))
+                    {
+                        keep[i] = false;
+                    }
+
+                    break;
+                }
+                case UpdateRoomReadOp read when read.RoomId != Guid.Empty:
+                    if (roomReads.TryGetValue(read.RoomId, out var laterIndex)
+                        && batch[laterIndex] is UpdateRoomReadOp later)
+                    {
+                        // The newest unread count wins, while the read cursor is monotonic.
+                        batch[laterIndex] = later with
+                        {
+                            LastReadSequence = Math.Max(read.LastReadSequence, later.LastReadSequence),
+                        };
+                        keep[i] = false;
+                    }
+                    else
+                    {
+                        roomReads[read.RoomId] = i;
+                    }
+
+                    break;
+                case DeleteRoomListOp deleteRoom when deleteRoom.RoomId != Guid.Empty:
+                    if (!roomDeletes.Add(deleteRoom.RoomId)) keep[i] = false;
+                    break;
+                case DeleteMessageOp deleteMessage when deleteMessage.RoomId != Guid.Empty:
+                {
+                    var key = (
+                        deleteMessage.RoomId,
+                        deleteMessage.MessageId,
+                        deleteMessage.ClientMessageId ?? string.Empty);
+                    if (!messageDeletes.Add(key)) keep[i] = false;
+                    break;
+                }
+            }
+        }
+
+        var result = new List<ChatWriteOp>(batch.Count);
+        for (var i = 0; i < batch.Count; i++)
+        {
+            if (keep[i]) result.Add(batch[i]);
+        }
+
+        return result;
+    }
+
     private async Task ProcessBatchAsync(List<ChatWriteOp> batch, CancellationToken cancellationToken)
     {
         if (_dbFactory.BoundAccountId is null)
@@ -310,130 +395,167 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         }
 
         await using var db = _dbFactory.CreateDbContext();
-        var touchedRooms = new HashSet<Guid>();
-        var runFullEviction = false;
+        var runFullEviction = batch.Any(static op => op is RunFullEvictionOp);
+        var writeOps = batch.Where(static op => op is not RunFullEvictionOp).ToList();
+
+        if (writeOps.Count > 0)
+        {
+            await using var transaction = await db.Database
+                .BeginTransactionAsync(cancellationToken)
+                .ConfigureAwait(false);
+            await PrefetchBatchRowsAsync(db, writeOps, cancellationToken).ConfigureAwait(false);
+
+            foreach (var op in writeOps)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                switch (op)
+                {
+                    case UpsertMessageOp upsert:
+                        UpsertOne(db, upsert.RoomId, upsert.Message, upsert.Source);
+                        if (upsert.RoomId != Guid.Empty)
+                        {
+                            UpdateRoomPreviewIfNewer(db, upsert.RoomId, upsert.Message);
+                        }
+
+                        break;
+
+                    case UpsertMessagesBatchOp page:
+                        foreach (var msg in page.Messages)
+                        {
+                            UpsertOne(db, page.RoomId, msg, page.Source);
+                        }
+
+                        break;
+
+                    case DeleteMessageOp del:
+                        await DeleteMessageAsync(db, del, cancellationToken).ConfigureAwait(false);
+                        break;
+
+                    case DeleteRoomMessagesOp delRoom:
+                        await db.Messages
+                            .Where(m => m.RoomId == delRoom.RoomId)
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+
+                    case UpsertRoomOp roomOp:
+                        UpsertRoom(db, roomOp.Room, roomOp.Summary, roomOp.Source, roomOp.LastReadSequence);
+                        break;
+
+                    case UpsertRoomsBatchOp roomsBatch:
+                        await UpsertRoomsBatchAsync(db, roomsBatch, cancellationToken).ConfigureAwait(false);
+                        break;
+
+                    case UpdateRoomReadOp readOp:
+                        UpdateRoomRead(db, readOp);
+                        break;
+
+                    case UpdateRoomPreviewOp previewOp:
+                        UpdateRoomPreview(db, previewOp);
+                        break;
+
+                    case DeleteRoomListOp delList:
+                        await db.Rooms
+                            .Where(r => r.RoomId == delList.RoomId)
+                            .ExecuteDeleteAsync(cancellationToken)
+                            .ConfigureAwait(false);
+                        break;
+                }
+            }
+
+            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        // Retention is deliberately outside every real-time write transaction. The
+        // maintenance marker is queued once per account bind and runs as a cold task.
+        if (runFullEviction)
+        {
+            db.ChangeTracker.Clear();
+            await EvictAllRoomsAsync(db, cancellationToken).ConfigureAwait(false);
+            await EvictByFileSizeIfNeededAsync(db, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task PrefetchBatchRowsAsync(
+        SolarWinDbContext db,
+        IReadOnlyList<ChatWriteOp> batch,
+        CancellationToken cancellationToken)
+    {
+        var roomIds = new HashSet<Guid>();
+        var messageIds = new HashSet<Guid>();
+        var clientIds = new HashSet<string>(StringComparer.Ordinal);
+
+        void AddMessage(Guid requestedRoomId, SnChatMessage message)
+        {
+            var roomId = requestedRoomId != Guid.Empty ? requestedRoomId : message.ChatRoomId;
+            if (roomId != Guid.Empty) roomIds.Add(roomId);
+            if (message.Id != Guid.Empty) messageIds.Add(message.Id);
+            if (!string.IsNullOrWhiteSpace(message.ClientMessageId)) clientIds.Add(message.ClientMessageId);
+        }
 
         foreach (var op in batch)
         {
-            cancellationToken.ThrowIfCancellationRequested();
             switch (op)
             {
-                case UpsertMessageOp upsert:
-                    await UpsertOneAsync(db, upsert.RoomId, upsert.Message, upsert.Source, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (upsert.RoomId != Guid.Empty)
-                    {
-                        touchedRooms.Add(upsert.RoomId);
-                        // Preview only when this message is newer than stored list preview (skip history backfill).
-                        await UpdateRoomPreviewIfNewerAsync(db, upsert.RoomId, upsert.Message, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-
+                case UpsertMessageOp one:
+                    AddMessage(one.RoomId, one.Message);
                     break;
-
-                case UpsertMessagesBatchOp page:
-                    foreach (var msg in page.Messages)
-                    {
-                        await UpsertOneAsync(db, page.RoomId, msg, page.Source, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
-
-                    if (page.RoomId != Guid.Empty)
-                    {
-                        touchedRooms.Add(page.RoomId);
-                    }
-
+                case UpsertMessagesBatchOp many:
+                    foreach (var message in many.Messages) AddMessage(many.RoomId, message);
                     break;
-
-                case DeleteMessageOp del:
-                    await DeleteMessageAsync(db, del, cancellationToken).ConfigureAwait(false);
-                    if (del.RoomId != Guid.Empty)
-                    {
-                        touchedRooms.Add(del.RoomId);
-                    }
-
+                case UpsertRoomOp room when room.Room.Id != Guid.Empty:
+                    roomIds.Add(room.Room.Id);
                     break;
-
-                case DeleteRoomMessagesOp delRoom:
-                    await db.Messages
-                        .Where(m => m.RoomId == delRoom.RoomId)
-                        .ExecuteDeleteAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                case UpsertRoomsBatchOp rooms:
+                    foreach (var (room, _) in rooms.Rooms)
+                        if (room.Id != Guid.Empty) roomIds.Add(room.Id);
                     break;
-
-                case RunFullEvictionOp:
-                    runFullEviction = true;
+                case UpdateRoomReadOp read when read.RoomId != Guid.Empty:
+                    roomIds.Add(read.RoomId);
                     break;
-
-                case UpsertRoomOp roomOp:
-                    await UpsertRoomAsync(
-                            db,
-                            roomOp.Room,
-                            roomOp.Summary,
-                            roomOp.Source,
-                            roomOp.LastReadSequence,
-                            cancellationToken)
-                        .ConfigureAwait(false);
-                    break;
-
-                case UpsertRoomsBatchOp roomsBatch:
-                    await UpsertRoomsBatchAsync(db, roomsBatch, cancellationToken).ConfigureAwait(false);
-                    break;
-
-                case UpdateRoomReadOp readOp:
-                    await UpdateRoomReadAsync(db, readOp, cancellationToken).ConfigureAwait(false);
-                    break;
-
-                case UpdateRoomPreviewOp previewOp:
-                    await UpdateRoomPreviewAsync(db, previewOp, cancellationToken).ConfigureAwait(false);
-                    break;
-
-                case DeleteRoomListOp delList:
-                    await db.Rooms
-                        .Where(r => r.RoomId == delList.RoomId)
-                        .ExecuteDeleteAsync(cancellationToken)
-                        .ConfigureAwait(false);
+                case UpdateRoomPreviewOp preview when preview.RoomId != Guid.Empty:
+                    roomIds.Add(preview.RoomId);
                     break;
             }
         }
 
-        await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        // Light per-room eviction after writes (design §1.7 timing #1).
-        foreach (var roomId in touchedRooms)
+        var roomIdList = roomIds.ToArray();
+        foreach (var chunk in roomIdList.Chunk(400))
         {
-            await EvictRoomAsync(db, roomId, cancellationToken).ConfigureAwait(false);
+            await db.Rooms.Where(r => chunk.Contains(r.RoomId))
+                .LoadAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (runFullEviction)
+        foreach (var chunk in messageIds.Chunk(400))
         {
-            await EvictAllRoomsAsync(db, cancellationToken).ConfigureAwait(false);
-            await EvictByFileSizeIfNeededAsync(db, cancellationToken).ConfigureAwait(false);
+            await db.Messages
+                .Where(m => chunk.Contains(m.MessageId))
+                .LoadAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (db.ChangeTracker.HasChanges())
+        foreach (var chunk in clientIds.Chunk(400))
         {
-            await db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await db.Messages
+                .Where(m => m.ClientMessageId != null
+                            && chunk.Contains(m.ClientMessageId))
+                .LoadAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    private static async Task UpsertRoomAsync(
+    private static void UpsertRoom(
         SolarWinDbContext db,
         SnChatRoom room,
         ChatSummaryResponse? summary,
         ChatMessageSource source,
-        long? lastReadSequence,
-        CancellationToken cancellationToken)
+        long? lastReadSequence)
     {
         if (room.Id == Guid.Empty)
         {
             return;
         }
 
-        var existing = db.Rooms.Local.FirstOrDefault(r => r.RoomId == room.Id)
-                       ?? await db.Rooms
-                           .FirstOrDefaultAsync(r => r.RoomId == room.Id, cancellationToken)
-                           .ConfigureAwait(false);
+        var existing = db.Rooms.Local.FirstOrDefault(r => r.RoomId == room.Id);
 
         if (existing is null)
         {
@@ -467,8 +589,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
             }
 
             serverIds.Add(room.Id);
-            await UpsertRoomAsync(db, room, summary, batch.Source, lastReadSequence: null, cancellationToken)
-                .ConfigureAwait(false);
+            UpsertRoom(db, room, summary, batch.Source, lastReadSequence: null);
         }
 
         if (!batch.RemoveMissing || serverIds.Count == 0)
@@ -483,20 +604,14 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
             .ConfigureAwait(false);
     }
 
-    private static async Task UpdateRoomReadAsync(
-        SolarWinDbContext db,
-        UpdateRoomReadOp op,
-        CancellationToken cancellationToken)
+    private static void UpdateRoomRead(SolarWinDbContext db, UpdateRoomReadOp op)
     {
         if (op.RoomId == Guid.Empty)
         {
             return;
         }
 
-        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == op.RoomId)
-                  ?? await db.Rooms
-                      .FirstOrDefaultAsync(r => r.RoomId == op.RoomId, cancellationToken)
-                      .ConfigureAwait(false);
+        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == op.RoomId);
         if (row is null)
         {
             return;
@@ -511,21 +626,17 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         row.SyncedAt = DateTimeOffset.UtcNow;
     }
 
-    private static async Task UpdateRoomPreviewIfNewerAsync(
+    private static void UpdateRoomPreviewIfNewer(
         SolarWinDbContext db,
         Guid roomId,
-        SnChatMessage message,
-        CancellationToken cancellationToken)
+        SnChatMessage message)
     {
         if (roomId == Guid.Empty || message is null)
         {
             return;
         }
 
-        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == roomId)
-                  ?? await db.Rooms
-                      .FirstOrDefaultAsync(r => r.RoomId == roomId, cancellationToken)
-                      .ConfigureAwait(false);
+        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == roomId);
         if (row is null)
         {
             return;
@@ -557,31 +668,23 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
             return;
         }
 
-        await UpdateRoomPreviewAsync(
-                db,
-                new UpdateRoomPreviewOp(
-                    roomId,
-                    message,
-                    UnreadCount: null,
-                    LastActivity: message.CreatedAt ?? DateTimeOffset.UtcNow),
-                cancellationToken)
-            .ConfigureAwait(false);
+        UpdateRoomPreview(
+            db,
+            new UpdateRoomPreviewOp(
+                roomId,
+                message,
+                UnreadCount: null,
+                LastActivity: message.CreatedAt ?? DateTimeOffset.UtcNow));
     }
 
-    private static async Task UpdateRoomPreviewAsync(
-        SolarWinDbContext db,
-        UpdateRoomPreviewOp op,
-        CancellationToken cancellationToken)
+    private static void UpdateRoomPreview(SolarWinDbContext db, UpdateRoomPreviewOp op)
     {
         if (op.RoomId == Guid.Empty)
         {
             return;
         }
 
-        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == op.RoomId)
-                  ?? await db.Rooms
-                      .FirstOrDefaultAsync(r => r.RoomId == op.RoomId, cancellationToken)
-                      .ConfigureAwait(false);
+        var row = db.Rooms.Local.FirstOrDefault(r => r.RoomId == op.RoomId);
         if (row is null)
         {
             // Room list may not be hydrated yet; skip preview-only update.
@@ -620,12 +723,11 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         row.SyncedAt = DateTimeOffset.UtcNow;
     }
 
-    private static async Task UpsertOneAsync(
+    private static void UpsertOne(
         SolarWinDbContext db,
         Guid roomId,
         SnChatMessage message,
-        ChatMessageSource source,
-        CancellationToken cancellationToken)
+        ChatMessageSource source)
     {
         if (message is null)
         {
@@ -645,11 +747,6 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         {
             existing = db.Messages.Local.FirstOrDefault(
                 m => m.RoomId == effectiveRoom && m.MessageId == message.Id);
-            existing ??= await db.Messages
-                .FirstOrDefaultAsync(
-                    m => m.RoomId == effectiveRoom && m.MessageId == message.Id,
-                    cancellationToken)
-                .ConfigureAwait(false);
         }
 
         if (existing is null && !string.IsNullOrWhiteSpace(message.ClientMessageId))
@@ -658,11 +755,6 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
             existing = db.Messages.Local.FirstOrDefault(
                 m => m.RoomId == effectiveRoom
                      && string.Equals(m.ClientMessageId, clientId, StringComparison.Ordinal));
-            existing ??= await db.Messages
-                .FirstOrDefaultAsync(
-                    m => m.RoomId == effectiveRoom && m.ClientMessageId == clientId,
-                    cancellationToken)
-                .ConfigureAwait(false);
         }
 
         if (existing is null)

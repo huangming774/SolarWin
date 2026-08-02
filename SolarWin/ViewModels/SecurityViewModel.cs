@@ -74,15 +74,17 @@ public partial class SecurityViewModel : ObservableObject
         IsBusy = true;
         try
         {
-            // Load sections independently so one failure does not block the rest.
-            await LoadDevicesAsync().ConfigureAwait(true);
-            await LoadSessionsAsync().ConfigureAwait(true);
-            await LoadFactorsAsync().ConfigureAwait(true);
-            await LoadContactsAsync().ConfigureAwait(true);
-            await LoadAppsAsync().ConfigureAwait(true);
-            await LoadApiKeysAsync().ConfigureAwait(true);
-            await LoadConnectionsAsync().ConfigureAwait(true);
-            await LoadPendingAsync().ConfigureAwait(true);
+            // Independent sections load concurrently, capped to avoid flooding the API.
+            await AsyncConcurrencyHelper.RunAsync(
+                4,
+                LoadDevicesAsync,
+                LoadSessionsAsync,
+                LoadFactorsAsync,
+                LoadContactsAsync,
+                LoadAppsAsync,
+                LoadApiKeysAsync,
+                LoadConnectionsAsync,
+                LoadPendingAsync).ConfigureAwait(true);
             StatusMessage = "安全信息已刷新";
         }
         catch (Exception ex)

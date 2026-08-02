@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
 using Windows.UI;
@@ -10,15 +11,29 @@ namespace SolarWin.ViewModels;
 
 public partial class WeatherViewModel : ObservableObject
 {
+    private const string DashboardCacheKey = "weather_dashboard_v1";
+    private static readonly TimeSpan FreshDuration = TimeSpan.FromMinutes(15);
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromDays(1);
+
     private readonly IWeatherService _weather;
 
     private double _latitude = 31.2304;
     private double _longitude = 121.4737;
     private CancellationTokenSource? _suggestCts;
+    private DateTimeOffset? _lastUpdatedUtc;
+    private GeoResult _currentLocation = new()
+    {
+        Name = "上海",
+        Latitude = 31.2304,
+        Longitude = 121.4737,
+        Country = "中国",
+        Admin1 = "上海市",
+    };
 
     public WeatherViewModel(IWeatherService weather)
     {
         _weather = weather;
+        RestoreCachedDashboard();
     }
 
     public ObservableCollection<GeoResult> CitySuggestions { get; } = [];
@@ -122,7 +137,7 @@ public partial class WeatherViewModel : ObservableObject
 
     public Visibility ErrorVisibility => HasError ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility ContentVisibility => HasData && !IsLoading ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ContentVisibility => HasData ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility EmptyVisibility => !HasData && !IsLoading && !HasError ? Visibility.Visible : Visibility.Collapsed;
 
@@ -143,12 +158,10 @@ public partial class WeatherViewModel : ObservableObject
         catch (WeatherServiceException ex)
         {
             ErrorMessage = ex.Message;
-            HasData = false;
         }
         catch (Exception ex)
         {
             ErrorMessage = $"加载失败：{ex.Message}";
-            HasData = false;
         }
         finally
         {
@@ -158,7 +171,23 @@ public partial class WeatherViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private async Task RefreshAsync()
+    private Task RefreshAsync()
+        => RefreshCoreAsync();
+
+    public Task RefreshIfStaleAsync()
+    {
+        if (!HasData
+            || IsLoading
+            || (_lastUpdatedUtc is { } updated
+                && DateTimeOffset.UtcNow - updated < FreshDuration))
+        {
+            return Task.CompletedTask;
+        }
+
+        return RefreshCoreAsync();
+    }
+
+    private async Task RefreshCoreAsync()
     {
         try
         {
@@ -239,12 +268,10 @@ public partial class WeatherViewModel : ObservableObject
         catch (WeatherServiceException ex)
         {
             ErrorMessage = ex.Message;
-            HasData = false;
         }
         catch (Exception ex)
         {
             ErrorMessage = $"加载失败：{ex.Message}";
-            HasData = false;
         }
         finally
         {
@@ -263,6 +290,7 @@ public partial class WeatherViewModel : ObservableObject
 
     private void ApplyLocation(GeoResult location)
     {
+        _currentLocation = location;
         _latitude = location.Latitude;
         _longitude = location.Longitude;
         LocationTitle = location.Name ?? "未知";
@@ -282,14 +310,17 @@ public partial class WeatherViewModel : ObservableObject
 
     private async Task LoadForecastInternalAsync()
     {
-        var forecast = await _weather.GetForecastAsync(_latitude, _longitude).ConfigureAwait(true);
+        var forecastTask = _weather.GetForecastAsync(_latitude, _longitude);
+        var airQualityTask = _weather.GetAirQualityAsync(_latitude, _longitude);
+        var forecast = await forecastTask.ConfigureAwait(true);
         ApplyForecast(forecast);
 
         // Air quality is best-effort; never fail the whole dashboard.
+        AirQualityResponse? airQuality = null;
         try
         {
-            var aqi = await _weather.GetAirQualityAsync(_latitude, _longitude).ConfigureAwait(true);
-            ApplyAirQuality(aqi);
+            airQuality = await airQualityTask.ConfigureAwait(true);
+            ApplyAirQuality(airQuality);
         }
         catch
         {
@@ -297,6 +328,60 @@ public partial class WeatherViewModel : ObservableObject
         }
 
         HasData = true;
+        _lastUpdatedUtc = DateTimeOffset.UtcNow;
+        SaveCachedDashboard(forecast, airQuality);
+    }
+
+    private void RestoreCachedDashboard()
+    {
+        if (!OfflineCache.TryGetJson<CachedWeatherDashboard>(DashboardCacheKey, out var cached)
+            || cached?.Location is null
+            || cached.Forecast is null)
+        {
+            return;
+        }
+
+        try
+        {
+            ApplyLocation(cached.Location);
+            ApplyForecast(cached.Forecast);
+            if (cached.AirQuality is not null)
+            {
+                ApplyAirQuality(cached.AirQuality);
+            }
+            else
+            {
+                ResetAirQuality();
+            }
+
+            _lastUpdatedUtc = cached.SavedAtUtc;
+            HasData = true;
+        }
+        catch
+        {
+            OfflineCache.Remove(DashboardCacheKey);
+        }
+    }
+
+    private void SaveCachedDashboard(ForecastResponse forecast, AirQualityResponse? airQuality)
+    {
+        try
+        {
+            OfflineCache.SetJson(
+                DashboardCacheKey,
+                new CachedWeatherDashboard
+                {
+                    SavedAtUtc = _lastUpdatedUtc ?? DateTimeOffset.UtcNow,
+                    Location = _currentLocation,
+                    Forecast = forecast,
+                    AirQuality = airQuality,
+                },
+                CacheDuration);
+        }
+        catch
+        {
+            // Weather remains usable even if the local cache cannot be written.
+        }
     }
 
     private void ApplyForecast(ForecastResponse forecast)
@@ -636,6 +721,17 @@ public partial class WeatherViewModel : ObservableObject
                 Color.FromArgb(255, 12, 24, 56),
                 Color.FromArgb(255, 30, 72, 140)),
         };
+    }
+
+    private sealed class CachedWeatherDashboard
+    {
+        public DateTimeOffset SavedAtUtc { get; set; }
+
+        public GeoResult? Location { get; set; }
+
+        public ForecastResponse? Forecast { get; set; }
+
+        public AirQualityResponse? AirQuality { get; set; }
     }
 }
 

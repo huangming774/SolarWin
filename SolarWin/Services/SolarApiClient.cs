@@ -2188,16 +2188,16 @@ public sealed class SolarApiClient : ISolarApiClient
         return JsonListParser.ParseList<SnPostAward>(json);
     }
 
-    public Task AwardPostAsync(Guid postId, PostAwardRequest request, CancellationToken cancellationToken = default)
+    public Task<PostAwardResponse> AwardPostAsync(Guid postId, PostAwardRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync($"/sphere/posts/{postId:D}/awards", request, cancellationToken);
+        return PostAsync<PostAwardRequest, PostAwardResponse>($"/sphere/posts/{postId:D}/awards", request, cancellationToken);
     }
 
-    public Task SponsorPostAsync(Guid postId, PostSponsorRequest request, CancellationToken cancellationToken = default)
+    public Task<PostSponsorResponse> SponsorPostAsync(Guid postId, PostSponsorRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync($"/sphere/posts/{postId:D}/sponsor", request, cancellationToken);
+        return PostAsync<PostSponsorRequest, PostSponsorResponse>($"/sphere/posts/{postId:D}/sponsor", request, cancellationToken);
     }
 
     // —— Passport / Social ——
@@ -2402,11 +2402,11 @@ public sealed class SolarApiClient : ISolarApiClient
     public Task CancelFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
         => DeleteAsync($"/passport/relationships/{accountId:D}/friends", cancellationToken);
 
-    public Task AcceptFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => PostAsync($"/passport/relationships/{accountId:D}/friends/accept", cancellationToken);
+    public Task<SnAccountRelationship> AcceptFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
+        => PostAsync<SnAccountRelationship>($"/passport/relationships/{accountId:D}/friends/accept", cancellationToken);
 
-    public Task DeclineFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => PostAsync($"/passport/relationships/{accountId:D}/friends/decline", cancellationToken);
+    public Task<SnAccountRelationship> DeclineFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
+        => PostAsync<SnAccountRelationship>($"/passport/relationships/{accountId:D}/friends/decline", cancellationToken);
 
     public Task BlockAccountAsync(
         Guid accountId,
@@ -2721,7 +2721,10 @@ public sealed class SolarApiClient : ISolarApiClient
         {
             return await GetAsync<IpCheckResponse>("/passport/ip-check", cancellationToken).ConfigureAwait(false);
         }
-        catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound)
+        // This endpoint is permission-protected in some deployments, while
+        // /passport/ip-check/geo remains anonymous. Return null so the home
+        // card can display the location-only result rather than a false error.
+        catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound or HttpStatusCode.Unauthorized)
         {
             return null;
         }

@@ -14,7 +14,7 @@ public sealed class SolarWinDbContextFactory : IDesignTimeDbContextFactory<Solar
         AppPaths.EnsureDirectories();
         var path = Path.Combine(AppPaths.DbDirectory, "_design_time.db");
         var options = new DbContextOptionsBuilder<SolarWinDbContext>()
-            .UseSqlite($"Data Source={path};Cache=Shared")
+            .UseSqlite($"Data Source={path};Pooling=True;Default Timeout=5")
             .AddInterceptors(new SqliteWalConnectionInterceptor())
             .Options;
         return new SolarWinDbContext(options);

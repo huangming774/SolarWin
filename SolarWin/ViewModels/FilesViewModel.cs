@@ -16,18 +16,24 @@ public partial class FilesViewModel : ObservableObject, IDisposable
 
     private readonly ISolarApiClient _api;
     private readonly IToastService _toast;
-    private readonly FileThumbnailLoader _thumbnailLoader;
+    private readonly DysonFileImageLoader _thumbnailLoader;
+    private readonly VideoMediaCache _videoMediaCache;
     private readonly Stack<(string? Id, string Name)> _navStack = new();
     private readonly Dictionary<FileItemViewModel, CancellationTokenSource> _thumbnailRequests = new();
     private CancellationTokenSource _folderThumbnailCts = new();
     private int _folderVersion;
     private bool _disposed;
 
-    public FilesViewModel(ISolarApiClient api, IToastService toast, FileThumbnailLoader thumbnailLoader)
+    public FilesViewModel(
+        ISolarApiClient api,
+        IToastService toast,
+        DysonFileImageLoader thumbnailLoader,
+        VideoMediaCache videoMediaCache)
     {
         _api = api;
         _toast = toast;
         _thumbnailLoader = thumbnailLoader;
+        _videoMediaCache = videoMediaCache;
         _navStack.Push((null, "我的文件"));
         Breadcrumb = "我的文件";
         UpdateModeVisibility();
@@ -507,45 +513,20 @@ public partial class FilesViewModel : ObservableObject, IDisposable
             .ConfigureAwait(true);
     }
 
+    /// <summary>
+    /// Thumbnails paint via FastWin2DImage + ThumbnailUrl (GPU). Viewport cancel is owned by the control.
+    /// Kept for FilesPage call sites.
+    /// </summary>
     public void UpdateVisibleThumbnailWindow(IReadOnlyCollection<FileItemViewModel> visibleItems, int prefetchCount)
     {
-        if (_disposed)
+        _ = prefetchCount;
+        var wanted = visibleItems.Where(static item => item.IsVideo).ToHashSet();
+        foreach (var item in _thumbnailRequests.Keys.Where(item => !wanted.Contains(item)).ToList())
         {
-            return;
+            CancelThumbnailForItem(item);
         }
 
-        var indexes = visibleItems
-            .Select(item => Files.IndexOf(item))
-            .Where(index => index >= 0)
-            .ToList();
-
-        if (indexes.Count == 0)
-        {
-            foreach (var item in _thumbnailRequests.Keys.ToList())
-            {
-                CancelThumbnailForItem(item);
-            }
-
-            return;
-        }
-
-        var start = Math.Max(0, indexes.Min() - Math.Max(0, prefetchCount));
-        var end = Math.Min(Files.Count - 1, indexes.Max() + Math.Max(0, prefetchCount));
-        var window = Files
-            .Skip(start)
-            .Take(end - start + 1)
-            .Where(item => item.CanLoadThumbnail)
-            .ToHashSet();
-
-        foreach (var item in _thumbnailRequests.Keys.ToList())
-        {
-            if (!window.Contains(item))
-            {
-                CancelThumbnailForItem(item);
-            }
-        }
-
-        foreach (var item in window)
+        foreach (var item in wanted)
         {
             LoadThumbnailForVisibleItem(item);
         }
@@ -553,45 +534,29 @@ public partial class FilesViewModel : ObservableObject, IDisposable
 
     public void LoadThumbnailForVisibleItem(FileItemViewModel? item)
     {
-        if (_disposed || item is null || !item.CanLoadThumbnail)
+        if (item is null || !item.IsVideo || string.IsNullOrWhiteSpace(item.VideoSource)
+            || !string.IsNullOrWhiteSpace(item.ThumbnailUrl) || _thumbnailRequests.ContainsKey(item))
         {
             return;
         }
 
-        if (item.Thumbnail is not null)
+        // Avoid downloading very large videos merely because their cards scrolled into view.
+        if (item.File.Size > 128L * 1024 * 1024)
         {
             return;
         }
 
-        if (_thumbnailLoader.TryGetCached(item.ThumbnailUrl, FileThumbnailLoader.DefaultDecodePixelWidth, out var cached)
-            && cached is not null)
-        {
-            ApplyCachedThumbnailOnUiThread(item, cached);
-            return;
-        }
-
-        if (_thumbnailRequests.ContainsKey(item))
-        {
-            return;
-        }
-
-        var requestVersion = _folderVersion;
-        var requestParentId = CurrentParentId;
         var cts = CancellationTokenSource.CreateLinkedTokenSource(_folderThumbnailCts.Token);
         _thumbnailRequests[item] = cts;
-        _ = LoadThumbnailAsync(item, requestVersion, requestParentId, cts);
+        _ = LoadVideoThumbnailAsync(item, cts);
     }
 
     public void CancelThumbnailForItem(FileItemViewModel? item)
     {
-        if (item is null)
-        {
-            return;
-        }
-
-        if (_thumbnailRequests.Remove(item, out var cts))
+        if (item is not null && _thumbnailRequests.Remove(item, out var cts))
         {
             cts.Cancel();
+            cts.Dispose();
         }
     }
 
@@ -604,124 +569,17 @@ public partial class FilesViewModel : ObservableObject, IDisposable
 
         _folderVersion++;
         _folderThumbnailCts.Cancel();
+        _folderThumbnailCts.Dispose();
+        _folderThumbnailCts = new CancellationTokenSource();
         foreach (var cts in _thumbnailRequests.Values)
         {
             cts.Cancel();
+            cts.Dispose();
         }
-
         _thumbnailRequests.Clear();
-        _folderThumbnailCts.Dispose();
-        _folderThumbnailCts = new CancellationTokenSource();
-
         if (resetThumbnails)
         {
-            foreach (var item in Files)
-            {
-                item.Thumbnail = null;
-            }
-        }
-    }
-
-    private async Task LoadThumbnailAsync(
-        FileItemViewModel item,
-        int requestVersion,
-        string? requestParentId,
-        CancellationTokenSource requestCts)
-    {
-        try
-        {
-            var image = await _thumbnailLoader
-                .LoadSafeAsync(item.ThumbnailUrl, FileThumbnailLoader.DefaultDecodePixelWidth, requestCts.Token)
-                .ConfigureAwait(true);
-
-            if (image is null
-                || requestCts.IsCancellationRequested
-                || requestVersion != _folderVersion
-                || !string.Equals(requestParentId, CurrentParentId, StringComparison.Ordinal)
-                || !Files.Contains(item))
-            {
-                return;
-            }
-
-            await ApplyThumbnailOnUiThreadAsync(item, image, requestVersion, requestParentId, requestCts)
-                .ConfigureAwait(true);
-        }
-        finally
-        {
-            if (_thumbnailRequests.TryGetValue(item, out var current) && ReferenceEquals(current, requestCts))
-            {
-                _thumbnailRequests.Remove(item);
-            }
-
-            requestCts.Dispose();
-        }
-    }
-
-    private void ApplyCachedThumbnailOnUiThread(FileItemViewModel item, BitmapImage image)
-    {
-        var dq = App.DispatcherQueue;
-        if (dq is null || dq.HasThreadAccess)
-        {
-            if (!_disposed && Files.Contains(item))
-            {
-                item.Thumbnail = image;
-            }
-
-            return;
-        }
-
-        dq.TryEnqueue(DispatcherQueuePriority.Low, () =>
-        {
-            if (!_disposed && Files.Contains(item))
-            {
-                item.Thumbnail = image;
-            }
-        });
-    }
-
-    private async Task ApplyThumbnailOnUiThreadAsync(
-        FileItemViewModel item,
-        BitmapImage image,
-        int requestVersion,
-        string? requestParentId,
-        CancellationTokenSource requestCts)
-    {
-        var dq = App.DispatcherQueue;
-        if (dq is null || dq.HasThreadAccess)
-        {
-            Apply();
-            return;
-        }
-
-        var tcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        if (!dq.TryEnqueue(DispatcherQueuePriority.Low, () =>
-            {
-                try
-                {
-                    Apply();
-                    tcs.TrySetResult();
-                }
-                catch (Exception ex)
-                {
-                    tcs.TrySetException(ex);
-                }
-            }))
-        {
-            return;
-        }
-
-        await tcs.Task.ConfigureAwait(false);
-
-        void Apply()
-        {
-            if (!_disposed
-                && !requestCts.IsCancellationRequested
-                && requestVersion == _folderVersion
-                && string.Equals(requestParentId, CurrentParentId, StringComparison.Ordinal)
-                && Files.Contains(item))
-            {
-                item.Thumbnail = image;
-            }
+            foreach (var item in Files.Where(static item => item.IsVideo)) item.ThumbnailUrl = null;
         }
     }
 
@@ -730,6 +588,31 @@ public partial class FilesViewModel : ObservableObject, IDisposable
     public int ThumbnailCacheMaxEntries => _thumbnailLoader.CacheMaxEntries;
 
     public long ThumbnailCacheMaxEstimatedBytes => _thumbnailLoader.CacheMaxEstimatedBytes;
+
+    private async Task LoadVideoThumbnailAsync(FileItemViewModel item, CancellationTokenSource request)
+    {
+        try
+        {
+            var path = await _videoMediaCache.GetThumbnailAsync(
+                item.VideoSource!, item.Name, item.MimeType, 256, 144, request.Token).ConfigureAwait(true);
+            if (!request.IsCancellationRequested && !string.IsNullOrWhiteSpace(path))
+            {
+                item.ThumbnailUrl = path;
+            }
+        }
+        catch (OperationCanceledException) when (request.IsCancellationRequested)
+        {
+            // Viewport/folder changed.
+        }
+        finally
+        {
+            if (_thumbnailRequests.TryGetValue(item, out var current) && ReferenceEquals(current, request))
+            {
+                _thumbnailRequests.Remove(item);
+                request.Dispose();
+            }
+        }
+    }
 
     private void RebuildBreadcrumb()
     {
