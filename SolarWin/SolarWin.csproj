@@ -7,11 +7,11 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\icon.ico</ApplicationIcon>
     <!-- Product version (settings page / assembly / MSIX identity) -->
-    <Version>1.1.6</Version>
-    <AssemblyVersion>1.1.6.0</AssemblyVersion>
-    <FileVersion>1.1.6.0</FileVersion>
-    <InformationalVersion>1.1.6</InformationalVersion>
-    <ApplicationDisplayVersion>1.1.6</ApplicationDisplayVersion>
+    <Version>1.1.9</Version>
+    <AssemblyVersion>1.1.9.0</AssemblyVersion>
+    <FileVersion>1.1.9.0</FileVersion>
+    <InformationalVersion>1.1.9</InformationalVersion>
+    <ApplicationDisplayVersion>1.1.9</ApplicationDisplayVersion>
     <ApplicationVersion>1</ApplicationVersion>
     <Platforms>x86;x64;ARM64</Platforms>
     <!-- Prefer Platform → RID so ARM64/x86 builds work when cross-compiling from another host arch. -->
