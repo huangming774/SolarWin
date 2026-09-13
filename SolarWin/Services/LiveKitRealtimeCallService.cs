@@ -721,94 +721,96 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         const int width = 640;
         const int height = 360;
 
-        _videoSource = new VideoSource(width, height);
-        _localVideoTrack = LocalVideoTrack.Create("camera", _videoSource);
-        await _room.LocalParticipant.PublishTrackAsync(
-            _localVideoTrack,
-            new TrackPublishOptions { Source = TrackSource.SourceCamera },
-            cancellationToken).ConfigureAwait(false);
-
-        _mediaCapture = new MediaCapture();
-        var settings = new MediaCaptureInitializationSettings
-        {
-            StreamingCaptureMode = StreamingCaptureMode.Video,
-            MemoryPreference = MediaCaptureMemoryPreference.Cpu,
-            SharingMode = MediaCaptureSharingMode.SharedReadOnly,
-        };
-        if (!string.IsNullOrEmpty(_cameraDeviceId))
-        {
-            settings.VideoDeviceId = _cameraDeviceId;
-        }
-
         try
         {
-            await _mediaCapture.InitializeAsync(settings);
-        }
-        catch (Exception ex)
-        {
+            _videoSource = new VideoSource(width, height);
+            _localVideoTrack = LocalVideoTrack.Create("camera", _videoSource);
+            await _room.LocalParticipant.PublishTrackAsync(
+                _localVideoTrack,
+                new TrackPublishOptions { Source = TrackSource.SourceCamera },
+                cancellationToken).ConfigureAwait(false);
+
+            _mediaCapture = new MediaCapture();
+            var settings = new MediaCaptureInitializationSettings
+            {
+                StreamingCaptureMode = StreamingCaptureMode.Video,
+                MemoryPreference = MediaCaptureMemoryPreference.Cpu,
+                SharingMode = MediaCaptureSharingMode.SharedReadOnly,
+            };
+            if (!string.IsNullOrEmpty(_cameraDeviceId))
+            {
+                settings.VideoDeviceId = _cameraDeviceId;
+            }
+
             try
             {
-                if (_localVideoTrack?.Sid is { } sid)
+                await _mediaCapture.InitializeAsync(settings);
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("无法打开摄像头：" + ex.Message, ex);
+            }
+
+            MediaFrameSource? colorSource = null;
+            foreach (var kv in _mediaCapture.FrameSources)
+            {
+                if (kv.Value.Info.SourceKind == MediaFrameSourceKind.Color)
                 {
-                    await _room.LocalParticipant.UnpublishTrackAsync(sid).ConfigureAwait(false);
+                    colorSource = kv.Value;
+                    break;
                 }
+            }
+
+            if (colorSource is null)
+            {
+                throw new InvalidOperationException("未找到摄像头彩色帧源");
+            }
+
+            string? subtype = null;
+            foreach (var fmt in colorSource.SupportedFormats)
+            {
+                if (string.Equals(fmt.Subtype, MediaEncodingSubtypes.Bgra8, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(fmt.Subtype, "BGRA8", StringComparison.OrdinalIgnoreCase))
+                {
+                    subtype = fmt.Subtype;
+                    try
+                    {
+                        await colorSource.SetFormatAsync(fmt);
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+
+                    break;
+                }
+            }
+
+            _frameReader = await _mediaCapture.CreateFrameReaderAsync(
+                colorSource,
+                subtype ?? MediaEncodingSubtypes.Bgra8);
+            _frameReader.FrameArrived += OnCameraFrameArrived;
+            var status = await _frameReader.StartAsync();
+            if (status != MediaFrameReaderStartStatus.Success)
+            {
+                throw new InvalidOperationException("摄像头帧读取启动失败：" + status);
+            }
+        }
+        catch
+        {
+            // Any failure past the first allocation must release whatever was already
+            // created or published; fields left populated would make the next retry
+            // overwrite live native pipelines instead of tearing them down first.
+            try
+            {
+                await StopCameraAsync().ConfigureAwait(false);
             }
             catch
             {
                 // ignore
             }
 
-            _localVideoTrack = null;
-            _videoSource?.Dispose();
-            _videoSource = null;
-            _mediaCapture?.Dispose();
-            _mediaCapture = null;
-            throw new InvalidOperationException("无法打开摄像头：" + ex.Message, ex);
-        }
-
-        MediaFrameSource? colorSource = null;
-        foreach (var kv in _mediaCapture.FrameSources)
-        {
-            if (kv.Value.Info.SourceKind == MediaFrameSourceKind.Color)
-            {
-                colorSource = kv.Value;
-                break;
-            }
-        }
-
-        if (colorSource is null)
-        {
-            throw new InvalidOperationException("未找到摄像头彩色帧源");
-        }
-
-        string? subtype = null;
-        foreach (var fmt in colorSource.SupportedFormats)
-        {
-            if (string.Equals(fmt.Subtype, MediaEncodingSubtypes.Bgra8, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(fmt.Subtype, "BGRA8", StringComparison.OrdinalIgnoreCase))
-            {
-                subtype = fmt.Subtype;
-                try
-                {
-                    await colorSource.SetFormatAsync(fmt);
-                }
-                catch
-                {
-                    // ignore
-                }
-
-                break;
-            }
-        }
-
-        _frameReader = await _mediaCapture.CreateFrameReaderAsync(
-            colorSource,
-            subtype ?? MediaEncodingSubtypes.Bgra8);
-        _frameReader.FrameArrived += OnCameraFrameArrived;
-        var status = await _frameReader.StartAsync();
-        if (status != MediaFrameReaderStartStatus.Success)
-        {
-            throw new InvalidOperationException("摄像头帧读取启动失败：" + status);
+            throw;
         }
     }
 
@@ -828,8 +830,11 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
                 return;
             }
 
-            // Only convert when the camera didn't deliver BGRA directly — the bitmap
-            // stays valid for the whole handler, so no defensive copy is needed.
+            // Only convert when the camera didn't deliver BGRA directly — no defensive
+            // copy is needed since the bitmap stays valid for the whole handler.
+            // Either way it must be disposed explicitly below: the system keeps a strong
+            // reference to SoftwareBitmap accessed via VideoMediaFrame, so disposing
+            // frameRef alone never releases it and the frame pool eventually stalls.
             SoftwareBitmap? converted = null;
             var bgra = sb;
             if (sb.BitmapPixelFormat != BitmapPixelFormat.Bgra8
@@ -892,6 +897,7 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             finally
             {
                 converted?.Dispose();
+                sb.Dispose();
             }
         }
         catch
@@ -950,15 +956,33 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
 
         const int width = 960;
         const int height = 540;
-        _screenSource = new VideoSource(width, height);
-        _screenTrack = LocalVideoTrack.Create("screen", _screenSource);
-        await _room.LocalParticipant.PublishTrackAsync(
-            _screenTrack,
-            new TrackPublishOptions { Source = TrackSource.SourceScreenshare },
-            cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _screenSource = new VideoSource(width, height);
+            _screenTrack = LocalVideoTrack.Create("screen", _screenSource);
+            await _room.LocalParticipant.PublishTrackAsync(
+                _screenTrack,
+                new TrackPublishOptions { Source = TrackSource.SourceScreenshare },
+                cancellationToken).ConfigureAwait(false);
 
-        _screenPublisher = new ScreenCapturePublisher(_screenSource, width, height);
-        await _screenPublisher.StartAsync().ConfigureAwait(false);
+            _screenPublisher = new ScreenCapturePublisher(_screenSource, width, height);
+            await _screenPublisher.StartAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Same rationale as the camera start: release partially-created state so a
+            // retry cannot overwrite live native resources or orphan a published track.
+            try
+            {
+                await StopScreenShareAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            throw;
+        }
 
         EnqueueUi(() =>
         {
@@ -1457,9 +1481,10 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
             tile.GpuBitmap.SetPixelBytes(bgra);
         }
 
-        // CanvasImageSource has no deterministic Dispose API. Keep the largest surface
-        // seen by this tile and scale subsequent smaller adaptive-resolution frames into
-        // it, so resolution oscillation does not continuously allocate native surfaces.
+        // CanvasImageSource (Win2D for WinUI 3) has no deterministic Dispose API — the
+        // D2D surface is reclaimed only via finalization. Keep the largest surface seen
+        // by this tile and scale subsequent smaller adaptive-resolution frames into it,
+        // so resolution oscillation does not continuously allocate native surfaces.
         var surfaceArea = (long)tile.SurfaceWidth * tile.SurfaceHeight;
         var frameArea = (long)width * height;
         if (surfaceArea > frameArea * 2)
@@ -1684,6 +1709,8 @@ public sealed class LiveKitRealtimeCallService : IRealtimeCallService
         tile.Bitmap = null;
         tile.GpuBitmap?.Dispose();
         tile.GpuBitmap = null;
+        // CanvasImageSource has no Dispose on WinUI 3; dropping the reference leaves
+        // reclamation to finalization.
         tile.GpuSurface = null;
         tile.FrameWidth = 0;
         tile.FrameHeight = 0;

@@ -264,8 +264,8 @@ public sealed class AuthService : IAuthService
         ArgumentNullException.ThrowIfNull(onUserCode);
 
         // RFC 8628 via Padlock OIDC:
-        //   POST /padlock/auth/open/device/code  (form: client_id, scope)
-        //   POST /padlock/auth/open/token        (form: grant_type=device_code, ...)
+        //   POST /stargate/auth/open/device/code  (form: client_id, scope)
+        //   POST /stargate/auth/open/token        (form: grant_type=device_code, ...)
         using var http = _httpClientFactory.CreateClient(AnonymousHttpClientName);
 
         var deviceBody = new FormUrlEncodedContent(new Dictionary<string, string>
@@ -649,13 +649,13 @@ public sealed class AuthService : IAuthService
         {
             // Prefer dedicated refresh endpoint when available.
             tokens = await _api
-                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/padlock/auth/refresh", request, cancellationToken)
+                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/stargate/auth/refresh", request, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (SolarApiException)
         {
             tokens = await _api
-                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/padlock/auth/token", request, cancellationToken)
+                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/stargate/auth/token", request, cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -669,7 +669,7 @@ public sealed class AuthService : IAuthService
     {
         try
         {
-            await _api.PostAsync("/padlock/auth/logout", cancellationToken).ConfigureAwait(false);
+            await _api.PostAsync("/stargate/auth/logout", cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException)
         {
@@ -867,18 +867,18 @@ public sealed class AuthService : IAuthService
             Platform = ClientPlatform.Windows, // = 5
         };
 
-        return _api.PostAsync<ChallengeRequest, SnAuthChallenge>("/padlock/auth/challenge", request, cancellationToken);
+        return _api.PostAsync<ChallengeRequest, SnAuthChallenge>("/stargate/auth/challenge", request, cancellationToken);
     }
 
     private Task<SnAuthChallenge> GetChallengeAsync(Guid challengeId, CancellationToken cancellationToken)
-        => _api.GetAsync<SnAuthChallenge>($"/padlock/auth/challenge/{challengeId}", cancellationToken);
+        => _api.GetAsync<SnAuthChallenge>($"/stargate/auth/challenge/{challengeId}", cancellationToken);
 
     private async Task<IReadOnlyList<SnAccountAuthFactor>> GetChallengeFactorsAsync(
         Guid challengeId,
         CancellationToken cancellationToken)
     {
         var factors = await _api
-            .GetAsync<List<SnAccountAuthFactor>>($"/padlock/auth/challenge/{challengeId}/factors", cancellationToken)
+            .GetAsync<List<SnAccountAuthFactor>>($"/stargate/auth/challenge/{challengeId}/factors", cancellationToken)
             .ConfigureAwait(false);
         return factors;
     }
@@ -896,7 +896,7 @@ public sealed class AuthService : IAuthService
         };
 
         return _api.PatchAsync<PerformChallengeRequest, SnAuthChallenge>(
-            $"/padlock/auth/challenge/{challengeId}",
+            $"/stargate/auth/challenge/{challengeId}",
             request,
             cancellationToken);
     }
@@ -904,7 +904,7 @@ public sealed class AuthService : IAuthService
     private async Task<TokenExchangeResponse> ExchangeTokenAsync(Guid challengeId, CancellationToken cancellationToken)
     {
         // Official Solian front-end:
-        //   POST /padlock/auth/token  { grant_type: "authorization_code", code: challengeId }
+        //   POST /stargate/auth/token  { grant_type: "authorization_code", code: challengeId }
         var primary = new TokenExchangeRequest
         {
             GrantType = "authorization_code",
@@ -914,7 +914,7 @@ public sealed class AuthService : IAuthService
         try
         {
             var tokens = await _api
-                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/padlock/auth/token", primary, cancellationToken)
+                .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/stargate/auth/token", primary, cancellationToken)
                 .ConfigureAwait(false);
             await PersistTokensAsync(tokens, cancellationToken).ConfigureAwait(false);
             return tokens;
@@ -931,7 +931,7 @@ public sealed class AuthService : IAuthService
             try
             {
                 var tokens = await _api
-                    .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/padlock/auth/token", fallback, cancellationToken)
+                    .PostAsync<TokenExchangeRequest, TokenExchangeResponse>("/stargate/auth/token", fallback, cancellationToken)
                     .ConfigureAwait(false);
                 await PersistTokensAsync(tokens, cancellationToken).ConfigureAwait(false);
                 return tokens;

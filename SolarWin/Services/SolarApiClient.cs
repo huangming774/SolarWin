@@ -132,10 +132,10 @@ public sealed class SolarApiClient : ISolarApiClient
     // —— Business ——
 
     public Task<SnAccount> GetMeAsync(CancellationToken cancellationToken = default)
-        => GetAsync<SnAccount>("/padlock/auth/me", cancellationToken);
+        => GetAsync<SnAccount>("/stargate/auth/me", cancellationToken);
 
     public Task<SnAccount> GetPassportMeAsync(CancellationToken cancellationToken = default)
-        => GetAsync<SnAccount>("/passport/accounts/me", cancellationToken);
+        => GetAsync<SnAccount>("/stargate/accounts/me", cancellationToken);
 
     public async Task<SnAccountProfile> GetMyProfileAsync(CancellationToken cancellationToken = default)
     {
@@ -155,7 +155,7 @@ public sealed class SolarApiClient : ISolarApiClient
 
         try
         {
-            var padlock = await GetAsync<SnAccount>("/padlock/accounts/me", cancellationToken).ConfigureAwait(false);
+            var padlock = await GetAsync<SnAccount>("/stargate/accounts/me", cancellationToken).ConfigureAwait(false);
             if (padlock.Profile is not null)
             {
                 return padlock.Profile;
@@ -174,7 +174,7 @@ public sealed class SolarApiClient : ISolarApiClient
     public Task<SnAccountProfile> UpdateMyProfileAsync(ProfileRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PatchAsync<ProfileRequest, SnAccountProfile>("/passport/accounts/me/profile", request, cancellationToken);
+        return PatchAsync<ProfileRequest, SnAccountProfile>("/stargate/accounts/me/profile", request, cancellationToken);
     }
 
     public Task<SnAccountStatus> GetMyStatusAsync(CancellationToken cancellationToken = default)
@@ -214,7 +214,7 @@ public sealed class SolarApiClient : ISolarApiClient
 
         take = take <= 0 ? 20 : Math.Min(take, 50);
         var path =
-            $"/passport/accounts/search?query={Uri.EscapeDataString(query.Trim())}&take={take}";
+            $"/stargate/accounts/search?query={Uri.EscapeDataString(query.Trim())}&take={take}";
         var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccount>(json);
     }
@@ -1575,13 +1575,108 @@ public sealed class SolarApiClient : ISolarApiClient
         return JsonListParser.ParseList<SnWallet>(json);
     }
 
-    public async Task<List<SnWalletTransaction>> GetTransactionsAsync(Guid walletId, int offset, int take, CancellationToken cancellationToken = default)
+    public Task<SnWallet> CreateWalletAsync(
+        CreateWalletRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return PostAsync<CreateWalletRequest, SnWallet>("/wallet/wallets", request, cancellationToken);
+    }
+
+    public Task SetDefaultWalletAsync(Guid walletId, CancellationToken cancellationToken = default)
+        => PostAsync($"/wallet/wallets/{walletId:D}/default", cancellationToken);
+
+    public Task<SnWallet> SetWalletPublicIdEnabledAsync(
+        Guid walletId,
+        bool enabled,
+        CancellationToken cancellationToken = default)
+        => PostAsync<SnWallet>(
+            $"/wallet/wallets/{walletId:D}/public-id/{(enabled ? "enable" : "disable")}",
+            cancellationToken);
+
+    public Task<SnWalletStats> GetWalletStatsAsync(
+        Guid walletId,
+        string currency,
+        int period = 30,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(currency);
+        period = Math.Clamp(period, 1, 366);
+        var path = $"/wallet/wallets/stats?period={period}&wallets={walletId:D}&currencies={Uri.EscapeDataString(currency.Trim())}";
+        return GetAsync<SnWalletStats>(path, cancellationToken);
+    }
+
+    public async Task<List<SnWalletTransaction>> GetTransactionsAsync(
+        Guid walletId,
+        int offset,
+        int take,
+        string? direction = null,
+        string? type = null,
+        CancellationToken cancellationToken = default)
     {
         take = take <= 0 ? 20 : take;
         offset = Math.Max(0, offset);
         var path = $"/wallet/wallets/transactions?wallet={walletId:D}&offset={offset}&take={take}";
+        if (!string.IsNullOrWhiteSpace(direction))
+        {
+            path += $"&direction={Uri.EscapeDataString(direction.Trim())}";
+        }
+
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            path += $"&type={Uri.EscapeDataString(type.Trim())}";
+        }
+
         var json = await GetStringAsync(path, cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnWalletTransaction>(json);
+    }
+
+    public Task<SnWalletTransaction> TransferWalletAsync(
+        WalletTransferRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return PostAsync<WalletTransferRequest, SnWalletTransaction>(
+            "/wallet/wallets/transfer",
+            request,
+            cancellationToken);
+    }
+
+    public Task<SnWalletTransaction> GetWalletTransactionAsync(
+        Guid transactionId,
+        CancellationToken cancellationToken = default)
+        => GetAsync<SnWalletTransaction>(
+            $"/wallet/wallets/transactions/{transactionId:D}",
+            cancellationToken);
+
+    public Task<SnWalletTransaction> ConfirmWalletTransactionAsync(
+        Guid transactionId,
+        CancellationToken cancellationToken = default)
+        => PostAsync<SnWalletTransaction>(
+            $"/wallet/wallets/transactions/{transactionId:D}/confirm",
+            cancellationToken);
+
+    public Task<SnWalletTransaction> RejectWalletTransactionAsync(
+        Guid transactionId,
+        CancellationToken cancellationToken = default)
+        => PostAsync<SnWalletTransaction>(
+            $"/wallet/wallets/transactions/{transactionId:D}/reject",
+            cancellationToken);
+
+    public Task<SnStellarSubscriptionGroup> GetStellarSubscriptionGroupAsync(
+        CancellationToken cancellationToken = default)
+        => GetAsync<SnStellarSubscriptionGroup>(
+            "/wallet/subscriptions/groups/solian.stellar",
+            cancellationToken);
+
+    public Task<SnStellarSubscription> CancelStellarSubscriptionAsync(
+        string identifier,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(identifier);
+        return PostAsync<SnStellarSubscription>(
+            $"/wallet/subscriptions/{Uri.EscapeDataString(identifier.Trim())}/cancel",
+            cancellationToken);
     }
 
     // —— Sphere / Feed ——
@@ -2392,7 +2487,7 @@ public sealed class SolarApiClient : ISolarApiClient
             throw new ArgumentException("Account name is required.", nameof(name));
         }
 
-        return GetAsync<SnAccount>($"/passport/accounts/{Uri.EscapeDataString(name.Trim())}", cancellationToken);
+        return GetAsync<SnAccount>($"/stargate/accounts/{Uri.EscapeDataString(name.Trim())}", cancellationToken);
     }
 
     public async Task<List<SnAccountBadge>> GetAccountBadgesAsync(string name, CancellationToken cancellationToken = default)
@@ -2416,7 +2511,7 @@ public sealed class SolarApiClient : ISolarApiClient
         CancellationToken cancellationToken = default)
     {
         var json = await GetStringAsync(
-            $"/passport/accounts/{Uri.EscapeDataString(name.Trim())}/connections",
+            $"/stargate/accounts/{Uri.EscapeDataString(name.Trim())}/connections",
             cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<PublicAccountConnectionResponse>(json);
     }
@@ -2526,14 +2621,14 @@ public sealed class SolarApiClient : ISolarApiClient
         take = take <= 0 ? 50 : take;
         offset = Math.Max(0, offset);
         var json = await GetStringAsync(
-            $"/passport/relationships?offset={offset}&take={take}",
+            $"/stargate/relationships?offset={offset}&take={take}",
             cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountRelationship>(json);
     }
 
     public async Task<List<SnAccountRelationship>> GetRelationshipRequestsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/passport/relationships/requests", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/relationships/requests", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountRelationship>(json);
     }
 
@@ -2545,7 +2640,7 @@ public sealed class SolarApiClient : ISolarApiClient
 
     public async Task<List<SnAccount>> GetCloseFriendsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/passport/relationships/close-friends", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/relationships/close-friends", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccount>(json);
     }
 
@@ -2554,7 +2649,7 @@ public sealed class SolarApiClient : ISolarApiClient
         try
         {
             return await GetAsync<SnAccountRelationship>(
-                $"/passport/relationships/{accountId:D}",
+                $"/stargate/relationships/{accountId:D}",
                 cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound)
@@ -2570,7 +2665,7 @@ public sealed class SolarApiClient : ISolarApiClient
         try
         {
             return await GetAsync<InspectRelationshipResponse>(
-                $"/passport/relationships/inspect/{accountId:D}",
+                $"/stargate/relationships/inspect/{accountId:D}",
                 cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound)
@@ -2580,54 +2675,54 @@ public sealed class SolarApiClient : ISolarApiClient
     }
 
     public Task<SnAccountRelationship> SendFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => PostAsync<SnAccountRelationship>($"/passport/relationships/{accountId:D}/friends", cancellationToken);
+        => PostAsync<SnAccountRelationship>($"/stargate/relationships/{accountId:D}/friends", cancellationToken);
 
     public Task CancelFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/passport/relationships/{accountId:D}/friends", cancellationToken);
+        => DeleteAsync($"/stargate/relationships/{accountId:D}/friends", cancellationToken);
 
     public Task<SnAccountRelationship> AcceptFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => PostAsync<SnAccountRelationship>($"/passport/relationships/{accountId:D}/friends/accept", cancellationToken);
+        => PostAsync<SnAccountRelationship>($"/stargate/relationships/{accountId:D}/friends/accept", cancellationToken);
 
     public Task<SnAccountRelationship> DeclineFriendRequestAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => PostAsync<SnAccountRelationship>($"/passport/relationships/{accountId:D}/friends/decline", cancellationToken);
+        => PostAsync<SnAccountRelationship>($"/stargate/relationships/{accountId:D}/friends/decline", cancellationToken);
 
     public Task BlockAccountAsync(
         Guid accountId,
         RelationshipActionRequest? request = null,
         CancellationToken cancellationToken = default)
         => PostAsync(
-            $"/passport/relationships/{accountId:D}/block",
+            $"/stargate/relationships/{accountId:D}/block",
             request ?? new RelationshipActionRequest(),
             cancellationToken);
 
     public Task UnblockAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/passport/relationships/{accountId:D}/block", cancellationToken);
+        => DeleteAsync($"/stargate/relationships/{accountId:D}/block", cancellationToken);
 
     public Task MuteAccountAsync(
         Guid accountId,
         RelationshipActionRequest? request = null,
         CancellationToken cancellationToken = default)
         => PostAsync(
-            $"/passport/relationships/{accountId:D}/mute",
+            $"/stargate/relationships/{accountId:D}/mute",
             request ?? new RelationshipActionRequest(),
             cancellationToken);
 
     public Task UnmuteAccountAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/passport/relationships/{accountId:D}/mute", cancellationToken);
+        => DeleteAsync($"/stargate/relationships/{accountId:D}/mute", cancellationToken);
 
     public Task SetCloseFriendAsync(Guid accountId, bool isCloseFriend, CancellationToken cancellationToken = default)
         => isCloseFriend
-            ? PostAsync($"/passport/relationships/{accountId:D}/close-friend", cancellationToken)
-            : DeleteAsync($"/passport/relationships/{accountId:D}/close-friend", cancellationToken);
+            ? PostAsync($"/stargate/relationships/{accountId:D}/close-friend", cancellationToken)
+            : DeleteAsync($"/stargate/relationships/{accountId:D}/close-friend", cancellationToken);
 
     public Task SetRelationshipAliasAsync(Guid accountId, string? alias, CancellationToken cancellationToken = default)
         => PatchAsync(
-            $"/passport/relationships/{accountId:D}/alias",
+            $"/stargate/relationships/{accountId:D}/alias",
             new AliasRequest { Alias = alias },
             cancellationToken);
 
     public Task RemoveRelationshipAsync(Guid accountId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/passport/relationships/{accountId:D}", cancellationToken);
+        => DeleteAsync($"/stargate/relationships/{accountId:D}", cancellationToken);
 
     public async Task<List<SnRealm>> GetMyRealmsAsync(CancellationToken cancellationToken = default)
     {
@@ -2997,7 +3092,7 @@ public sealed class SolarApiClient : ISolarApiClient
         try
         {
             return await GetAsync<SnMagicSpell>(
-                $"/passport/spells/{Uri.EscapeDataString(spellWord.Trim())}",
+                $"/stargate/spells/{Uri.EscapeDataString(spellWord.Trim())}",
                 cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound)
@@ -3014,16 +3109,16 @@ public sealed class SolarApiClient : ISolarApiClient
         ArgumentException.ThrowIfNullOrWhiteSpace(spellWord);
         var body = request ?? new MagicSpellApplyRequest();
         return PostAsync(
-            $"/passport/spells/{Uri.EscapeDataString(spellWord.Trim())}/apply",
+            $"/stargate/spells/{Uri.EscapeDataString(spellWord.Trim())}/apply",
             body,
             cancellationToken);
     }
 
     public Task ResendSpellActivationAsync(CancellationToken cancellationToken = default)
-        => PostAsync("/passport/spells/activation/resend", cancellationToken);
+        => PostAsync("/stargate/spells/activation/resend", cancellationToken);
 
     public Task ResendSpellAsync(Guid spellId, CancellationToken cancellationToken = default)
-        => PostAsync($"/passport/spells/{spellId:D}/resend", cancellationToken);
+        => PostAsync($"/stargate/spells/{spellId:D}/resend", cancellationToken);
 
     // —— Personality / 寻思 ——
 
@@ -3331,29 +3426,29 @@ public sealed class SolarApiClient : ISolarApiClient
         take = take <= 0 ? 50 : take;
         offset = Math.Max(0, offset);
         var json = await GetStringAsync(
-            $"/padlock/devices?offset={offset}&take={take}",
+            $"/stargate/devices?offset={offset}&take={take}",
             cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAuthClientWithSessions>(json);
     }
 
     public Task DeleteDeviceAsync(Guid deviceId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/devices/{deviceId:D}", cancellationToken);
+        => DeleteAsync($"/stargate/devices/{deviceId:D}", cancellationToken);
 
     public Task UpdateDeviceLabelAsync(Guid deviceId, string label, CancellationToken cancellationToken = default)
         => PatchAsync(
-            $"/padlock/devices/{deviceId:D}/label",
+            $"/stargate/devices/{deviceId:D}/label",
             new DeviceLabelRequest { Label = label },
             cancellationToken);
 
     public Task UpdateCurrentDeviceLabelAsync(string label, CancellationToken cancellationToken = default)
         => PatchAsync(
-            "/padlock/devices/current/label",
+            "/stargate/devices/current/label",
             new DeviceLabelRequest { Label = label },
             cancellationToken);
 
     public async Task<List<SnAuthSession>> GetSessionsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/sessions", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/sessions", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAuthSession>(json);
     }
 
@@ -3361,7 +3456,7 @@ public sealed class SolarApiClient : ISolarApiClient
     {
         try
         {
-            return await GetAsync<SnAuthSession>("/padlock/sessions/current", cancellationToken).ConfigureAwait(false);
+            return await GetAsync<SnAuthSession>("/stargate/sessions/current", cancellationToken).ConfigureAwait(false);
         }
         catch (SolarApiException ex) when (ex.StatusCode is HttpStatusCode.NotFound)
         {
@@ -3370,118 +3465,118 @@ public sealed class SolarApiClient : ISolarApiClient
     }
 
     public Task RevokeSessionAsync(Guid sessionId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/sessions/{sessionId:D}", cancellationToken);
+        => DeleteAsync($"/stargate/sessions/{sessionId:D}", cancellationToken);
 
     public async Task<List<SnAuthSession>> GetSessionChildrenAsync(
         Guid sessionId,
         CancellationToken cancellationToken = default)
     {
         var json = await GetStringAsync(
-            $"/padlock/sessions/{sessionId:D}/children",
+            $"/stargate/sessions/{sessionId:D}/children",
             cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAuthSession>(json);
     }
 
     public async Task<List<SnAccountContact>> GetContactsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/contacts", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/contacts", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountContact>(json);
     }
 
     public Task<SnAccountContact> CreateContactAsync(ContactRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync<ContactRequest, SnAccountContact>("/padlock/contacts", request, cancellationToken);
+        return PostAsync<ContactRequest, SnAccountContact>("/stargate/contacts", request, cancellationToken);
     }
 
     public Task DeleteContactAsync(Guid contactId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/contacts/{contactId:D}", cancellationToken);
+        => DeleteAsync($"/stargate/contacts/{contactId:D}", cancellationToken);
 
     public Task SetContactPrimaryAsync(Guid contactId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/contacts/{contactId:D}/primary", cancellationToken);
+        => PostAsync($"/stargate/contacts/{contactId:D}/primary", cancellationToken);
 
     public Task SetContactPublicAsync(Guid contactId, bool isPublic, CancellationToken cancellationToken = default)
         => PatchAsync(
-            $"/padlock/contacts/{contactId:D}/public",
+            $"/stargate/contacts/{contactId:D}/public",
             new { is_public = isPublic },
             cancellationToken);
 
     public Task<SnAccountContact> VerifyContactAsync(Guid contactId, string code, CancellationToken cancellationToken = default)
         => PostAsync<ContactVerifyRequest, SnAccountContact>(
-            $"/padlock/contacts/{contactId:D}/verify",
+            $"/stargate/contacts/{contactId:D}/verify",
             new ContactVerifyRequest { Code = code },
             cancellationToken);
 
     public Task RequestContactVerificationAsync(Guid contactId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/contacts/{contactId:D}/verify", cancellationToken);
+        => PostAsync($"/stargate/contacts/{contactId:D}/verify", cancellationToken);
 
     public async Task<List<AuthorizedAppResponse>> GetAuthorizedAppsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/authorized-apps", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/authorized-apps", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<AuthorizedAppResponse>(json);
     }
 
     public Task RevokeAuthorizedAppAsync(Guid id, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/authorized-apps/{id:D}", cancellationToken);
+        => DeleteAsync($"/stargate/authorized-apps/{id:D}", cancellationToken);
 
     public async Task<List<SnApiKey>> GetApiKeysAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/api-keys", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/api-keys", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnApiKey>(json);
     }
 
     public Task<SnApiKey> CreateApiKeyAsync(CreateApiKeyRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync<CreateApiKeyRequest, SnApiKey>("/padlock/api-keys", request, cancellationToken);
+        return PostAsync<CreateApiKeyRequest, SnApiKey>("/stargate/api-keys", request, cancellationToken);
     }
 
     public Task DeleteApiKeyAsync(Guid id, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/api-keys/{id:D}", cancellationToken);
+        => DeleteAsync($"/stargate/api-keys/{id:D}", cancellationToken);
 
     public Task<SnApiKey> RotateApiKeyAsync(Guid id, CancellationToken cancellationToken = default)
-        => PostAsync<SnApiKey>($"/padlock/api-keys/{id:D}/rotate", cancellationToken);
+        => PostAsync<SnApiKey>($"/stargate/api-keys/{id:D}/rotate", cancellationToken);
 
     public async Task<List<SnAccountConnection>> GetConnectionsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/connections", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/connections", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountConnection>(json);
     }
 
     public Task DeleteConnectionAsync(Guid id, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/connections/{id:D}", cancellationToken);
+        => DeleteAsync($"/stargate/connections/{id:D}", cancellationToken);
 
     public Task SetConnectionVisibilityAsync(Guid id, bool isPublic, CancellationToken cancellationToken = default)
         => PatchAsync(
-            $"/padlock/connections/{id:D}/visibility",
+            $"/stargate/connections/{id:D}/visibility",
             new ConnectionVisibilityRequest { IsPublic = isPublic },
             cancellationToken);
 
     public async Task<List<SnAccountAuthFactor>> GetAccountFactorsAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/factors", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/factors", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountAuthFactor>(json);
     }
 
     public Task EnableFactorAsync(Guid factorId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/factors/{factorId:D}/enable", cancellationToken);
+        => PostAsync($"/stargate/factors/{factorId:D}/enable", cancellationToken);
 
     public Task DisableFactorAsync(Guid factorId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/factors/{factorId:D}/disable", cancellationToken);
+        => PostAsync($"/stargate/factors/{factorId:D}/disable", cancellationToken);
 
     public Task DeleteFactorAsync(Guid factorId, CancellationToken cancellationToken = default)
-        => DeleteAsync($"/padlock/factors/{factorId:D}", cancellationToken);
+        => DeleteAsync($"/stargate/factors/{factorId:D}", cancellationToken);
 
     public async Task<string> StartPasskeyRegistrationAsync(CancellationToken cancellationToken = default)
     {
-        // POST /padlock/factors/passkey/start → WebAuthn creation options JSON
-        return await GetStringViaPostAsync("/padlock/factors/passkey/start", cancellationToken).ConfigureAwait(false);
+        // POST /stargate/factors/passkey/start → WebAuthn creation options JSON
+        return await GetStringViaPostAsync("/stargate/factors/passkey/start", cancellationToken).ConfigureAwait(false);
     }
 
     public Task CompletePasskeyRegistrationAsync(string credentialJson, CancellationToken cancellationToken = default)
     {
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(credentialJson) ? "{}" : credentialJson);
-        return PostAsync("/padlock/factors/passkey/complete", doc.RootElement.Clone(), cancellationToken);
+        return PostAsync("/stargate/factors/passkey/complete", doc.RootElement.Clone(), cancellationToken);
     }
 
     public async Task<string> StartPasskeyAuthenticationAsync(
@@ -3489,7 +3584,7 @@ public sealed class SolarApiClient : ISolarApiClient
         CancellationToken cancellationToken = default)
     {
         return await GetStringViaPostAsync(
-            $"/padlock/auth/challenge/{challengeId:D}/passkey/start",
+            $"/stargate/auth/challenge/{challengeId:D}/passkey/start",
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -3500,7 +3595,7 @@ public sealed class SolarApiClient : ISolarApiClient
     {
         using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(credentialJson) ? "{}" : credentialJson);
         return PostAsync<JsonElement, SnAuthChallenge>(
-            $"/padlock/auth/challenge/{challengeId:D}/passkey/complete",
+            $"/stargate/auth/challenge/{challengeId:D}/passkey/complete",
             doc.RootElement.Clone(),
             cancellationToken);
     }
@@ -3513,42 +3608,42 @@ public sealed class SolarApiClient : ISolarApiClient
             DeviceName = DeviceInfoHelper.GetDeviceName(),
             Platform = ClientPlatform.Windows,
         };
-        return PostAsync<QrGenerateRequest, QrGenerateResponse>("/padlock/auth/qr/generate", body, cancellationToken);
+        return PostAsync<QrGenerateRequest, QrGenerateResponse>("/stargate/auth/qr/generate", body, cancellationToken);
     }
 
     public Task<QrStatusResponse> GetQrLoginStatusAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
-        => GetAsync<QrStatusResponse>($"/padlock/auth/qr/{qrChallengeId:D}", cancellationToken);
+        => GetAsync<QrStatusResponse>($"/stargate/auth/qr/{qrChallengeId:D}", cancellationToken);
 
     public Task ScanQrLoginAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/qr/{qrChallengeId:D}/scan", cancellationToken);
+        => PostAsync($"/stargate/auth/qr/{qrChallengeId:D}/scan", cancellationToken);
 
     public Task ApproveQrLoginAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/qr/{qrChallengeId:D}/approve", cancellationToken);
+        => PostAsync($"/stargate/auth/qr/{qrChallengeId:D}/approve", cancellationToken);
 
     public Task DeclineQrLoginAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/qr/{qrChallengeId:D}/decline", cancellationToken);
+        => PostAsync($"/stargate/auth/qr/{qrChallengeId:D}/decline", cancellationToken);
 
     public async Task<List<SnAuthChallenge>> GetPendingChallengesAsync(CancellationToken cancellationToken = default)
     {
-        var json = await GetStringAsync("/padlock/auth/challenge/pending", cancellationToken).ConfigureAwait(false);
+        var json = await GetStringAsync("/stargate/auth/challenge/pending", cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAuthChallenge>(json);
     }
 
     public Task ApproveChallengeAsync(Guid challengeId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/challenge/{challengeId:D}/approve", cancellationToken);
+        => PostAsync($"/stargate/auth/challenge/{challengeId:D}/approve", cancellationToken);
 
     public Task DeclineChallengeAsync(Guid challengeId, CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/challenge/{challengeId:D}/decline", cancellationToken);
+        => PostAsync($"/stargate/auth/challenge/{challengeId:D}/decline", cancellationToken);
 
     public Task<SnAuthChallenge> GetAuthChallengeAsync(Guid challengeId, CancellationToken cancellationToken = default)
-        => GetAsync<SnAuthChallenge>($"/padlock/auth/challenge/{challengeId:D}", cancellationToken);
+        => GetAsync<SnAuthChallenge>($"/stargate/auth/challenge/{challengeId:D}", cancellationToken);
 
     public async Task<List<SnAccountAuthFactor>> GetChallengeFactorsAsync(
         Guid challengeId,
         CancellationToken cancellationToken = default)
     {
         var json = await GetStringAsync(
-            $"/padlock/auth/challenge/{challengeId:D}/factors",
+            $"/stargate/auth/challenge/{challengeId:D}/factors",
             cancellationToken).ConfigureAwait(false);
         return JsonListParser.ParseList<SnAccountAuthFactor>(json);
     }
@@ -3557,7 +3652,7 @@ public sealed class SolarApiClient : ISolarApiClient
         Guid challengeId,
         Guid factorId,
         CancellationToken cancellationToken = default)
-        => PostAsync($"/padlock/auth/challenge/{challengeId:D}/factors/{factorId:D}", cancellationToken);
+        => PostAsync($"/stargate/auth/challenge/{challengeId:D}/factors/{factorId:D}", cancellationToken);
 
     public Task<SnAuthChallenge> SubmitChallengeFactorAsync(
         Guid challengeId,
@@ -3571,19 +3666,19 @@ public sealed class SolarApiClient : ISolarApiClient
             Password = secret,
         };
         return PatchAsync<PerformChallengeRequest, SnAuthChallenge>(
-            $"/padlock/auth/challenge/{challengeId:D}",
+            $"/stargate/auth/challenge/{challengeId:D}",
             request,
             cancellationToken);
     }
 
     public Task<CaptchaConfigResponse> GetCaptchaConfigAsync(CancellationToken cancellationToken = default)
-        => GetAsync<CaptchaConfigResponse>("/padlock/auth/captcha", cancellationToken);
+        => GetAsync<CaptchaConfigResponse>("/stargate/auth/captcha", cancellationToken);
 
     public Task VerifyCaptchaTokenAsync(string token, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(token);
         return PostAsync(
-            "/padlock/auth/captcha/verify",
+            "/stargate/auth/captcha/verify",
             new CaptchaVerifyRequest { Token = token.Trim() },
             cancellationToken);
     }
@@ -3591,13 +3686,13 @@ public sealed class SolarApiClient : ISolarApiClient
     public Task<SnAccount> RegisterAccountAsync(AccountCreateRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync<AccountCreateRequest, SnAccount>("/padlock/accounts", request, cancellationToken);
+        return PostAsync<AccountCreateRequest, SnAccount>("/stargate/accounts", request, cancellationToken);
     }
 
     public Task<TokenExchangeResponse> RecoverAccountAsync(RecoveryRequest request, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync<RecoveryRequest, TokenExchangeResponse>("/padlock/auth/recover", request, cancellationToken);
+        return PostAsync<RecoveryRequest, TokenExchangeResponse>("/stargate/auth/recover", request, cancellationToken);
     }
 
     public Task<PasskeyLoginStartResponse> StartPasskeyLoginAsync(CancellationToken cancellationToken = default)
@@ -3609,7 +3704,7 @@ public sealed class SolarApiClient : ISolarApiClient
             Platform = ClientPlatform.Windows,
         };
         return PostAsync<PasskeyLoginStartRequest, PasskeyLoginStartResponse>(
-            "/padlock/auth/passkey/start",
+            "/stargate/auth/passkey/start",
             body,
             cancellationToken);
     }
@@ -3621,7 +3716,7 @@ public sealed class SolarApiClient : ISolarApiClient
     {
         ArgumentNullException.ThrowIfNull(request);
         return PostAsync<PasskeyAuthenticationCompleteRequest, SnAuthChallenge>(
-            $"/padlock/auth/passkey/{authChallengeId:D}/complete",
+            $"/stargate/auth/passkey/{authChallengeId:D}/complete",
             request,
             cancellationToken);
     }
@@ -3635,7 +3730,7 @@ public sealed class SolarApiClient : ISolarApiClient
         };
         using var response = await SendCoreAsync(
             HttpMethod.Post,
-            "/padlock/factors/passkey/start",
+            "/stargate/factors/passkey/start",
             JsonContent.Create(body, options: JsonDefaults.Options),
             allowRefresh: true,
             cancellationToken).ConfigureAwait(false);
@@ -3648,7 +3743,7 @@ public sealed class SolarApiClient : ISolarApiClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
-        return PostAsync("/padlock/factors/passkey/complete", request, cancellationToken);
+        return PostAsync("/stargate/factors/passkey/complete", request, cancellationToken);
     }
 
     public string BuildSocialLoginUrl(string provider, string returnUrl, string deviceId)
@@ -3661,7 +3756,7 @@ public sealed class SolarApiClient : ISolarApiClient
             $"returnUrl={Uri.EscapeDataString(returnUrl)}"
             + $"&deviceId={Uri.EscapeDataString(deviceId)}"
             + "&flow=login";
-        return $"{BaseUrl.TrimEnd('/')}/padlock/auth/login/{p}?{q}";
+        return $"{BaseUrl.TrimEnd('/')}/stargate/auth/login/{p}?{q}";
     }
 
     // —— Sphere surveys ——
@@ -4157,7 +4252,7 @@ public sealed class SolarApiClient : ISolarApiClient
                 {
                     using var response = await SendCoreAsync(
                             HttpMethod.Post,
-                            "/padlock/auth/refresh",
+                            "/stargate/auth/refresh",
                             JsonContent.Create(body, options: JsonDefaults.Options),
                             allowRefresh: false,
                             cancellationToken)
@@ -4169,7 +4264,7 @@ public sealed class SolarApiClient : ISolarApiClient
                 {
                     using var response = await SendCoreAsync(
                             HttpMethod.Post,
-                            "/padlock/auth/token",
+                            "/stargate/auth/token",
                             JsonContent.Create(body, options: JsonDefaults.Options),
                             allowRefresh: false,
                             cancellationToken)

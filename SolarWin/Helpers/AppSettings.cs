@@ -11,6 +11,7 @@ public static class AppSettings
     private const string McpEnabledKey = "McpEnabled";
     private const string McpPortKey = "McpPort";
     private const string McpAccessTokenKey = "McpAccessToken";
+    private const string LuckinMcpEndpointKey = "LuckinMcpEndpoint";
 
     public static bool MinimizeToTray
     {
@@ -89,6 +90,12 @@ public static class AppSettings
             SettingsStore.SetString(McpAccessTokenKey, token);
             return token;
         }
+    }
+
+    public static string LuckinMcpEndpoint
+    {
+        get => SettingsStore.GetString(LuckinMcpEndpointKey) ?? "https://gwmcp.lkcoffee.com/order/user/mcp";
+        set => SettingsStore.SetString(LuckinMcpEndpointKey, value?.Trim() ?? string.Empty);
     }
 
     // —— OpenAI-compatible AI chat (user-configured endpoint; no baked-in defaults) ——

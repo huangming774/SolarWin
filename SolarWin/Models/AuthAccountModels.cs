@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace SolarWin.Models;
 
-/// <summary>POST /padlock/accounts (OpenAPI AccountCreateRequest).</summary>
+/// <summary>POST /stargate/accounts (OpenAPI AccountCreateRequest).</summary>
 public sealed class AccountCreateRequest
 {
     [JsonPropertyName("name")]
@@ -27,7 +27,7 @@ public sealed class AccountCreateRequest
     public string? AffiliationSpell { get; set; }
 }
 
-/// <summary>POST /padlock/auth/recover (OpenAPI RecoveryRequest).</summary>
+/// <summary>POST /stargate/auth/recover (OpenAPI RecoveryRequest).</summary>
 public sealed class RecoveryRequest
 {
     [JsonPropertyName("account")]
@@ -49,7 +49,7 @@ public sealed class RecoveryRequest
     public ClientPlatform Platform { get; set; } = ClientPlatform.Windows;
 }
 
-/// <summary>GET /padlock/auth/captcha.</summary>
+/// <summary>GET /stargate/auth/captcha.</summary>
 public sealed class CaptchaConfigResponse
 {
     [JsonPropertyName("provider")]
@@ -71,14 +71,14 @@ public sealed class CaptchaConfigResponse
         || string.IsNullOrWhiteSpace(Provider);
 }
 
-/// <summary>POST /padlock/auth/captcha/verify.</summary>
+/// <summary>POST /stargate/auth/captcha/verify.</summary>
 public sealed class CaptchaVerifyRequest
 {
     [JsonPropertyName("token")]
     public string? Token { get; set; }
 }
 
-/// <summary>POST /padlock/auth/passkey/start.</summary>
+/// <summary>POST /stargate/auth/passkey/start.</summary>
 public sealed class PasskeyLoginStartRequest
 {
     [JsonPropertyName("platform")]
@@ -91,7 +91,7 @@ public sealed class PasskeyLoginStartRequest
     public string? DeviceName { get; set; }
 }
 
-/// <summary>Response from POST /padlock/auth/passkey/start.</summary>
+/// <summary>Response from POST /stargate/auth/passkey/start.</summary>
 public sealed class PasskeyLoginStartResponse
 {
     [JsonPropertyName("challenge")]
@@ -129,7 +129,7 @@ public sealed class PasskeyCredentialDescriptor
     public List<string>? Transports { get; set; }
 }
 
-/// <summary>POST /padlock/auth/passkey/{id}/complete.</summary>
+/// <summary>POST /stargate/auth/passkey/{id}/complete.</summary>
 public sealed class PasskeyAuthenticationCompleteRequest
 {
     [JsonPropertyName("credential_id")]
@@ -148,7 +148,7 @@ public sealed class PasskeyAuthenticationCompleteRequest
     public string? UserHandle { get; set; }
 }
 
-/// <summary>POST /padlock/factors/passkey/start body (optional).</summary>
+/// <summary>POST /stargate/factors/passkey/start body (optional).</summary>
 public sealed class PasskeyRegistrationStartRequest
 {
     [JsonPropertyName("device_id")]
@@ -158,7 +158,7 @@ public sealed class PasskeyRegistrationStartRequest
     public string? DeviceName { get; set; }
 }
 
-/// <summary>POST /padlock/factors/passkey/complete.</summary>
+/// <summary>POST /stargate/factors/passkey/complete.</summary>
 public sealed class PasskeyRegistrationCompleteRequest
 {
     [JsonPropertyName("device_id")]

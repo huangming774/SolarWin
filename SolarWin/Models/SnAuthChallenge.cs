@@ -72,7 +72,7 @@ public sealed class SnAuthChallenge
     public bool IsCompleted => StepRemain <= 0;
 }
 
-/// <summary>POST /padlock/auth/challenge body (OpenAPI ChallengeRequest).</summary>
+/// <summary>POST /stargate/auth/challenge body (OpenAPI ChallengeRequest).</summary>
 public sealed class ChallengeRequest
 {
     [JsonPropertyName("platform")]
@@ -94,7 +94,7 @@ public sealed class ChallengeRequest
     public List<string>? Scopes { get; set; }
 }
 
-/// <summary>PATCH /padlock/auth/challenge/{id} body (OpenAPI PerformChallengeRequest).</summary>
+/// <summary>PATCH /stargate/auth/challenge/{id} body (OpenAPI PerformChallengeRequest).</summary>
 public sealed class PerformChallengeRequest
 {
     [JsonPropertyName("factor_id")]
@@ -104,7 +104,7 @@ public sealed class PerformChallengeRequest
     public required string Password { get; set; }
 }
 
-/// <summary>POST /padlock/auth/token body (OpenAPI TokenExchangeRequest).</summary>
+/// <summary>POST /stargate/auth/token body (OpenAPI TokenExchangeRequest).</summary>
 public sealed class TokenExchangeRequest
 {
     [JsonPropertyName("grant_type")]

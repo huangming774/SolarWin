@@ -194,7 +194,7 @@ public enum MagicSpellType
     Other = 4,
 }
 
-/// <summary>GET /passport/spells/{spellWord} (OpenAPI SnMagicSpell).</summary>
+/// <summary>GET /stargate/spells/{spellWord} (OpenAPI SnMagicSpell).</summary>
 public sealed class SnMagicSpell
 {
     [JsonPropertyName("created_at")]
@@ -222,7 +222,7 @@ public sealed class SnMagicSpell
     public SnAccount? Account { get; set; }
 }
 
-/// <summary>POST /passport/spells/{spellWord}/apply</summary>
+/// <summary>POST /stargate/spells/{spellWord}/apply</summary>
 public sealed class MagicSpellApplyRequest
 {
     [JsonPropertyName("new_password")]

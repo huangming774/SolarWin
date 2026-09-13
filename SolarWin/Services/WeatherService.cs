@@ -56,6 +56,40 @@ public sealed class WeatherService : IWeatherService
         }
     }
 
+    public async Task<IReadOnlyList<GeoResult>> SearchChinaCitiesAsync(
+        string name,
+        CancellationToken cancellationToken = default)
+    {
+        var query = name.Trim();
+        if (query.Length == 0)
+        {
+            return [];
+        }
+
+        // 主查询与“××市”补查并发执行；补查失败（网络抖动等）不影响主查询结果。
+        var primaryTask = SearchCitiesAsync(query, cancellationToken);
+        var secondaryTask = query.EndsWith("市", StringComparison.Ordinal)
+            ? Task.FromResult<IReadOnlyList<GeoResult>>([])
+            : SearchCitiesQuietlyAsync(query + "市", cancellationToken);
+        await Task.WhenAll(primaryTask, secondaryTask).ConfigureAwait(false);
+
+        return GeoCityRanking.MergeAndRankChinaCities(query, primaryTask.Result, secondaryTask.Result);
+    }
+
+    private async Task<IReadOnlyList<GeoResult>> SearchCitiesQuietlyAsync(
+        string name,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await SearchCitiesAsync(name, cancellationToken).ConfigureAwait(false);
+        }
+        catch (WeatherServiceException)
+        {
+            return [];
+        }
+    }
+
     public async Task<ForecastResponse> GetForecastAsync(
         double latitude,
         double longitude,

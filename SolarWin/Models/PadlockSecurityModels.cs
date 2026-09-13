@@ -5,7 +5,7 @@ namespace SolarWin.Models;
 
 // —— Devices / Sessions ——
 
-/// <summary>GET /padlock/devices item (OpenAPI SnAuthClientWithSessions).</summary>
+/// <summary>GET /stargate/devices item (OpenAPI SnAuthClientWithSessions).</summary>
 public sealed class SnAuthClientWithSessions
 {
     [JsonPropertyName("created_at")]
@@ -110,7 +110,7 @@ public sealed class ContactRequest
 
 // —— Authorized apps ——
 
-/// <summary>GET /padlock/authorized-apps item.</summary>
+/// <summary>GET /stargate/authorized-apps item.</summary>
 public sealed class AuthorizedAppResponse
 {
     [JsonPropertyName("id")]
@@ -198,7 +198,7 @@ public sealed class CreateApiKeyRequest
 
 // —— Connections ——
 
-/// <summary>GET /padlock/connections item (OpenAPI SnAccountConnection).</summary>
+/// <summary>GET /stargate/connections item (OpenAPI SnAccountConnection).</summary>
 public sealed class SnAccountConnection
 {
     [JsonPropertyName("created_at")]

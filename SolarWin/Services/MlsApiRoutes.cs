@@ -5,7 +5,7 @@ public readonly record struct MlsApiEndpoint(HttpMethod Method, string Path);
 /// <summary>Contract-derived routes for Padlock MLS delivery APIs.</summary>
 public static class MlsApiRoutes
 {
-    public const string Prefix = "/padlock/e2ee/mls";
+    public const string Prefix = "/stargate/e2ee/mls";
 
     public static MlsApiEndpoint PublishKeyPackage() => Put("/devices/me/kps");
     public static MlsApiEndpoint KeyPackageStatus() => Get("/kp/status");

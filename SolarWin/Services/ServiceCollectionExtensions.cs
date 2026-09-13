@@ -30,6 +30,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ISystemNotificationService, SystemNotificationService>();
         services.AddSingleton<ITrayService, TrayService>();
         services.AddSingleton<IMcpBridgeService, McpBridgeService>();
+        services.AddSingleton<ILuckinMcpService, LuckinMcpService>();
         services.AddSingleton<IDeepLinkService, DeepLinkService>();
 
         // Named HttpClient used by SolarApiClient via IHttpClientFactory (safe for Singleton).
@@ -107,7 +108,10 @@ public static class ServiceCollectionExtensions
         services.AddTransient<ChatDataCenterViewModel>();
         services.AddTransient<FilesViewModel>();
         services.AddTransient<NotificationsViewModel>();
+        services.AddTransient<StellarProgramViewModel>();
         services.AddTransient<WalletViewModel>();
+        // 点餐状态跨导航保留：菜单/购物车/订单号；登出时由 ShellPage.OnLoggedOut 调 OrderViewModel.Reset() 清空跨账号会话。
+        services.AddSingleton<OrderViewModel>();
         // Posts feed keeps in-memory cache across navigations (detail page returns must not reload)
         services.AddSingleton<PostsViewModel>();
         services.AddTransient<PostDetailViewModel>();

@@ -12,12 +12,22 @@ public sealed partial class ActivityHeatmapControl : UserControl
 {
     private readonly HeatLevelToBrushConverter _brushConverter = new();
     private INotifyCollectionChanged? _observableItems;
+    private bool _isLoaded;
 
     public ActivityHeatmapControl()
     {
         InitializeComponent();
         ActualThemeChanged += (_, _) => BuildGrid();
-        Unloaded += (_, _) => DetachCollection();
+        Loaded += (_, _) =>
+        {
+            _isLoaded = true;
+            AttachCollection(ItemsSource);
+        };
+        Unloaded += (_, _) =>
+        {
+            _isLoaded = false;
+            DetachCollection();
+        };
     }
 
     public IEnumerable<ActivityHeatmapCell>? ItemsSource
@@ -48,12 +58,25 @@ public sealed partial class ActivityHeatmapControl : UserControl
     {
         var control = (ActivityHeatmapControl)d;
         control.DetachCollection();
-        if (e.NewValue is INotifyCollectionChanged observable)
+        // Only subscribe while the control is in the visual tree. A subscription made
+        // while detached would survive to the next Unloaded that never fires, letting a
+        // long-lived view-model collection root this control (and its ~200 buttons).
+        if (control._isLoaded)
         {
-            control._observableItems = observable;
-            observable.CollectionChanged += control.Items_CollectionChanged;
+            control.AttachCollection(e.NewValue as IEnumerable<ActivityHeatmapCell>);
         }
+
         control.BuildGrid();
+    }
+
+    private void AttachCollection(IEnumerable<ActivityHeatmapCell>? items)
+    {
+        DetachCollection();
+        if (items is INotifyCollectionChanged observable)
+        {
+            _observableItems = observable;
+            observable.CollectionChanged += Items_CollectionChanged;
+        }
     }
 
     private void Items_CollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)

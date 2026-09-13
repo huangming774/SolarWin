@@ -306,7 +306,6 @@ public partial class PostDetailViewModel : ObservableObject
         {
             IsBusy = true;
             ErrorMessage = null;
-            ImageUrls.Clear();
             Replies.Clear();
             _replyOffset = 0;
             ct.ThrowIfCancellationRequested();
@@ -322,7 +321,8 @@ public partial class PostDetailViewModel : ObservableObject
             }
             catch (SolarApiException)
             {
-                // Fall back to seed data already on screen.
+                // Keep the seed media already on screen. Newly-created post
+                // responses can be more useful than a failed detail refresh.
                 await LoadRepliesInternalAsync(reset: true, ct).ConfigureAwait(true);
                 return;
             }
@@ -843,6 +843,16 @@ public partial class PostDetailViewModel : ObservableObject
             _replyOffset = 0;
         }
 
+        // The Sphere replies endpoint currently returns 500 for some empty
+        // threads. A known zero count does not need a network request.
+        if (reset && RepliesCount <= 0)
+        {
+            HasMoreReplies = false;
+            RepliesHeader = "回复";
+            IsLoadingReplies = false;
+            return;
+        }
+
         IsLoadingReplies = true;
         try
         {
@@ -858,6 +868,15 @@ public partial class PostDetailViewModel : ObservableObject
             _replyOffset += list.Count;
             HasMoreReplies = list.Count >= ReplyPageSize && Replies.Count < MaxReplies;
             RepliesHeader = RepliesCount > 0 ? $"回复 ({RepliesCount})" : "回复";
+        }
+        catch (SolarApiException)
+        {
+            // Reply loading is secondary content. Do not replace a valid post
+            // (including its media) with a page-level error.
+            HasMoreReplies = false;
+            RepliesHeader = Replies.Count > 0
+                ? $"回复 ({RepliesCount})"
+                : "回复（暂时无法加载）";
         }
         finally
         {
@@ -966,7 +985,12 @@ public partial class PostDetailViewModel : ObservableObject
             .Where(u => !string.IsNullOrWhiteSpace(u))
             .Cast<string>()
             .ToList();
-        SetImageUrls(imageUrls);
+        // Preserve seed media if a partially-expanded detail payload only
+        // contains opaque attachment references.
+        if (imageUrls.Count > 0 || post.Attachments is null or { Count: 0 })
+        {
+            SetImageUrls(imageUrls);
+        }
         var video = (post.Attachments ?? []).FirstOrDefault(CloudFileUrlHelper.IsLikelyVideo);
         SetVideo(
             video is null ? null : CloudFileUrlHelper.ResolveFileId(video) ?? CloudFileUrlHelper.Resolve(video),

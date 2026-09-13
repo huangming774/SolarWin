@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
@@ -23,12 +24,14 @@ public partial class PostsViewModel : ObservableObject
     private readonly IToastService _toast;
     private readonly DysonFileImageLoader _imageLoader;
     private readonly IAuthService _auth;
+    private readonly List<(StickerPack Pack, List<SnSticker> Stickers)> _postStickerPackCache = [];
 
     private int _offset;
     private bool _usingTimeline = true;
     private string? _publisherName;
     private bool _publisherResolved;
     private bool _allowFeedModeReload;
+    private bool _postStickerPacksLoaded;
 
     public PostsViewModel(
         ISolarApiClient api,
@@ -87,6 +90,19 @@ public partial class PostsViewModel : ObservableObject
     /// <summary>Pending cloud file ids for the compose box (Drive upload → post attachments).</summary>
     public ObservableCollection<PendingPostAttachment> PendingAttachments { get; } = [];
 
+    public ObservableCollection<StickerPackTabItem> PostStickerPacks { get; } = [];
+
+    public ObservableCollection<StickerPickItem> PostStickerItems { get; } = [];
+
+    [ObservableProperty]
+    public partial bool IsPostStickerLoading { get; set; }
+
+    [ObservableProperty]
+    public partial string PostStickerStatus { get; set; } = "打开贴纸选择器后加载我的贴纸包";
+
+    [ObservableProperty]
+    public partial int SelectedPostStickerPackIndex { get; set; } = -1;
+
     /// <summary>0 = timeline (home), 1 = public posts.</summary>
     [ObservableProperty]
     public partial int FeedModeIndex { get; set; }
@@ -105,6 +121,166 @@ public partial class PostsViewModel : ObservableObject
     public bool IsComposerEnabled => !IsPosting && !IsUploadingImage;
 
     public bool CanAddAttachments => IsComposerEnabled && PendingAttachments.Count < MaxPendingAttachments;
+
+    partial void OnSelectedPostStickerPackIndexChanged(int value)
+    {
+        ShowPostStickerPack(value);
+    }
+
+    public async Task EnsurePostStickerPickerLoadedAsync()
+    {
+        if (_postStickerPacksLoaded || IsPostStickerLoading)
+        {
+            return;
+        }
+
+        try
+        {
+            IsPostStickerLoading = true;
+            PostStickerStatus = "正在加载我的贴纸包…";
+            var ownerships = await _api.GetMyStickerPacksAsync().ConfigureAwait(true);
+
+            _postStickerPackCache.Clear();
+            PostStickerPacks.Clear();
+            PostStickerItems.Clear();
+
+            foreach (var ownership in ownerships.OrderBy(item => item.Order))
+            {
+                var pack = ownership.Pack;
+                if (pack is null || pack.Id == Guid.Empty)
+                {
+                    if (ownership.PackId == Guid.Empty)
+                    {
+                        continue;
+                    }
+
+                    pack = new StickerPack { Id = ownership.PackId, Name = "贴纸包" };
+                }
+
+                List<SnSticker> stickers;
+                if (pack.Stickers is { Count: > 0 })
+                {
+                    stickers = pack.Stickers;
+                }
+                else
+                {
+                    try
+                    {
+                        stickers = await _api.GetStickerPackContentAsync(pack.Id).ConfigureAwait(true);
+                    }
+                    catch (SolarApiException)
+                    {
+                        stickers = [];
+                    }
+                }
+
+                if (stickers.Count == 0)
+                {
+                    continue;
+                }
+
+                _postStickerPackCache.Add((pack, stickers));
+                PostStickerPacks.Add(new StickerPackTabItem
+                {
+                    PackId = pack.Id,
+                    Prefix = pack.Prefix ?? string.Empty,
+                    Title = pack.Name ?? pack.Prefix ?? "贴纸包",
+                });
+            }
+
+            _postStickerPacksLoaded = true;
+            if (PostStickerPacks.Count == 0)
+            {
+                SelectedPostStickerPackIndex = -1;
+                PostStickerStatus = "暂无可用贴纸包，请先在探索页添加";
+                return;
+            }
+
+            SelectedPostStickerPackIndex = 0;
+            ShowPostStickerPack(0);
+        }
+        catch (SolarApiException ex)
+        {
+            PostStickerStatus = ex.ApiMessage ?? ex.Message;
+            _toast.Error("贴纸加载失败：" + (ex.ApiMessage ?? ex.Message));
+        }
+        catch (Exception ex)
+        {
+            PostStickerStatus = ex.Message;
+            _toast.Error("贴纸加载失败");
+        }
+        finally
+        {
+            IsPostStickerLoading = false;
+        }
+    }
+
+    private void ShowPostStickerPack(int index)
+    {
+        if (index < 0 || index >= _postStickerPackCache.Count)
+        {
+            PostStickerItems.Clear();
+            return;
+        }
+
+        var (pack, stickers) = _postStickerPackCache[index];
+        PostStickerItems.Clear();
+        foreach (var sticker in stickers.OrderBy(item => item.Order).ThenBy(item => item.Name))
+        {
+            var fileId = CloudFileUrlHelper.ResolveFileId(sticker.Image)
+                ?? CloudFileUrlHelper.Resolve(sticker.Image);
+            if (string.IsNullOrWhiteSpace(fileId))
+            {
+                continue;
+            }
+
+            PostStickerItems.Add(new StickerPickItem
+            {
+                PackPrefix = pack.Prefix ?? string.Empty,
+                Slug = sticker.Slug ?? sticker.Id.ToString("N")[..8],
+                Title = sticker.Name ?? sticker.Slug ?? "贴纸",
+                Mode = sticker.Mode,
+                ImageFileId = fileId,
+            });
+        }
+
+        PostStickerStatus = PostStickerItems.Count > 0
+            ? $"{pack.Name ?? pack.Prefix ?? "贴纸包"} · {PostStickerItems.Count} 张"
+            : "该贴纸包没有可用图片";
+    }
+
+    public bool AddPostSticker(StickerPickItem? item)
+    {
+        if (item is null || string.IsNullOrWhiteSpace(item.ImageFileId))
+        {
+            _toast.Warning("贴纸图片不可用");
+            return false;
+        }
+
+        if (!CanAddAttachments)
+        {
+            _toast.Warning($"每条帖子最多添加 {MaxPendingAttachments} 个附件");
+            return false;
+        }
+
+        if (PendingAttachments.Any(attachment =>
+                string.Equals(attachment.FileId, item.ImageFileId, StringComparison.OrdinalIgnoreCase)))
+        {
+            _toast.Show("这张贴纸已经添加");
+            return false;
+        }
+
+        PendingAttachments.Add(new PendingPostAttachment
+        {
+            FileId = item.ImageFileId,
+            FileName = "贴纸 · " + item.Title,
+            MimeType = "image/*",
+            IsSticker = true,
+        });
+        NotifyComposer();
+        _toast.Success("贴纸已添加");
+        return true;
+    }
 
     public Microsoft.UI.Xaml.Visibility PendingAttachmentsVisibility =>
         PendingAttachments.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -380,7 +556,10 @@ public partial class PostsViewModel : ObservableObject
     private async Task CreatePostAsync()
     {
         var content = NewPostContent?.Trim() ?? string.Empty;
-        var attachmentIds = PendingAttachments
+        // Keep the local metadata until the create response has been turned into a
+        // feed item. Sphere may return attachment ids without expanding file data.
+        var pendingAttachments = PendingAttachments.ToList();
+        var attachmentIds = pendingAttachments
             .Select(a => a.FileId)
             .Where(id => !string.IsNullOrWhiteSpace(id))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -413,6 +592,7 @@ public partial class PostsViewModel : ObservableObject
             }
 
             var created = await _api.CreatePostAsync(request, pub).ConfigureAwait(true);
+            HydrateCreatedAttachments(created, pendingAttachments);
             try
             {
                 Items.Insert(0, new PostItemViewModel(created, _imageLoader, bindCachedImages: false));
@@ -427,7 +607,8 @@ public partial class PostsViewModel : ObservableObject
             NotifyComposer();
             StatusText = _usingTimeline
                 ? $"时间线 · {Items.Count} 条"
-                : $"公共 · {Items.Count} 条";            _toast.Success(attachmentIds.Count > 0 ? "已发布（含图片）" : "已发布");
+                : $"公共 · {Items.Count} 条";
+            _toast.Success(attachmentIds.Count > 0 ? "已发布（含媒体）" : "已发布");
         }
         catch (SolarApiException ex)
         {
@@ -445,6 +626,7 @@ public partial class PostsViewModel : ObservableObject
                         Attachments = attachmentIds,
                     }, pub).ConfigureAwait(true);
 
+                    HydrateCreatedAttachments(created, pendingAttachments);
                     Items.Insert(0, new PostItemViewModel(created, _imageLoader, bindCachedImages: false));
                     NewPostContent = string.Empty;
                     PendingAttachments.Clear();
@@ -470,6 +652,40 @@ public partial class PostsViewModel : ObservableObject
             OnPropertyChanged(nameof(IsEmpty));
             OnPropertyChanged(nameof(ShowContent));
             OnPropertyChanged(nameof(HasError));
+        }
+    }
+
+    private static void HydrateCreatedAttachments(
+        SnPost post,
+        IReadOnlyList<PendingPostAttachment> pendingAttachments)
+    {
+        if (pendingAttachments.Count == 0)
+        {
+            return;
+        }
+
+        post.Attachments ??= [];
+        foreach (var pending in pendingAttachments)
+        {
+            var attachment = post.Attachments.FirstOrDefault(file =>
+                string.Equals(
+                    CloudFileUrlHelper.ResolveFileId(file),
+                    pending.FileId,
+                    StringComparison.OrdinalIgnoreCase));
+
+            if (attachment is null)
+            {
+                post.Attachments.Add(new SnCloudFile
+                {
+                    Id = pending.FileId,
+                    Name = pending.FileName,
+                    MimeType = pending.MimeType,
+                });
+                continue;
+            }
+
+            attachment.Name ??= pending.FileName;
+            attachment.MimeType ??= pending.MimeType;
         }
     }
 
@@ -573,9 +789,13 @@ public sealed class PendingPostAttachment
 
     public bool IsVideo { get; init; }
 
+    public bool IsSticker { get; init; }
+
     public Visibility ImageVisibility => IsVideo ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility VideoVisibility => IsVideo ? Visibility.Visible : Visibility.Collapsed;
+
+    public Stretch PreviewStretch => IsSticker ? Stretch.Uniform : Stretch.UniformToFill;
 
     /// <summary>FastWin2DImage resolves this id and releases its GPU lease offscreen.</summary>
     public string PreviewSource => FileId;

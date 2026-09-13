@@ -454,7 +454,7 @@ public sealed class SnRealmRolePermission
     public bool CanManageRealm { get; set; }
 }
 
-/// <summary>GET /passport/relationships/inspect/{accountId}.</summary>
+/// <summary>GET /stargate/relationships/inspect/{accountId}.</summary>
 public sealed class InspectRelationshipResponse
 {
     [JsonPropertyName("friends")]

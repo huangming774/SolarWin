@@ -59,10 +59,10 @@ public interface IAuthService
         Action<QrGenerateResponse> onQrGenerated,
         CancellationToken cancellationToken = default);
 
-    /// <summary>POST /padlock/accounts — register; does not auto-login.</summary>
+    /// <summary>POST /stargate/accounts — register; does not auto-login.</summary>
     Task<SnAccount> RegisterAsync(AccountCreateRequest request, CancellationToken cancellationToken = default);
 
-    /// <summary>POST /padlock/auth/recover with recovery code + captcha → tokens.</summary>
+    /// <summary>POST /stargate/auth/recover with recovery code + captcha → tokens.</summary>
     Task<TokenExchangeResponse> RecoverAsync(RecoveryRequest request, CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -80,7 +80,7 @@ public interface IAuthService
     /// <summary>Refresh using stored refresh_token (grant_type=refresh_token).</summary>
     Task<TokenExchangeResponse> RefreshTokenAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>POST /padlock/auth/logout then clear local vault tokens.</summary>
+    /// <summary>POST /stargate/auth/logout then clear local vault tokens.</summary>
     Task LogoutAsync(CancellationToken cancellationToken = default);
 
     /// <summary>Switch multi-account vault slot and re-initialize session.</summary>

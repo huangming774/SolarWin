@@ -3,7 +3,7 @@ using System.Text.Json.Serialization;
 
 namespace SolarWin.Models;
 
-/// <summary>PATCH /passport/accounts/me/profile (OpenAPI ProfileRequest).</summary>
+/// <summary>PATCH /stargate/accounts/me/profile (OpenAPI ProfileRequest).</summary>
 public sealed class ProfileRequest
 {
     [JsonPropertyName("first_name")]
@@ -74,7 +74,7 @@ public sealed class StatusRequest
     public Dictionary<string, JsonElement>? Meta { get; set; }
 }
 
-/// <summary>POST/PATCH /passport/relationships/{accountId} (OpenAPI RelationshipRequest).</summary>
+/// <summary>POST/PATCH /stargate/relationships/{accountId} (OpenAPI RelationshipRequest).</summary>
 public sealed class RelationshipRequest
 {
     [JsonPropertyName("status")]
@@ -92,7 +92,7 @@ public sealed class RelationshipActionRequest
     public RelationshipStatus? DegradeTo { get; set; }
 }
 
-/// <summary>PATCH /passport/relationships/{accountId}/alias.</summary>
+/// <summary>PATCH /stargate/relationships/{accountId}/alias.</summary>
 public sealed class AliasRequest
 {
     [JsonPropertyName("alias")]
@@ -244,4 +244,3 @@ public sealed class ClaimTagRequest
     [JsonPropertyName("uid")]
     public string? Uid { get; set; }
 }
-

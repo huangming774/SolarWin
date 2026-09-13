@@ -1,0 +1,367 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Page
+    x:Class="SolarWin.Views.StellarProgramPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:SolarWin.ViewModels"
+    mc:Ignorable="d">
+
+    <Page.Resources>
+        <Style x:Key="StellarPlanGridItemStyle" TargetType="GridViewItem">
+            <Setter Property="Width" Value="326" />
+            <Setter Property="Margin" Value="0,0,14,14" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="VerticalContentAlignment" Value="Stretch" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Page.Resources>
+
+    <Grid>
+        <ScrollViewer HorizontalScrollMode="Disabled" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel
+                MaxWidth="1120"
+                Padding="28,22,28,36"
+                HorizontalAlignment="Stretch"
+                Spacing="18">
+
+                <Grid ColumnSpacing="16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
+                        <TextBlock FontSize="28" FontWeight="SemiBold" Text="恒星计划" />
+                        <TextBlock
+                            Opacity="0.62"
+                            Text="解锁专属权益，并支持 Solian 与 Solar Network 持续发展" />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal"
+                        Spacing="10">
+                        <TextBlock
+                            VerticalAlignment="Center"
+                            FontSize="12"
+                            Opacity="0.58"
+                            Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" />
+                        <ProgressRing
+                            Width="22"
+                            Height="22"
+                            IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                        <Button
+                            Command="{x:Bind ViewModel.LoadCommand}"
+                            ToolTipService.ToolTip="刷新恒星计划">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                                <TextBlock Text="刷新" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <InfoBar
+                    IsClosable="False"
+                    IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                    Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                    Severity="Error"
+                    Title="恒星计划加载失败" />
+                <InfoBar
+                    IsClosable="True"
+                    IsOpen="True"
+                    Message="{x:Bind ViewModel.ActionMessage, Mode=OneWay}"
+                    Severity="Success"
+                    Title="操作成功"
+                    Visibility="{x:Bind ViewModel.ActionMessageVisibility, Mode=OneWay}" />
+
+                <Border
+                    MinHeight="220"
+                    Padding="28,24"
+                    CornerRadius="18">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Offset="0" Color="#FF172D5D" />
+                            <GradientStop Offset="0.46" Color="#FF563D8E" />
+                            <GradientStop Offset="1" Color="#FFB15C92" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                    <Grid ColumnSpacing="24">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border
+                            Width="78"
+                            Height="78"
+                            VerticalAlignment="Center"
+                            Background="#24FFFFFF"
+                            CornerRadius="24">
+                            <FontIcon
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Foreground="White"
+                                FontSize="38"
+                                Glyph="&#xE734;" />
+                        </Border>
+                        <StackPanel
+                            Grid.Column="1"
+                            VerticalAlignment="Center"
+                            Spacing="7">
+                            <Border
+                                Padding="10,5"
+                                HorizontalAlignment="Left"
+                                Background="#22FFFFFF"
+                                CornerRadius="999">
+                                <TextBlock
+                                    Foreground="#EFFFFFFF"
+                                    FontSize="12"
+                                    FontWeight="SemiBold"
+                                    Text="{x:Bind ViewModel.MembershipStatusText, Mode=OneWay}" />
+                            </Border>
+                            <TextBlock
+                                Foreground="White"
+                                FontSize="30"
+                                FontWeight="SemiBold"
+                                Text="{x:Bind ViewModel.CurrentPlanName, Mode=OneWay}"
+                                TextWrapping="Wrap" />
+                            <TextBlock
+                                MaxWidth="680"
+                                Foreground="#DCFFFFFF"
+                                FontSize="14"
+                                Text="{x:Bind ViewModel.CurrentPlanDetail, Mode=OneWay}"
+                                TextWrapping="Wrap" />
+                        </StackPanel>
+                        <StackPanel
+                            Grid.Column="2"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center"
+                            Spacing="10">
+                            <Button
+                                Click="OpenPricing_OnClick"
+                                Content="查看官方定价"
+                                Style="{StaticResource AccentButtonStyle}" />
+                            <Button
+                                Click="CancelMembership_OnClick"
+                                Content="取消当前方案"
+                                Foreground="White"
+                                Visibility="{x:Bind ViewModel.CancelVisibility, Mode=OneWay}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <Grid ColumnSpacing="14">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border
+                        Padding="18,16"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="42"
+                                Height="42"
+                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                CornerRadius="12">
+                                <FontIcon
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="18"
+                                    Glyph="&#xE823;" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="订阅队列" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Opacity="0.62"
+                                    Text="{x:Bind ViewModel.QueueSummaryText, Mode=OneWay}"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                    <Border
+                        Grid.Column="1"
+                        Padding="18,16"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="14">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="44" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border
+                                Width="42"
+                                Height="42"
+                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                                CornerRadius="12">
+                                <FontIcon
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center"
+                                    FontSize="18"
+                                    Glyph="&#xE8C7;" />
+                            </Border>
+                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                                <TextBlock FontWeight="SemiBold" Text="按周期订阅" />
+                                <TextBlock
+                                    FontSize="12"
+                                    Opacity="0.62"
+                                    Text="每个方案周期为 30 天，价格与可用支付方式由 Wallet 服务实时提供"
+                                    TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <StackPanel Spacing="4">
+                    <TextBlock FontSize="21" FontWeight="SemiBold" Text="选择你的方案" />
+                    <TextBlock
+                        FontSize="13"
+                        Opacity="0.6"
+                        Text="不同等级提供逐步增强的个性化、成长与社区权益" />
+                </StackPanel>
+
+                <GridView
+                    ItemsSource="{x:Bind ViewModel.Plans, Mode=OneWay}"
+                    ItemContainerStyle="{StaticResource StellarPlanGridItemStyle}"
+                    ScrollViewer.HorizontalScrollMode="Disabled"
+                    ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                    ScrollViewer.VerticalScrollMode="Disabled"
+                    ScrollViewer.VerticalScrollBarVisibility="Disabled"
+                    SelectionMode="None">
+                    <GridView.ItemTemplate>
+                        <DataTemplate x:DataType="vm:StellarPlanItemViewModel">
+                            <Border
+                                MinHeight="420"
+                                Padding="20"
+                                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                                BorderBrush="{x:Bind CardBorderBrush}"
+                                BorderThickness="{x:Bind CardBorderThickness}"
+                                CornerRadius="16">
+                                <Grid RowSpacing="14">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="52" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Border
+                                            Width="50"
+                                            Height="50"
+                                            Background="{x:Bind AccentBackgroundBrush}"
+                                            CornerRadius="14">
+                                            <FontIcon
+                                                HorizontalAlignment="Center"
+                                                VerticalAlignment="Center"
+                                                Foreground="{x:Bind AccentBrush}"
+                                                FontSize="24"
+                                                Glyph="&#xE734;" />
+                                        </Border>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                            <TextBlock
+                                                FontSize="19"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind DisplayName}"
+                                                TextTrimming="CharacterEllipsis" />
+                                            <Border
+                                                Padding="7,3"
+                                                HorizontalAlignment="Left"
+                                                Background="{x:Bind AccentBackgroundBrush}"
+                                                CornerRadius="999"
+                                                Visibility="{x:Bind CurrentBadgeVisibility}">
+                                                <TextBlock
+                                                    Foreground="{x:Bind AccentBrush}"
+                                                    FontSize="10"
+                                                    FontWeight="SemiBold"
+                                                    Text="当前方案" />
+                                            </Border>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <StackPanel Grid.Row="1" Spacing="4">
+                                        <TextBlock
+                                            Foreground="{x:Bind AccentBrush}"
+                                            FontSize="22"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind PriceText}" />
+                                        <TextBlock FontSize="12" Opacity="0.65" Text="{x:Bind EligibilityText}" />
+                                        <TextBlock FontSize="12" Opacity="0.65" Text="{x:Bind PaymentMethodsText}" TextWrapping="Wrap" />
+                                    </StackPanel>
+
+                                    <Border
+                                        Grid.Row="2"
+                                        Padding="10,8"
+                                        Background="{x:Bind AccentBackgroundBrush}"
+                                        CornerRadius="9">
+                                        <TextBlock
+                                            Foreground="{x:Bind AccentBrush}"
+                                            FontSize="12"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind BonusText}"
+                                            TextWrapping="Wrap" />
+                                    </Border>
+
+                                    <TextBlock
+                                        Grid.Row="3"
+                                        FontSize="13"
+                                        LineHeight="24"
+                                        Text="{x:Bind BenefitsText}"
+                                        TextWrapping="Wrap" />
+
+                                    <Button
+                                        Grid.Row="4"
+                                        HorizontalAlignment="Stretch"
+                                        Click="PlanSubscribe_OnClick"
+                                        Content="{x:Bind ActionText}"
+                                        IsEnabled="{x:Bind CanOpenCheckout}"
+                                        Tag="{x:Bind Identifier}" />
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </GridView.ItemTemplate>
+                </GridView>
+
+                <Border
+                    Padding="16,13"
+                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                    CornerRadius="12">
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <FontIcon
+                            VerticalAlignment="Top"
+                            Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
+                            FontSize="15"
+                            Glyph="&#xE946;" />
+                        <TextBlock
+                            Grid.Column="1"
+                            FontSize="12"
+                            Opacity="0.72"
+                            Text="订阅与退款适用 Solar Network 用户协议。Windows 客户端会跳转至官方定价页面完成新订阅；当前通过 Solar 钱包购买的方案可在此取消。"
+                            TextWrapping="Wrap" />
+                    </Grid>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</Page>

@@ -38,7 +38,7 @@ public interface ISolarApiClient
 
     Task<SnAccount> GetMeAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>GET /passport/accounts/me — full account with profile.</summary>
+    /// <summary>GET /stargate/accounts/me — full account with profile.</summary>
     Task<SnAccount> GetPassportMeAsync(CancellationToken cancellationToken = default);
 
     Task<SnAccountProfile> GetMyProfileAsync(CancellationToken cancellationToken = default);
@@ -55,7 +55,7 @@ public interface ISolarApiClient
     /// <summary>POST /passport/accounts/me/check-in — perform daily check-in.</summary>
     Task<SnCheckInResult> DoCheckInAsync(CancellationToken cancellationToken = default);
 
-    /// <summary>GET /passport/accounts/search?query=&amp;take=</summary>
+    /// <summary>GET /stargate/accounts/search?query=&amp;take=</summary>
     Task<List<SnAccount>> SearchAccountsAsync(string query, int take = 20, CancellationToken cancellationToken = default);
 
     // —— Messager ——
@@ -353,8 +353,44 @@ public interface ISolarApiClient
     /// <summary>GET /wallet/wallets — current default wallet.</summary>
     Task<SnWallet?> GetWalletAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>POST /wallet/wallets — create a personal wallet.</summary>
+    Task<SnWallet> CreateWalletAsync(CreateWalletRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/wallets/{id}/default — set the default wallet.</summary>
+    Task SetDefaultWalletAsync(Guid walletId, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/wallets/{id}/public-id/(enable|disable) — change public ID availability.</summary>
+    Task<SnWallet> SetWalletPublicIdEnabledAsync(Guid walletId, bool enabled, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/wallets/stats — filtered wallet statistics.</summary>
+    Task<SnWalletStats> GetWalletStatsAsync(Guid walletId, string currency, int period = 30, CancellationToken cancellationToken = default);
+
     /// <summary>GET /wallet/wallets/transactions — transaction history.</summary>
-    Task<List<SnWalletTransaction>> GetTransactionsAsync(Guid walletId, int offset, int take, CancellationToken cancellationToken = default);
+    Task<List<SnWalletTransaction>> GetTransactionsAsync(
+        Guid walletId,
+        int offset,
+        int take,
+        string? direction = null,
+        string? type = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/wallets/transfer — transfer wallet funds.</summary>
+    Task<SnWalletTransaction> TransferWalletAsync(WalletTransferRequest request, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/wallets/transactions/{id} — transaction details.</summary>
+    Task<SnWalletTransaction> GetWalletTransactionAsync(Guid transactionId, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/wallets/transactions/{id}/confirm — accept a pending transaction.</summary>
+    Task<SnWalletTransaction> ConfirmWalletTransactionAsync(Guid transactionId, CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/wallets/transactions/{id}/reject — reject and refund a pending transaction.</summary>
+    Task<SnWalletTransaction> RejectWalletTransactionAsync(Guid transactionId, CancellationToken cancellationToken = default);
+
+    /// <summary>GET /wallet/subscriptions/groups/solian.stellar — current Stellar plan and catalog.</summary>
+    Task<SnStellarSubscriptionGroup> GetStellarSubscriptionGroupAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>POST /wallet/subscriptions/{identifier}/cancel — cancel an active wallet subscription.</summary>
+    Task<SnStellarSubscription> CancelStellarSubscriptionAsync(string identifier, CancellationToken cancellationToken = default);
 
     // —— Sphere / Feed ——
 
@@ -559,7 +595,7 @@ public interface ISolarApiClient
 
     // —— Passport / Social ——
 
-    /// <summary>GET /passport/accounts/{name}</summary>
+    /// <summary>GET /stargate/accounts/{name}</summary>
     Task<SnAccount> GetAccountByNameAsync(string name, CancellationToken cancellationToken = default);
 
     Task<List<SnAccountBadge>> GetAccountBadgesAsync(string name, CancellationToken cancellationToken = default);
@@ -801,7 +837,7 @@ public interface ISolarApiClient
 
     Task<SnAccountContact> VerifyContactAsync(Guid contactId, string code, CancellationToken cancellationToken = default);
 
-    /// <summary>POST /padlock/contacts/{id}/verify without code — re-request delivery when supported.</summary>
+    /// <summary>POST /stargate/contacts/{id}/verify without code — re-request delivery when supported.</summary>
     Task RequestContactVerificationAsync(Guid contactId, CancellationToken cancellationToken = default);
 
     Task<List<AuthorizedAppResponse>> GetAuthorizedAppsAsync(CancellationToken cancellationToken = default);
@@ -859,7 +895,7 @@ public interface ISolarApiClient
     Task<List<SnAccountAuthFactor>> GetChallengeFactorsAsync(Guid challengeId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// POST /padlock/auth/challenge/{id}/factors/{factorId} — request delivery of email/SMS codes, etc.
+    /// POST /stargate/auth/challenge/{id}/factors/{factorId} — request delivery of email/SMS codes, etc.
     /// </summary>
     Task RequestChallengeFactorAsync(Guid challengeId, Guid factorId, CancellationToken cancellationToken = default);
 
@@ -888,7 +924,7 @@ public interface ISolarApiClient
         PasskeyRegistrationCompleteRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Absolute URL for browser OIDC: GET /padlock/auth/login/{provider}.</summary>
+    /// <summary>Absolute URL for browser OIDC: GET /stargate/auth/login/{provider}.</summary>
     string BuildSocialLoginUrl(string provider, string returnUrl, string deviceId);
 
     // —— Sphere surveys ——

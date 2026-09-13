@@ -53,18 +53,39 @@ public sealed partial class PostsPage : Page
         ComposerTextBox.Focus(FocusState.Programmatic);
     }
 
-    private async void PublishPost_OnClick(object sender, RoutedEventArgs e)
+    private async void ComposerDialog_OnPrimaryButtonClick(
+        ContentDialog sender,
+        ContentDialogButtonClickEventArgs args)
     {
+        args.Cancel = true;
         if (!ViewModel.CreatePostCommand.CanExecute(null))
         {
             return;
         }
 
-        await ViewModel.CreatePostCommand.ExecuteAsync(null);
-        if (string.IsNullOrWhiteSpace(ViewModel.NewPostContent)
-            && ViewModel.PendingAttachments.Count == 0)
+        var deferral = args.GetDeferral();
+        try
         {
-            ComposerDialog.Hide();
+            await ViewModel.CreatePostCommand.ExecuteAsync(null);
+            args.Cancel = !string.IsNullOrWhiteSpace(ViewModel.NewPostContent)
+                          || ViewModel.PendingAttachments.Count > 0;
+        }
+        finally
+        {
+            deferral.Complete();
+        }
+    }
+
+    private async void StickerPickerFlyout_OnOpened(object sender, object e)
+    {
+        await ViewModel.EnsurePostStickerPickerLoadedAsync();
+    }
+
+    private void PostStickerGrid_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is StickerPickItem item && ViewModel.AddPostSticker(item))
+        {
+            StickerPickerFlyout.Hide();
         }
     }
 

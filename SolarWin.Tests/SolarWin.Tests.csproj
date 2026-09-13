@@ -37,6 +37,11 @@
     <Compile Include="..\SolarWin\Helpers\AppPaths.cs" Link="Helpers\AppPaths.cs" />
     <Compile Include="..\SolarWin\Helpers\DeviceInfoHelper.cs" Link="Helpers\DeviceInfoHelper.cs" />
     <Compile Include="..\SolarWin\Helpers\AsyncConcurrencyHelper.cs" Link="Helpers\AsyncConcurrencyHelper.cs" />
+    <Compile Include="..\SolarWin\Services\LuckinJson.cs" Link="Services\LuckinJson.cs" />
+    <Compile Include="..\SolarWin\Services\LuckinProductAttrs.cs" Link="Services\LuckinProductAttrs.cs" />
+    <Compile Include="..\SolarWin\Services\LuckinMenuSweep.cs" Link="Services\LuckinMenuSweep.cs" />
+    <Compile Include="..\SolarWin\Services\GeoCityRanking.cs" Link="Services\GeoCityRanking.cs" />
+    <Compile Include="..\SolarWin\Models\WeatherModels.cs" Link="Models\WeatherModels.cs" />
     <Compile Include="..\SolarWin\ViewModels\PostItemHandleRules.cs" Link="ViewModels\PostItemHandleRules.cs" />
     <Compile Include="..\SolarWin\Data\ChatMessageMapper.cs" Link="Data\ChatMessageMapper.cs" />
     <Compile Include="..\SolarWin\Data\Entities\ChatMessageEntity.cs" Link="Data\Entities\ChatMessageEntity.cs" />

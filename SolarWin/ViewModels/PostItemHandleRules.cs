@@ -4,7 +4,7 @@ namespace SolarWin.ViewModels;
 public static class PostItemHandleRules
 {
     /// <summary>
-    /// Account/publisher handles are latin slug-like. Chinese nicknames must not hit /passport/accounts/{name}.
+    /// Account/publisher handles are latin slug-like. Chinese nicknames must not hit /stargate/accounts/{name}.
     /// </summary>
     public static bool LooksLikeAccountHandle(string? value)
     {

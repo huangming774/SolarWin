@@ -36,6 +36,13 @@ public sealed class SnWallet
 
     [JsonPropertyName("deleted_at")]
     public DateTimeOffset? DeletedAt { get; set; }
+
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(Name)
+        ? $"钱包 {Id.ToString("N")[..8]}"
+        : IsPrimary
+            ? $"{Name}（主钱包）"
+            : Name;
 }
 
 public sealed class SnWalletPocket
@@ -66,6 +73,11 @@ public sealed class SnWalletPocket
 
     [JsonIgnore]
     public decimal AvailableAmount => Amount - HeldAmount;
+
+    [JsonIgnore]
+    public string DisplayName => string.IsNullOrWhiteSpace(Currency)
+        ? "未知币种"
+        : $"{Currency} · {AvailableAmount:0.##}";
 }
 
 public sealed class SnWalletTransaction
@@ -153,4 +165,46 @@ public sealed class SnWalletStats
 
     [JsonPropertyName("outgoing_categories")]
     public Dictionary<string, decimal> OutgoingCategories { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+}
+
+public sealed class CreateWalletRequest
+{
+    [JsonPropertyName("name")]
+    public string? Name { get; set; }
+
+    [JsonPropertyName("realm_id")]
+    public Guid? RealmId { get; set; }
+}
+
+public sealed class WalletTransferRequest
+{
+    [JsonPropertyName("amount")]
+    public decimal Amount { get; set; }
+
+    [JsonPropertyName("currency")]
+    public required string Currency { get; set; }
+
+    [JsonPropertyName("pin_code")]
+    public required string PinCode { get; set; }
+
+    [JsonPropertyName("payer_wallet_id")]
+    public Guid? PayerWalletId { get; set; }
+
+    [JsonPropertyName("payee_wallet_id")]
+    public Guid? PayeeWalletId { get; set; }
+
+    [JsonPropertyName("payee_account_id")]
+    public Guid? PayeeAccountId { get; set; }
+
+    [JsonPropertyName("payee_public_id")]
+    public string? PayeePublicId { get; set; }
+
+    [JsonPropertyName("remark")]
+    public string? Remark { get; set; }
+
+    [JsonPropertyName("freeze")]
+    public bool Freeze { get; set; }
+
+    [JsonPropertyName("require_confirmation")]
+    public bool RequireConfirmation { get; set; }
 }

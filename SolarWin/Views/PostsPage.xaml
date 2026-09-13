@@ -345,8 +345,11 @@
             x:Name="ComposerDialog"
             Grid.RowSpan="3"
             CloseButtonText="取消"
-            DefaultButton="None"
-            Opened="ComposerDialog_OnOpened">
+            DefaultButton="Primary"
+            IsPrimaryButtonEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
+            PrimaryButtonClick="ComposerDialog_OnPrimaryButtonClick"
+            Opened="ComposerDialog_OnOpened"
+            PrimaryButtonText="发布">
             <ContentDialog.Title>
                 <StackPanel Orientation="Horizontal" Spacing="10">
                     <Border Width="32" Height="32" Background="{ThemeResource PostsAccentSoftBrush}" CornerRadius="10">
@@ -403,7 +406,7 @@
                                             EnableFadeIn="True"
                                             ShowPlaceholder="True"
                                             Source="{x:Bind PreviewSource}"
-                                            Stretch="UniformToFill"
+                                            Stretch="{x:Bind PreviewStretch}"
                                             Visibility="{x:Bind ImageVisibility}" />
                                         <Grid Background="{ThemeResource PostsSoftBrush}" Visibility="{x:Bind VideoVisibility}">
                                             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
@@ -442,6 +445,7 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
@@ -466,19 +470,97 @@
                     </Button>
                     <Button
                         Grid.Column="2"
+                        IsEnabled="{x:Bind ViewModel.CanAddAttachments, Mode=OneWay}"
+                        Style="{StaticResource PostsButtonStyle}">
+                        <Button.Flyout>
+                            <Flyout x:Name="StickerPickerFlyout" Opened="StickerPickerFlyout_OnOpened" Placement="BottomEdgeAlignedLeft">
+                                <Grid Width="420" RowSpacing="10">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="220" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid ColumnSpacing="10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="17" FontWeight="SemiBold" Text="贴纸" />
+                                        <ProgressRing
+                                            Grid.Column="1"
+                                            Width="20"
+                                            Height="20"
+                                            IsActive="{x:Bind ViewModel.IsPostStickerLoading, Mode=OneWay}" />
+                                    </Grid>
+                                    <ComboBox
+                                        Grid.Row="1"
+                                        DisplayMemberPath="Title"
+                                        ItemsSource="{x:Bind ViewModel.PostStickerPacks, Mode=OneWay}"
+                                        PlaceholderText="选择贴纸包"
+                                        SelectedIndex="{x:Bind ViewModel.SelectedPostStickerPackIndex, Mode=TwoWay}" />
+                                    <GridView
+                                        Grid.Row="2"
+                                        IsItemClickEnabled="True"
+                                        ItemClick="PostStickerGrid_OnItemClick"
+                                        ItemsSource="{x:Bind ViewModel.PostStickerItems, Mode=OneWay}"
+                                        SelectionMode="None">
+                                        <GridView.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <ItemsWrapGrid Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </GridView.ItemsPanel>
+                                        <GridView.ItemContainerStyle>
+                                            <Style TargetType="GridViewItem">
+                                                <Setter Property="Margin" Value="3" />
+                                                <Setter Property="Padding" Value="0" />
+                                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                                <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                            </Style>
+                                        </GridView.ItemContainerStyle>
+                                        <GridView.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:StickerPickItem">
+                                                <Border
+                                                    Width="72"
+                                                    Height="72"
+                                                    Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                    CornerRadius="10"
+                                                    ToolTipService.ToolTip="{x:Bind Title}">
+                                                    <controls:FastWin2DImage
+                                                        DecodeWidth="160"
+                                                        EnableFadeIn="True"
+                                                        ShowPlaceholder="True"
+                                                        Source="{x:Bind ImageFileId}"
+                                                        Stretch="Uniform" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </GridView.ItemTemplate>
+                                    </GridView>
+                                    <TextBlock
+                                        Grid.Row="3"
+                                        Opacity="0.62"
+                                        Style="{StaticResource CaptionTextBlockStyle}"
+                                        Text="{x:Bind ViewModel.PostStickerStatus, Mode=OneWay}"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+                            </Flyout>
+                        </Button.Flyout>
+                        <StackPanel Orientation="Horizontal" Spacing="7">
+                            <FontIcon FontSize="14" Glyph="&#xE11D;" />
+                            <TextBlock Text="贴纸" />
+                        </StackPanel>
+                    </Button>
+                    <Button
+                        Grid.Column="3"
                         HorizontalAlignment="Left"
                         Command="{x:Bind ViewModel.ClearPendingAttachmentsCommand}"
                         Content="清空附件"
                         Visibility="{x:Bind ViewModel.PendingAttachmentsVisibility, Mode=OneWay}" />
-                    <StackPanel Grid.Column="3" Orientation="Horizontal" Spacing="9">
-                        <ProgressRing Width="20" Height="20" IsActive="{x:Bind ViewModel.IsPosting, Mode=OneWay}" />
-                        <Button
-                            MinWidth="96"
-                            Click="PublishPost_OnClick"
-                            Content="发布"
-                            IsEnabled="{x:Bind ViewModel.CanPost, Mode=OneWay}"
-                            Style="{StaticResource PostsPrimaryButtonStyle}" />
-                    </StackPanel>
+                    <ProgressRing
+                        Grid.Column="4"
+                        Width="20"
+                        Height="20"
+                        IsActive="{x:Bind ViewModel.IsPosting, Mode=OneWay}" />
                 </Grid>
             </Grid>
         </ContentDialog>

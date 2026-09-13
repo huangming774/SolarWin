@@ -30,6 +30,16 @@ public sealed class GeoResult
     [JsonPropertyName("admin1")]
     public string? Admin1 { get; set; }
 
+    [JsonPropertyName("admin2")]
+    public string? Admin2 { get; set; }
+
+    [JsonPropertyName("population")]
+    public long? Population { get; set; }
+
+    /// <summary>GeoNames 地物类型码（PPLC 首都 / PPLA* 各级政区驻地 / PPL 普通聚落 / ISL 岛屿等）。</summary>
+    [JsonPropertyName("feature_code")]
+    public string? FeatureCode { get; set; }
+
     [JsonPropertyName("timezone")]
     public string? Timezone { get; set; }
 

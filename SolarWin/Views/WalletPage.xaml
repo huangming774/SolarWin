@@ -15,389 +15,561 @@
             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
             <Setter Property="Background" Value="Transparent" />
         </Style>
+        <Style x:Key="WalletCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="{ThemeResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="BorderBrush" Value="{ThemeResource CardStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="16" />
+        </Style>
     </Page.Resources>
 
     <Grid Padding="28,22,28,24">
-        <Grid
-            MaxWidth="1120"
-            HorizontalAlignment="Stretch"
-            RowSpacing="18">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="Narrow">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="StatsPanel.(Grid.Row)" Value="1" />
+                        <Setter Target="StatsPanel.(Grid.Column)" Value="0" />
+                        <Setter Target="StatsPanel.Margin" Value="0,16,0,0" />
+                        <Setter Target="WalletSelector.Width" Value="180" />
+                    </VisualState.Setters>
+                </VisualState>
+                <VisualState x:Name="Wide">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="900" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="StatsPanel.(Grid.Row)" Value="0" />
+                        <Setter Target="StatsPanel.(Grid.Column)" Value="1" />
+                        <Setter Target="StatsPanel.Margin" Value="16,0,0,0" />
+                        <Setter Target="WalletSelector.Width" Value="240" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+            <VisualStateGroup>
+                <VisualState x:Name="ContentAreaCentered" />
+                <VisualState x:Name="FullWindowCentered">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="1280" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <!-- Keep the wallet content visually centered when the 240px
+                             NavigationView pane is expanded on a wide window. -->
+                        <Setter Target="CenteringHost.Padding" Value="0,0,240,0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
 
-            <!-- Page heading -->
-            <Grid ColumnSpacing="16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Spacing="3">
-                    <TextBlock
-                        FontSize="28"
-                        FontWeight="SemiBold"
-                        Text="钱包" />
-                    <TextBlock
-                        Opacity="0.62"
-                        Text="查看资产余额与最近资金动态" />
-                </StackPanel>
-                <StackPanel
-                    Grid.Column="1"
-                    VerticalAlignment="Center"
-                    Orientation="Horizontal"
-                    Spacing="10">
-                    <ProgressRing
-                        Width="22"
-                        Height="22"
-                        IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
-                    <Button
-                        Command="{x:Bind ViewModel.LoadCommand}"
-                        ToolTipService.ToolTip="刷新钱包">
-                        <StackPanel Orientation="Horizontal" Spacing="7">
-                            <FontIcon FontSize="14" Glyph="&#xE72C;" />
-                            <TextBlock Text="刷新" />
-                        </StackPanel>
-                    </Button>
-                </StackPanel>
-            </Grid>
+        <ScrollViewer
+            HorizontalContentAlignment="Stretch"
+            HorizontalScrollBarVisibility="Disabled"
+            HorizontalScrollMode="Disabled"
+            VerticalScrollBarVisibility="Auto"
+            VerticalScrollMode="Auto">
+            <Grid x:Name="CenteringHost">
+                <Grid
+                    Width="{Binding ActualWidth, ElementName=CenteringHost}"
+                    MaxWidth="1180"
+                    HorizontalAlignment="Center"
+                    RowSpacing="16">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-            <!-- Balance hero + asset summary -->
-            <Grid Grid.Row="1" ColumnSpacing="16">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="1.7*" />
-                    <ColumnDefinition Width="1*" />
-                </Grid.ColumnDefinitions>
-
-                <Border
-                    MinHeight="190"
-                    Padding="26,22"
-                    CornerRadius="16">
-                    <Border.Background>
-                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Offset="0" Color="#FFB9364B" />
-                            <GradientStop Offset="0.16" Color="#FFC05D32" />
-                            <GradientStop Offset="0.32" Color="#FFA27C22" />
-                            <GradientStop Offset="0.49" Color="#FF258453" />
-                            <GradientStop Offset="0.66" Color="#FF167D82" />
-                            <GradientStop Offset="0.83" Color="#FF2F62A5" />
-                            <GradientStop Offset="1" Color="#FFA04479" />
-                        </LinearGradientBrush>
-                    </Border.Background>
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid ColumnSpacing="12">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel>
-                                <TextBlock
-                                    Foreground="White"
-                                    FontSize="17"
-                                    FontWeight="SemiBold"
-                                    Text="{x:Bind ViewModel.TitleText, Mode=OneWay}" />
-                                <TextBlock
-                                    Foreground="#D9FFFFFF"
-                                    FontSize="12"
-                                    Text="主钱包" />
-                            </StackPanel>
-                            <Border
-                                Grid.Column="1"
-                                Width="42"
-                                Height="42"
-                                Background="#26FFFFFF"
-                                CornerRadius="12">
-                                <FontIcon
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    Foreground="White"
-                                    FontSize="20"
-                                    Glyph="&#xE8C7;" />
-                            </Border>
-                        </Grid>
-
-                        <StackPanel
-                            Grid.Row="1"
-                            VerticalAlignment="Center"
-                            Spacing="3">
-                            <TextBlock
-                                Foreground="#D9FFFFFF"
-                                FontSize="13"
-                                Text="可用余额" />
-                            <TextBlock
-                                Foreground="White"
-                                FontSize="36"
-                                FontWeight="SemiBold"
-                                Text="{x:Bind ViewModel.BalanceText, Mode=OneWay}"
-                                TextTrimming="CharacterEllipsis" />
-                        </StackPanel>
-
-                        <Border
-                            Grid.Row="2"
-                            Padding="9,5"
-                            HorizontalAlignment="Left"
-                            Background="#20FFFFFF"
-                            CornerRadius="8"
-                            Visibility="{x:Bind ViewModel.WalletMetaVisibility, Mode=OneWay}">
-                            <StackPanel Orientation="Horizontal" Spacing="7">
-                                <FontIcon
-                                    Foreground="#D9FFFFFF"
-                                    FontSize="11"
-                                    Glyph="&#xE943;" />
-                                <TextBlock
-                                    Foreground="#E6FFFFFF"
-                                    FontFamily="Consolas"
-                                    FontSize="11"
-                                    Text="{x:Bind ViewModel.WalletMetaText, Mode=OneWay}" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </Border>
-
-                <Border
-                    Grid.Column="1"
-                    MinHeight="190"
-                    Padding="22"
-                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                    BorderThickness="1"
-                    CornerRadius="16">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid ColumnSpacing="10">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Spacing="2">
-                                <TextBlock
-                                    FontSize="16"
-                                    FontWeight="SemiBold"
-                                    Text="资产概览" />
-                                <TextBlock
-                                    FontSize="12"
-                                    Opacity="0.58"
-                                    Text="各币种可用余额" />
-                            </StackPanel>
-                            <Border
-                                Grid.Column="1"
-                                Width="36"
-                                Height="36"
-                                Background="{ThemeResource AccentFillColorSecondaryBrush}"
-                                CornerRadius="10">
-                                <FontIcon
-                                    HorizontalAlignment="Center"
-                                    VerticalAlignment="Center"
-                                    FontSize="16"
-                                    Glyph="&#xE9D2;" />
-                            </Border>
-                        </Grid>
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Spacing="3">
                         <TextBlock
-                            Grid.Row="1"
-                            Margin="0,18,0,14"
-                            VerticalAlignment="Center"
-                            FontSize="17"
+                            FontSize="28"
                             FontWeight="SemiBold"
-                            Text="{x:Bind ViewModel.PocketSummaryText, Mode=OneWay}"
-                            TextWrapping="WrapWholeWords" />
-                        <Border
-                            Grid.Row="2"
-                            Padding="10,7"
-                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                            CornerRadius="8">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
-                                <FontIcon
-                                    FontSize="12"
-                                    Foreground="{ThemeResource AccentTextFillColorPrimaryBrush}"
-                                    Glyph="&#xE72E;" />
-                                <TextBlock
-                                    FontSize="11"
-                                    Opacity="0.68"
-                                    Text="余额数据由钱包服务实时提供"
-                                    TextWrapping="Wrap" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
-                </Border>
-            </Grid>
-
-            <InfoBar
-                Grid.Row="2"
-                IsClosable="False"
-                IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
-                Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
-                Severity="Error"
-                Title="钱包加载失败" />
-
-            <!-- Transaction history -->
-            <Border
-                Grid.Row="3"
-                MinHeight="240"
-                Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                BorderThickness="1"
-                CornerRadius="16">
-                <Grid Padding="20,18,20,12" RowSpacing="14">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-                    <Grid ColumnSpacing="12">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Spacing="2">
-                            <TextBlock
-                                FontSize="18"
-                                FontWeight="SemiBold"
-                                Text="最近交易" />
-                            <TextBlock
-                                FontSize="12"
-                                Opacity="0.58"
-                                Text="按时间从新到旧排列" />
-                        </StackPanel>
+                            Text="钱包" />
                         <TextBlock
-                            Grid.Column="1"
-                            VerticalAlignment="Center"
-                            FontSize="12"
                             Opacity="0.62"
-                            Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+                            Text="管理多钱包资产、转账与资金动态" />
+                    </StackPanel>
+                    <StackPanel
+                        Grid.Column="1"
+                        VerticalAlignment="Center"
+                        Orientation="Horizontal"
+                        Spacing="8">
+                        <ComboBox
+                            x:Name="WalletSelector"
+                            DisplayMemberPath="DisplayName"
+                            ItemsSource="{x:Bind ViewModel.Wallets, Mode=OneWay}"
+                            PlaceholderText="选择钱包"
+                            SelectedItem="{x:Bind ViewModel.SelectedWallet, Mode=OneWay}"
+                            SelectionChanged="WalletSelector_OnSelectionChanged" />
+                        <Button Click="CreateWallet_OnClick" ToolTipService.ToolTip="创建钱包">
+                            <FontIcon FontSize="14" Glyph="&#xE710;" />
+                        </Button>
+                        <Button Command="{x:Bind ViewModel.LoadCommand}" ToolTipService.ToolTip="刷新钱包">
+                            <FontIcon FontSize="14" Glyph="&#xE72C;" />
+                        </Button>
+                        <ProgressRing
+                            Width="22"
+                            Height="22"
+                            IsActive="{x:Bind ViewModel.IsBusy, Mode=OneWay}" />
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Grid.Row="1" Spacing="8">
+                    <InfoBar
+                        IsClosable="False"
+                        IsOpen="{x:Bind ViewModel.HasError, Mode=OneWay}"
+                        Message="{x:Bind ViewModel.ErrorMessage, Mode=OneWay}"
+                        Severity="Error"
+                        Title="钱包操作失败" />
+                    <InfoBar
+                        IsClosable="True"
+                        IsOpen="{x:Bind ViewModel.HasActionMessage, Mode=OneWay}"
+                        Message="{x:Bind ViewModel.ActionMessage, Mode=OneWay}"
+                        Severity="Success"
+                        Title="操作完成" />
+                </StackPanel>
+
+                <Border
+                    Grid.Row="2"
+                    Padding="36"
+                    Style="{StaticResource WalletCardStyle}"
+                    Visibility="{x:Bind ViewModel.NoWalletVisibility, Mode=OneWay}">
+                    <StackPanel
+                        HorizontalAlignment="Center"
+                        Spacing="12">
+                        <Border
+                            Width="64"
+                            Height="64"
+                            Background="{ThemeResource AccentFillColorSecondaryBrush}"
+                            CornerRadius="20">
+                            <FontIcon
+                                HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                FontSize="28"
+                                Glyph="&#xE8C7;" />
+                        </Border>
+                        <TextBlock
+                            HorizontalAlignment="Center"
+                            FontSize="20"
+                            FontWeight="SemiBold"
+                            Text="还没有钱包" />
+                        <TextBlock
+                            MaxWidth="420"
+                            HorizontalAlignment="Center"
+                            Opacity="0.62"
+                            Text="创建钱包后即可接收资产、查看交易记录并使用转账功能。"
+                            TextAlignment="Center"
+                            TextWrapping="Wrap" />
+                        <Button
+                            HorizontalAlignment="Center"
+                            Click="CreateWallet_OnClick">
+                            <StackPanel Orientation="Horizontal" Spacing="7">
+                                <FontIcon FontSize="14" Glyph="&#xE710;" />
+                                <TextBlock Text="创建钱包" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <StackPanel
+                    Grid.Row="3"
+                    Spacing="16"
+                    Visibility="{x:Bind ViewModel.WalletContentVisibility, Mode=OneWay}">
+                    <Grid x:Name="SummaryGrid">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="1.55*" />
+                            <ColumnDefinition Width="1*" />
+                        </Grid.ColumnDefinitions>
+
+                        <Border
+                            x:Name="WalletHero"
+                            MinHeight="228"
+                            Padding="26,22"
+                            CornerRadius="18">
+                            <Border.Background>
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                                    <GradientStop Offset="0" Color="#FF9E3F57" />
+                                    <GradientStop Offset="0.34" Color="#FF8B7028" />
+                                    <GradientStop Offset="0.66" Color="#FF187A7F" />
+                                    <GradientStop Offset="1" Color="#FF4A569D" />
+                                </LinearGradientBrush>
+                            </Border.Background>
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="2">
+                                        <TextBlock
+                                            Foreground="White"
+                                            FontSize="18"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind ViewModel.TitleText, Mode=OneWay}" />
+                                        <TextBlock
+                                            Foreground="#D9FFFFFF"
+                                            FontSize="12"
+                                            Text="{x:Bind ViewModel.WalletKindText, Mode=OneWay}" />
+                                    </StackPanel>
+                                    <ComboBox
+                                        x:Name="PocketSelector"
+                                        Grid.Column="1"
+                                        MinWidth="150"
+                                        DisplayMemberPath="DisplayName"
+                                        ItemsSource="{x:Bind ViewModel.Pockets, Mode=OneWay}"
+                                        SelectedItem="{x:Bind ViewModel.SelectedPocket, Mode=OneWay}"
+                                        SelectionChanged="PocketSelector_OnSelectionChanged" />
+                                </Grid>
+
+                                <StackPanel
+                                    Grid.Row="1"
+                                    VerticalAlignment="Center"
+                                    Spacing="3">
+                                    <TextBlock
+                                        Foreground="#D9FFFFFF"
+                                        FontSize="13"
+                                        Text="可用余额" />
+                                    <StackPanel Orientation="Horizontal" Spacing="10">
+                                        <TextBlock
+                                            Foreground="White"
+                                            FontSize="38"
+                                            FontWeight="SemiBold"
+                                            Text="{x:Bind ViewModel.BalanceText, Mode=OneWay}"
+                                            TextTrimming="CharacterEllipsis" />
+                                        <TextBlock
+                                            VerticalAlignment="Bottom"
+                                            Margin="0,0,0,7"
+                                            Foreground="#D9FFFFFF"
+                                            FontSize="15"
+                                            Text="{x:Bind ViewModel.CurrencyText, Mode=OneWay}" />
+                                    </StackPanel>
+                                </StackPanel>
+
+                                <Grid Grid.Row="2" ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Border
+                                        Padding="9,5"
+                                        HorizontalAlignment="Left"
+                                        Background="#20FFFFFF"
+                                        CornerRadius="8"
+                                        Visibility="{x:Bind ViewModel.WalletMetaVisibility, Mode=OneWay}">
+                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                            <FontIcon
+                                                Foreground="#D9FFFFFF"
+                                                FontSize="11"
+                                                Glyph="&#xE943;" />
+                                            <TextBlock
+                                                Foreground="#E6FFFFFF"
+                                                FontFamily="Consolas"
+                                                FontSize="11"
+                                                Text="{x:Bind ViewModel.WalletMetaText, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Border>
+                                    <StackPanel
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="14">
+                                        <TextBlock Foreground="#D9FFFFFF" FontSize="11" Text="总额" />
+                                        <TextBlock Foreground="White" FontSize="11" Text="{x:Bind ViewModel.TotalBalanceText, Mode=OneWay}" />
+                                        <TextBlock Foreground="#D9FFFFFF" FontSize="11" Text="冻结" />
+                                        <TextBlock Foreground="White" FontSize="11" Text="{x:Bind ViewModel.HeldBalanceText, Mode=OneWay}" />
+                                    </StackPanel>
+                                </Grid>
+                            </Grid>
+                        </Border>
+
+                        <StackPanel x:Name="StatsPanel" Spacing="12">
+                            <Border Padding="18" Style="{StaticResource WalletCardStyle}">
+                                <StackPanel Spacing="12">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="16" FontWeight="SemiBold" Text="收支统计" />
+                                        <TextBlock
+                                            Grid.Column="1"
+                                            Opacity="0.55"
+                                            FontSize="11"
+                                            Text="{x:Bind ViewModel.StatsPeriodText, Mode=OneWay}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Opacity="0.58" FontSize="11" Text="收入" />
+                                            <TextBlock
+                                                Foreground="#FF108955"
+                                                FontSize="17"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind ViewModel.IncomeText, Mode=OneWay}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Spacing="4">
+                                            <TextBlock Opacity="0.58" FontSize="11" Text="支出" />
+                                            <TextBlock
+                                                Foreground="#FFDC4A4A"
+                                                FontSize="17"
+                                                FontWeight="SemiBold"
+                                                Text="{x:Bind ViewModel.OutgoingText, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </Grid>
+                                    <TextBlock
+                                        Opacity="0.55"
+                                        FontSize="11"
+                                        Text="{x:Bind ViewModel.StatsCountText, Mode=OneWay}" />
+                                </StackPanel>
+                            </Border>
+
+                            <Border Padding="18" Style="{StaticResource WalletCardStyle}">
+                                <StackPanel Spacing="11">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock FontSize="15" FontWeight="SemiBold" Text="钱包管理" />
+                                        <ProgressRing
+                                            Grid.Column="1"
+                                            Width="18"
+                                            Height="18"
+                                            IsActive="{x:Bind ViewModel.IsMutating, Mode=OneWay}" />
+                                    </Grid>
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Button
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.SetDefaultCommand}"
+                                            Content="设为主钱包"
+                                            Visibility="{x:Bind ViewModel.SetDefaultVisibility, Mode=OneWay}" />
+                                        <Button
+                                            Grid.Column="1"
+                                            HorizontalAlignment="Stretch"
+                                            Command="{x:Bind ViewModel.TogglePublicIdCommand}"
+                                            Content="{x:Bind ViewModel.PublicIdButtonText, Mode=OneWay}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </Grid>
 
-                    <Grid Grid.Row="1">
-                        <ListView
-                            ItemsSource="{x:Bind ViewModel.Transactions, Mode=OneWay}"
-                            ItemContainerStyle="{StaticResource WalletTransactionItemStyle}"
-                            SelectionMode="None">
-                            <ListView.ItemTemplate>
-                                <DataTemplate x:DataType="vm:WalletTransactionItemViewModel">
-                                    <Border
-                                        Padding="12,10"
-                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                        CornerRadius="10">
-                                        <Grid ColumnSpacing="12">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="42" />
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <Border
-                                                Width="38"
-                                                Height="38"
-                                                Background="{x:Bind IconBackground}"
-                                                CornerRadius="11">
-                                                <FontIcon
-                                                    HorizontalAlignment="Center"
-                                                    VerticalAlignment="Center"
-                                                    Foreground="{x:Bind IconForeground}"
-                                                    FontSize="16"
-                                                    Glyph="{x:Bind IconGlyph}" />
-                                            </Border>
-                                            <StackPanel
-                                                Grid.Column="1"
-                                                VerticalAlignment="Center"
-                                                Spacing="3">
-                                                <TextBlock
-                                                    FontWeight="SemiBold"
-                                                    Text="{x:Bind Title}"
-                                                    TextTrimming="CharacterEllipsis" />
-                                                <StackPanel Orientation="Horizontal" Spacing="7">
-                                                    <TextBlock
-                                                        FontSize="11"
-                                                        Opacity="0.58"
-                                                        Text="{x:Bind DirectionText}" />
-                                                    <TextBlock
-                                                        FontSize="11"
-                                                        Opacity="0.35"
-                                                        Text="·" />
-                                                    <TextBlock
-                                                        FontSize="11"
-                                                        Opacity="0.58"
-                                                        Text="{x:Bind StatusText}" />
-                                                </StackPanel>
-                                            </StackPanel>
-                                            <StackPanel
-                                                Grid.Column="2"
-                                                MinWidth="116"
-                                                HorizontalAlignment="Right"
-                                                VerticalAlignment="Center"
-                                                Spacing="3">
-                                                <TextBlock
-                                                    HorizontalAlignment="Right"
-                                                    Foreground="{x:Bind AmountForeground}"
-                                                    FontSize="15"
-                                                    FontWeight="SemiBold"
-                                                    Text="{x:Bind AmountText}" />
-                                                <TextBlock
-                                                    HorizontalAlignment="Right"
-                                                    FontSize="11"
-                                                    Opacity="0.55"
-                                                    Text="{x:Bind TimeText}" />
-                                            </StackPanel>
-                                        </Grid>
-                                    </Border>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                            <ListView.Footer>
-                                <StackPanel
-                                    Padding="8,10,8,4"
-                                    HorizontalAlignment="Center"
-                                    Orientation="Horizontal"
-                                    Spacing="8"
-                                    Visibility="{x:Bind ViewModel.LoadMoreVisibility, Mode=OneWay}">
-                                    <Button
-                                        Command="{x:Bind ViewModel.LoadMoreCommand}"
-                                        Content="加载更多记录" />
-                                    <ProgressRing
-                                        Width="19"
-                                        Height="19"
-                                        IsActive="{x:Bind ViewModel.IsLoadingMore, Mode=OneWay}" />
-                                </StackPanel>
-                            </ListView.Footer>
-                        </ListView>
-
-                        <StackPanel
-                            HorizontalAlignment="Center"
+                    <Grid ColumnSpacing="10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Click="Transfer_OnClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="14" Glyph="&#xE724;" />
+                                <TextBlock Text="转账" />
+                            </StackPanel>
+                        </Button>
+                        <Button Grid.Column="1" Click="CreateWallet_OnClick">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon FontSize="14" Glyph="&#xE710;" />
+                                <TextBlock Text="新建钱包" />
+                            </StackPanel>
+                        </Button>
+                        <TextBlock
+                            Grid.Column="2"
+                            HorizontalAlignment="Right"
                             VerticalAlignment="Center"
-                            Spacing="8"
-                            Visibility="{x:Bind ViewModel.EmptyVisibility, Mode=OneWay}">
-                            <Border
-                                Width="52"
-                                Height="52"
-                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                CornerRadius="16">
-                                <FontIcon
+                            Opacity="0.58"
+                            FontSize="12"
+                            Text="转账需要 6 位钱包 PIN" />
+                    </Grid>
+
+                    <Border
+                        MinHeight="300"
+                        Style="{StaticResource WalletCardStyle}">
+                        <Grid Padding="20,18,20,12" RowSpacing="14">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Spacing="2">
+                                    <TextBlock FontSize="18" FontWeight="SemiBold" Text="交易记录" />
+                                    <TextBlock Opacity="0.58" FontSize="12" Text="选择一笔交易可查看详情并处理待确认款项" />
+                                </StackPanel>
+                                <StackPanel
+                                    Grid.Column="1"
+                                    VerticalAlignment="Center"
+                                    Orientation="Horizontal"
+                                    Spacing="6">
+                                    <ToggleButton
+                                        x:Name="AllFilterButton"
+                                        IsChecked="True"
+                                        Click="TransactionFilter_OnClick"
+                                        Content="全部"
+                                        Tag="0" />
+                                    <ToggleButton
+                                        x:Name="IncomeFilterButton"
+                                        Click="TransactionFilter_OnClick"
+                                        Content="收入"
+                                        Tag="1" />
+                                    <ToggleButton
+                                        x:Name="OutgoingFilterButton"
+                                        Click="TransactionFilter_OnClick"
+                                        Content="支出"
+                                        Tag="2" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Grid.Row="1">
+                                <ListView
+                                    MaxHeight="620"
+                                    MinHeight="220"
+                                    IsItemClickEnabled="True"
+                                    ItemClick="Transactions_OnItemClick"
+                                    ItemContainerStyle="{StaticResource WalletTransactionItemStyle}"
+                                    ItemsSource="{x:Bind ViewModel.Transactions, Mode=OneWay}"
+                                    SelectionMode="None">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:WalletTransactionItemViewModel">
+                                            <Border
+                                                Padding="12,10"
+                                                Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                                CornerRadius="10">
+                                                <Grid ColumnSpacing="12">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="42" />
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <Border
+                                                        Width="38"
+                                                        Height="38"
+                                                        Background="{x:Bind IconBackground}"
+                                                        CornerRadius="11">
+                                                        <FontIcon
+                                                            HorizontalAlignment="Center"
+                                                            VerticalAlignment="Center"
+                                                            Foreground="{x:Bind IconForeground}"
+                                                            FontSize="16"
+                                                            Glyph="{x:Bind IconGlyph}" />
+                                                    </Border>
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="3">
+                                                        <TextBlock
+                                                            FontWeight="SemiBold"
+                                                            Text="{x:Bind Title}"
+                                                            TextTrimming="CharacterEllipsis" />
+                                                        <TextBlock
+                                                            Opacity="0.58"
+                                                            FontSize="11"
+                                                            Text="{x:Bind SubtitleText}"
+                                                            TextTrimming="CharacterEllipsis" />
+                                                        <StackPanel Orientation="Horizontal" Spacing="7">
+                                                            <TextBlock Opacity="0.58" FontSize="11" Text="{x:Bind DirectionText}" />
+                                                            <TextBlock Opacity="0.35" FontSize="11" Text="·" />
+                                                            <TextBlock Opacity="0.58" FontSize="11" Text="{x:Bind StatusText}" />
+                                                            <TextBlock Opacity="0.35" FontSize="11" Text="·" />
+                                                            <TextBlock Opacity="0.58" FontSize="11" Text="{x:Bind LifecycleText}" />
+                                                        </StackPanel>
+                                                    </StackPanel>
+                                                    <StackPanel
+                                                        Grid.Column="2"
+                                                        MinWidth="126"
+                                                        HorizontalAlignment="Right"
+                                                        VerticalAlignment="Center"
+                                                        Spacing="3">
+                                                        <TextBlock
+                                                            HorizontalAlignment="Right"
+                                                            Foreground="{x:Bind AmountForeground}"
+                                                            FontSize="15"
+                                                            FontWeight="SemiBold"
+                                                            Text="{x:Bind AmountText}" />
+                                                        <TextBlock
+                                                            HorizontalAlignment="Right"
+                                                            Opacity="0.55"
+                                                            FontSize="11"
+                                                            Text="{x:Bind TimeText}" />
+                                                    </StackPanel>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                    <ListView.Footer>
+                                        <StackPanel
+                                            Padding="8,10,8,4"
+                                            HorizontalAlignment="Center"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            Visibility="{x:Bind ViewModel.LoadMoreVisibility, Mode=OneWay}">
+                                            <Button Command="{x:Bind ViewModel.LoadMoreCommand}" Content="加载更多记录" />
+                                            <ProgressRing
+                                                Width="19"
+                                                Height="19"
+                                                IsActive="{x:Bind ViewModel.IsLoadingMore, Mode=OneWay}" />
+                                        </StackPanel>
+                                    </ListView.Footer>
+                                </ListView>
+
+                                <StackPanel
                                     HorizontalAlignment="Center"
                                     VerticalAlignment="Center"
-                                    FontSize="22"
-                                    Glyph="&#xE9D9;"
-                                    Opacity="0.5" />
-                            </Border>
-                            <TextBlock
-                                HorizontalAlignment="Center"
-                                FontWeight="SemiBold"
-                                Text="暂无交易记录" />
-                            <TextBlock
-                                HorizontalAlignment="Center"
-                                FontSize="12"
-                                Opacity="0.55"
-                                Text="新的资金变化会显示在这里" />
-                        </StackPanel>
-                    </Grid>
+                                    Spacing="8"
+                                    Visibility="{x:Bind ViewModel.EmptyVisibility, Mode=OneWay}">
+                                    <Border
+                                        Width="52"
+                                        Height="52"
+                                        Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                        CornerRadius="16">
+                                        <FontIcon
+                                            HorizontalAlignment="Center"
+                                            VerticalAlignment="Center"
+                                            Opacity="0.5"
+                                            FontSize="22"
+                                            Glyph="&#xE9D9;" />
+                                    </Border>
+                                    <TextBlock HorizontalAlignment="Center" FontWeight="SemiBold" Text="暂无交易记录" />
+                                    <TextBlock
+                                        HorizontalAlignment="Center"
+                                        Opacity="0.55"
+                                        FontSize="12"
+                                        Text="新的资金变化会显示在这里" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <TextBlock
+                        HorizontalAlignment="Right"
+                        Opacity="0.55"
+                        FontSize="11"
+                        Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" />
+                </StackPanel>
                 </Grid>
-            </Border>
-        </Grid>
+            </Grid>
+        </ScrollViewer>
     </Grid>
 </Page>

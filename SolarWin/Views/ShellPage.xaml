@@ -75,8 +75,14 @@
                             Value="{x:Bind ViewModel.UnreadNotificationCount, Mode=OneWay}" />
                     </NavigationViewItem.InfoBadge>
                 </NavigationViewItem>
+                <NavigationViewItem Content="恒星计划" Tag="stellar-program">
+                    <NavigationViewItem.Icon><FontIcon Glyph="&#xE734;" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="钱包" Tag="wallet">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Shop" /></NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem Content="点餐" Tag="order">
+                    <NavigationViewItem.Icon><BitmapIcon UriSource="ms-appx:///Assets/java.png" ShowAsMonochrome="False" /></NavigationViewItem.Icon>
                 </NavigationViewItem>
                 <NavigationViewItem Content="我的" Tag="profile">
                     <NavigationViewItem.Icon><SymbolIcon Symbol="Contact" /></NavigationViewItem.Icon>

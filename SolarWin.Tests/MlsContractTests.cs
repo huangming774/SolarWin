@@ -132,29 +132,29 @@ public sealed class MlsContractTests
         var account = Guid.Parse("11111111-1111-1111-1111-111111111111");
         var envelope = Guid.Parse("22222222-2222-2222-2222-222222222222");
 
-        yield return Case(MlsApiRoutes.PublishKeyPackage(), HttpMethod.Put, "/padlock/e2ee/mls/devices/me/kps");
-        yield return Case(MlsApiRoutes.KeyPackageStatus(), HttpMethod.Get, "/padlock/e2ee/mls/kp/status");
-        yield return Case(MlsApiRoutes.AccountDeviceKeys(account), HttpMethod.Get, $"/padlock/e2ee/mls/keys/{account:D}/devices");
-        yield return Case(MlsApiRoutes.AccountDeviceKeys(account, true), HttpMethod.Get, $"/padlock/e2ee/mls/keys/{account:D}/devices?consume=true");
-        yield return Case(MlsApiRoutes.UsersReadyBatch(), HttpMethod.Post, "/padlock/e2ee/mls/users/ready/batch");
-        yield return Case(MlsApiRoutes.UserReady(account), HttpMethod.Get, $"/padlock/e2ee/mls/users/{account:D}/ready");
-        yield return Case(MlsApiRoutes.GroupCapableDevices("group/a"), HttpMethod.Get, "/padlock/e2ee/mls/groups/group%2Fa/devices/capable");
-        yield return Case(MlsApiRoutes.BootstrapGroup("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/bootstrap");
-        yield return Case(MlsApiRoutes.CommitGroup("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/commit");
-        yield return Case(MlsApiRoutes.FanoutWelcome("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/welcome/fanout");
-        yield return Case(MlsApiRoutes.MarkReshareRequired("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/reshare-required");
-        yield return Case(MlsApiRoutes.MyReshareRequired(), HttpMethod.Get, "/padlock/e2ee/mls/devices/me/reshare-required");
-        yield return Case(MlsApiRoutes.CompleteReshare("g"), HttpMethod.Post, "/padlock/e2ee/mls/devices/me/reshare-required/g/complete");
-        yield return Case(MlsApiRoutes.UploadGroupInfo("g"), HttpMethod.Put, "/padlock/e2ee/mls/groups/g/groupinfo");
-        yield return Case(MlsApiRoutes.GetGroupInfo("g"), HttpMethod.Get, "/padlock/e2ee/mls/groups/g/groupinfo");
-        yield return Case(MlsApiRoutes.FanoutMessage(), HttpMethod.Post, "/padlock/e2ee/mls/messages/fanout");
-        yield return Case(MlsApiRoutes.FanoutCommit("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/commit/fanout");
-        yield return Case(MlsApiRoutes.FanoutGroupMessage("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/messages/fanout");
-        yield return Case(MlsApiRoutes.PendingEnvelopes(), HttpMethod.Get, "/padlock/e2ee/mls/envelopes/pending?take=100");
-        yield return Case(MlsApiRoutes.AckEnvelope(envelope), HttpMethod.Post, $"/padlock/e2ee/mls/envelopes/{envelope:D}/ack");
-        yield return Case(MlsApiRoutes.RevokeDevice("device/1"), HttpMethod.Post, "/padlock/e2ee/mls/devices/device%2F1/revoke");
-        yield return Case(MlsApiRoutes.AddDeviceMembership("d"), HttpMethod.Post, "/padlock/e2ee/mls/devices/d/membership");
-        yield return Case(MlsApiRoutes.ResetGroup("g"), HttpMethod.Post, "/padlock/e2ee/mls/groups/g/reset");
+        yield return Case(MlsApiRoutes.PublishKeyPackage(), HttpMethod.Put, "/stargate/e2ee/mls/devices/me/kps");
+        yield return Case(MlsApiRoutes.KeyPackageStatus(), HttpMethod.Get, "/stargate/e2ee/mls/kp/status");
+        yield return Case(MlsApiRoutes.AccountDeviceKeys(account), HttpMethod.Get, $"/stargate/e2ee/mls/keys/{account:D}/devices");
+        yield return Case(MlsApiRoutes.AccountDeviceKeys(account, true), HttpMethod.Get, $"/stargate/e2ee/mls/keys/{account:D}/devices?consume=true");
+        yield return Case(MlsApiRoutes.UsersReadyBatch(), HttpMethod.Post, "/stargate/e2ee/mls/users/ready/batch");
+        yield return Case(MlsApiRoutes.UserReady(account), HttpMethod.Get, $"/stargate/e2ee/mls/users/{account:D}/ready");
+        yield return Case(MlsApiRoutes.GroupCapableDevices("group/a"), HttpMethod.Get, "/stargate/e2ee/mls/groups/group%2Fa/devices/capable");
+        yield return Case(MlsApiRoutes.BootstrapGroup("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/bootstrap");
+        yield return Case(MlsApiRoutes.CommitGroup("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/commit");
+        yield return Case(MlsApiRoutes.FanoutWelcome("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/welcome/fanout");
+        yield return Case(MlsApiRoutes.MarkReshareRequired("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/reshare-required");
+        yield return Case(MlsApiRoutes.MyReshareRequired(), HttpMethod.Get, "/stargate/e2ee/mls/devices/me/reshare-required");
+        yield return Case(MlsApiRoutes.CompleteReshare("g"), HttpMethod.Post, "/stargate/e2ee/mls/devices/me/reshare-required/g/complete");
+        yield return Case(MlsApiRoutes.UploadGroupInfo("g"), HttpMethod.Put, "/stargate/e2ee/mls/groups/g/groupinfo");
+        yield return Case(MlsApiRoutes.GetGroupInfo("g"), HttpMethod.Get, "/stargate/e2ee/mls/groups/g/groupinfo");
+        yield return Case(MlsApiRoutes.FanoutMessage(), HttpMethod.Post, "/stargate/e2ee/mls/messages/fanout");
+        yield return Case(MlsApiRoutes.FanoutCommit("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/commit/fanout");
+        yield return Case(MlsApiRoutes.FanoutGroupMessage("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/messages/fanout");
+        yield return Case(MlsApiRoutes.PendingEnvelopes(), HttpMethod.Get, "/stargate/e2ee/mls/envelopes/pending?take=100");
+        yield return Case(MlsApiRoutes.AckEnvelope(envelope), HttpMethod.Post, $"/stargate/e2ee/mls/envelopes/{envelope:D}/ack");
+        yield return Case(MlsApiRoutes.RevokeDevice("device/1"), HttpMethod.Post, "/stargate/e2ee/mls/devices/device%2F1/revoke");
+        yield return Case(MlsApiRoutes.AddDeviceMembership("d"), HttpMethod.Post, "/stargate/e2ee/mls/devices/d/membership");
+        yield return Case(MlsApiRoutes.ResetGroup("g"), HttpMethod.Post, "/stargate/e2ee/mls/groups/g/reset");
     }
 
     [Theory]
@@ -177,7 +177,7 @@ public sealed class MlsContractTests
 
         await MlsRequestHeaders.AttachDeviceIdAsync(
             mlsRequest,
-            "/padlock/e2ee/mls/kp/status",
+            "/stargate/e2ee/mls/kp/status",
             provider);
         await MlsRequestHeaders.AttachDeviceIdAsync(
             otherRequest,
@@ -186,7 +186,7 @@ public sealed class MlsContractTests
 
         Assert.Equal("stable-device", mlsRequest.Headers.GetValues("X-Device-Id").Single());
         Assert.False(otherRequest.Headers.Contains("X-Device-Id"));
-        Assert.False(MlsApiRoutes.RequiresDeviceId("/padlock/e2ee/mls-legacy/status"));
+        Assert.False(MlsApiRoutes.RequiresDeviceId("/stargate/e2ee/mls-legacy/status"));
         Assert.Equal(1, provider.CallCount);
     }
 

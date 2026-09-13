@@ -158,6 +158,7 @@ public static class ImagePreviewHelper
         DysonFileImageLoader imageLoader)
     {
         DysonFileImageLoader.CanvasBitmapLease? lease = null;
+        CanvasImageSource? imageSource = null;
         try
         {
             // Prefer detail decode for lightbox; fall back to feed-width if detail fails.
@@ -180,7 +181,7 @@ public static class ImagePreviewHelper
                 return false;
             }
 
-            var imageSource = CreateImageSourceFromBitmap(imageLoader.Device, bmp);
+            imageSource = CreateImageSourceFromBitmap(imageLoader.Device, bmp);
             if (imageSource is null)
             {
                 return false;
@@ -199,23 +200,22 @@ public static class ImagePreviewHelper
             };
 
             var dialog = CreateZoomDialog(xamlRoot, title, preview);
-            try
-            {
-                await dialog.ShowAsync();
-            }
-            finally
-            {
-                // CanvasImageSource already holds a GPU surface copy; release cache lease.
-                lease.Dispose();
-                lease = null;
-            }
+            await dialog.ShowAsync();
 
             return true;
         }
         catch
         {
-            lease?.Dispose();
             return false;
+        }
+        finally
+        {
+            // Every exit path must release the lease: the LRU never evicts entries with
+            // an outstanding lease, so an abandoned lease pins the CanvasBitmap in VRAM
+            // for the rest of the session. The CanvasImageSource has no Dispose on
+            // WinUI 3 (finalization reclaims it), but it holds its own GPU copy, so
+            // releasing the cache lease is safe once the dialog is done.
+            lease?.Dispose();
         }
     }
 

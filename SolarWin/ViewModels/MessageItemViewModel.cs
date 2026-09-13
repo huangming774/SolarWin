@@ -306,7 +306,7 @@ public partial class MessageItemViewModel : ObservableObject
             return null;
         }
 
-        // Never open /passport/accounts/{nick} with Chinese display names.
+        // Never open /stargate/accounts/{nick} with Chinese display names.
         if (!PostItemViewModel.LooksLikeAccountHandle(SenderAccountName))
         {
             return null;

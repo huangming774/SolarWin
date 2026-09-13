@@ -263,7 +263,9 @@ public sealed partial class ShellPage : Page
             "ai" => typeof(AiPage),
             "files" => typeof(FilesPage),
             "notifications" => typeof(NotificationsPage),
+            "stellar-program" => typeof(StellarProgramPage),
             "wallet" => typeof(WalletPage),
+            "order" => typeof(OrderPage),
             "profile" => typeof(ProfilePage),
             _ => typeof(HomePage),
         };
@@ -307,6 +309,10 @@ public sealed partial class ShellPage : Page
 
     private void OnLoggedOut(object? sender, EventArgs e)
     {
+        // 清空跨账号会话状态：OrderViewModel 等 Singleton ViewModel 会保留旧账号的购物车/未支付订单入口，
+        // 在切账号前显式 Reset()，避免下一账号继承（详见对抗性审查 F2）。
+        try { App.Services.GetRequiredService<OrderViewModel>().Reset(); } catch { }
+
         // Always leave the shell via the root frame (not ContentFrame).
         if (App.Window is MainWindow mainWindow)
         {
