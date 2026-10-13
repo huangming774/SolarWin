@@ -21,6 +21,7 @@ public partial class AiViewModel : ObservableObject
     private readonly IToastService _toast;
     private CancellationTokenSource? _sendCts;
     private readonly List<AiChatTurn> _history = [];
+    private int _chatGeneration;
 
     public AiViewModel(IAiChatService ai, IToastService toast)
     {
@@ -169,7 +170,9 @@ public partial class AiViewModel : ObservableObject
     [RelayCommand]
     private void NewChat()
     {
+        _chatGeneration++;
         _sendCts?.Cancel();
+        IsSending = false;
         _history.Clear();
         Messages.Clear();
         ErrorMessage = null;
@@ -210,6 +213,7 @@ public partial class AiViewModel : ObservableObject
         _sendCts?.Cancel();
         _sendCts = new CancellationTokenSource();
         var ct = _sendCts.Token;
+        var sendGeneration = _chatGeneration;
 
         var contentBuf = new StringBuilder();
         var reasoningBuf = new StringBuilder();
@@ -222,7 +226,7 @@ public partial class AiViewModel : ObservableObject
                 ApiUrl = ApiUrl.Trim(),
                 ApiKey = ApiKey,
                 Model = ModelName.Trim(),
-                Messages = _history,
+                Messages = _history.ToArray(),
                 ReasoningEffort = ResolveEffort(),
                 Use1MContext = Use1MContext,
                 Stream = true,
@@ -232,6 +236,11 @@ public partial class AiViewModel : ObservableObject
                 request,
                 async delta =>
                 {
+                    if (!ViewModelRaceOwnership.OwnsConversation(sendGeneration, _chatGeneration))
+                    {
+                        return;
+                    }
+
                     if (!string.IsNullOrEmpty(delta.Content))
                     {
                         contentBuf.Append(delta.Content);
@@ -265,6 +274,11 @@ public partial class AiViewModel : ObservableObject
                 ct).ConfigureAwait(true);
 
             // Final paint
+            if (!ViewModelRaceOwnership.OwnsConversation(sendGeneration, _chatGeneration))
+            {
+                return;
+            }
+
             if (contentBuf.Length > 0)
             {
                 assistantBubble.Content = contentBuf.ToString();
@@ -329,6 +343,11 @@ public partial class AiViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
+            if (!ViewModelRaceOwnership.OwnsConversation(sendGeneration, _chatGeneration))
+            {
+                return;
+            }
+
             if (contentBuf.Length > 0)
             {
                 assistantBubble.Content = contentBuf + "\n\n（已停止）";
@@ -345,6 +364,11 @@ public partial class AiViewModel : ObservableObject
         }
         catch (Exception ex)
         {
+            if (!ViewModelRaceOwnership.OwnsConversation(sendGeneration, _chatGeneration))
+            {
+                return;
+            }
+
             assistantBubble.Content = contentBuf.Length > 0
                 ? contentBuf + "\n\n（错误：" + ex.Message + "）"
                 : ex.Message;
@@ -356,9 +380,12 @@ public partial class AiViewModel : ObservableObject
         }
         finally
         {
-            IsSending = false;
-            TrimHistory();
-            SendCommand.NotifyCanExecuteChanged();
+            if (ViewModelRaceOwnership.OwnsConversation(sendGeneration, _chatGeneration))
+            {
+                IsSending = false;
+                TrimHistory();
+                SendCommand.NotifyCanExecuteChanged();
+            }
         }
     }
 

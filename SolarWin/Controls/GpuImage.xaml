@@ -6,6 +6,5 @@
     xmlns:canvas="using:Microsoft.Graphics.Canvas.UI.Xaml">
     <canvas:CanvasControl
         x:Name="ImageCanvas"
-        ClearColor="Transparent"
-        Draw="ImageCanvas_OnDraw" />
+        ClearColor="Transparent" />
 </UserControl>

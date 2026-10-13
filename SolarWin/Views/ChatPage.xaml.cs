@@ -3,6 +3,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Navigation;
+using SolarWin.Models;
 using SolarWin.ViewModels;
 using Windows.System;
 
@@ -102,6 +103,14 @@ public sealed partial class ChatPage : Page
             && ViewModel.StartDirectChatWithUserCommand.CanExecute(user))
         {
             ViewModel.StartDirectChatWithUserCommand.Execute(user);
+        }
+    }
+
+    private void MessageSearchResults_OnItemClick(object sender, ItemClickEventArgs e)
+    {
+        if (e.ClickedItem is ChatSearchResultItem item)
+        {
+            Frame?.Navigate(typeof(ChatDetailPage), new ChatMessageNavArgs(item.RoomId, item.MessageId));
         }
     }
 

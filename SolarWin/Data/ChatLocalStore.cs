@@ -93,6 +93,48 @@ public sealed class ChatLocalStore : IChatLocalStore
         }
     }
 
+    public async Task<SnChatMessage?> FindMessageAsync(
+        Guid roomId,
+        Guid messageId,
+        CancellationToken cancellationToken = default)
+    {
+        if (roomId == Guid.Empty || messageId == Guid.Empty)
+        {
+            return null;
+        }
+
+        if (_dbFactory.BoundAccountId is null)
+        {
+            return null;
+        }
+
+        try
+        {
+            await _dbFactory.WaitUntilReadyAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ChatLocalStore] DB not ready for FindMessage: {ex.Message}");
+            return null;
+        }
+
+        try
+        {
+            await using var db = _dbFactory.CreateDbContext();
+            var entity = await db.Messages.AsNoTracking()
+                .FirstOrDefaultAsync(
+                    m => m.RoomId == roomId && m.MessageId == messageId,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return entity is null ? null : ChatMessageMapper.ToDto(entity);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[ChatLocalStore] FindMessage failed: {ex.Message}");
+            return null;
+        }
+    }
+
     public async Task<IReadOnlyList<SnChatMessage>> GetOlderMessagesAsync(
         Guid roomId,
         MessageKeysetCursor? olderThan,

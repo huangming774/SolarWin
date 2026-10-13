@@ -97,7 +97,6 @@ public sealed partial class FastWin2DImage : UserControl
     {
         InitializeComponent();
         _loader = App.Services.GetRequiredService<DysonFileImageLoader>();
-        ImageCanvas.CustomDevice = _loader.Device;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         EffectiveViewportChanged += OnEffectiveViewportChanged;
@@ -174,14 +173,20 @@ public sealed partial class FastWin2DImage : UserControl
     {
         var control = (FastWin2DImage)sender;
         control.UpdatePlaceholderChrome();
-        control.ImageCanvas.Invalidate();
+        if (control._isLoaded)
+        {
+            control.ImageCanvas.Invalidate();
+        }
     }
 
     private static void OnCornerRadiusChanged(DependencyObject sender, DependencyProperty property)
     {
         var control = (FastWin2DImage)sender;
         control.UpdatePlaceholderChrome();
-        control.ImageCanvas.Invalidate();
+        if (control._isLoaded)
+        {
+            control.ImageCanvas.Invalidate();
+        }
     }
 
     private void OnLoaded(object sender, RoutedEventArgs args)
@@ -192,6 +197,9 @@ public sealed partial class FastWin2DImage : UserControl
         }
 
         _isLoaded = true;
+        ImageCanvas.Draw -= ImageCanvas_OnDraw;
+        ImageCanvas.Draw += ImageCanvas_OnDraw;
+        ImageCanvas.CustomDevice = _loader.Device;
         _loader.GpuCacheInvalidated += OnGpuCacheInvalidated;
         RestartLoad();
     }
@@ -200,6 +208,7 @@ public sealed partial class FastWin2DImage : UserControl
     {
         _isLoaded = false;
         _loader.GpuCacheInvalidated -= OnGpuCacheInvalidated;
+        ImageCanvas.Draw -= ImageCanvas_OnDraw;
         ReleaseImage(resetPlaceholder: true);
     }
 
@@ -242,13 +251,25 @@ public sealed partial class FastWin2DImage : UserControl
 
     private void OnGpuCacheInvalidated(object? sender, EventArgs args)
     {
+        void RebindAndRestart()
+        {
+            if (!_isLoaded)
+            {
+                return;
+            }
+
+            ImageCanvas.CustomDevice = _loader.Device;
+            ImageCanvas.Invalidate();
+            RestartLoad();
+        }
+
         if (DispatcherQueue.HasThreadAccess)
         {
-            RestartLoad();
+            RebindAndRestart();
         }
         else
         {
-            DispatcherQueue.TryEnqueue(RestartLoad);
+            DispatcherQueue.TryEnqueue(RebindAndRestart);
         }
     }
 
@@ -361,7 +382,10 @@ public sealed partial class FastWin2DImage : UserControl
 
         IsLoading = false;
         UpdatePlaceholderChrome();
-        ImageCanvas.Invalidate();
+        if (_isLoaded)
+        {
+            ImageCanvas.Invalidate();
+        }
 
         if (animate)
         {
@@ -388,14 +412,20 @@ public sealed partial class FastWin2DImage : UserControl
         _naturalHeight = 0;
         IsLoading = false;
         StopFade();
-        ImageCanvas.Opacity = 0;
+        if (_isLoaded)
+        {
+            ImageCanvas.Opacity = 0;
+        }
         if (resetPlaceholder)
         {
             UpdatePlaceholderChrome();
         }
 
         InvalidateMeasure();
-        ImageCanvas.Invalidate();
+        if (_isLoaded)
+        {
+            ImageCanvas.Invalidate();
+        }
     }
 
     private void UpdatePlaceholderChrome()

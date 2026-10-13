@@ -368,7 +368,7 @@ public sealed class AuthService : IAuthService
         ArgumentNullException.ThrowIfNull(onQrGenerated);
 
         // QR generate/status are public endpoints — use a bare HttpClient without Bearer.
-        // Attaching a stale vault token via SolarApiClient can make Padlock return 401
+        // Attaching a stale vault token via SolarApiClient can make Stargate return 401
         // and block the entire unauthenticated login flow.
         using var http = _httpClientFactory.CreateClient(AnonymousHttpClientName);
 
@@ -385,7 +385,7 @@ public sealed class AuthService : IAuthService
             "application/json");
 
         using var genResp = await http
-            .PostAsync("padlock/auth/qr/generate", genContent, cancellationToken)
+            .PostAsync(QrLoginRoutes.Generate, genContent, cancellationToken)
             .ConfigureAwait(false);
         var genJson = await genResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         if (!genResp.IsSuccessStatusCode)
@@ -429,7 +429,7 @@ public sealed class AuthService : IAuthService
             await Task.Delay(QrPollInterval, cancellationToken).ConfigureAwait(false);
 
             using var statusResp = await http
-                .GetAsync($"padlock/auth/qr/{generated.QrChallengeId:D}", cancellationToken)
+                .GetAsync(QrLoginRoutes.Status(generated.QrChallengeId), cancellationToken)
                 .ConfigureAwait(false);
             var statusJson = await statusResp.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 

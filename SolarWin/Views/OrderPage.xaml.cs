@@ -163,6 +163,7 @@ public sealed partial class OrderPage : Page
             return;
         }
 
+        var confirmationSignature = ViewModel.CurrentDraftSignature;
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
@@ -172,9 +173,19 @@ public sealed partial class OrderPage : Page
             CloseButtonText = "返回检查",
             DefaultButton = ContentDialogButton.Close,
         };
-        if (await dialog.ShowAsync() == ContentDialogResult.Primary && ViewModel.CreateOrderCommand.CanExecute(null))
+        if (await dialog.ShowAsync() == ContentDialogResult.Primary)
         {
-            await ViewModel.CreateOrderCommand.ExecuteAsync(null);
+            if (!string.Equals(confirmationSignature, ViewModel.CurrentDraftSignature, StringComparison.Ordinal)
+                || !ViewModel.HasValidPreview)
+            {
+                ViewModel.StatusText = "订单内容已变化，请重新预览后再创建";
+                return;
+            }
+
+            if (ViewModel.CreateOrderCommand.CanExecute(null))
+            {
+                await ViewModel.CreateOrderCommand.ExecuteAsync(null);
+            }
         }
     }
 

@@ -63,7 +63,11 @@ public sealed class DysonFileImageLoader : IDisposable
     private readonly SemaphoreSlim _loadGate;
     private readonly LeasedLruCache<string, CanvasBitmap> _gpuCache =
         new(GpuCacheMaxBytes, StringComparer.OrdinalIgnoreCase);
+    private readonly object _deviceGate = new();
     private readonly object _evictGate = new();
+    private CanvasDevice _device;
+    private long _deviceGeneration;
+    private int _deviceRecoveryInProgress;
     private long _estimatedTotalBytes;
     private int _disposed;
 
@@ -73,11 +77,22 @@ public sealed class DysonFileImageLoader : IDisposable
         _tokenStorage = tokenStorage;
         MaxConcurrency = Math.Max(1, AppSettings.FileThumbnailMaxConcurrency);
         _loadGate = new SemaphoreSlim(MaxConcurrency, MaxConcurrency);
-        Device = CanvasDevice.GetSharedDevice();
-        Device.DeviceLost += OnDeviceLost;
+        _device = CanvasDevice.GetSharedDevice();
+        _device.DeviceLost += OnDeviceLost;
     }
 
-    public CanvasDevice Device { get; }
+    public CanvasDevice Device
+    {
+        get
+        {
+            lock (_deviceGate)
+            {
+                return _device;
+            }
+        }
+    }
+
+    public long DeviceGeneration => Interlocked.Read(ref _deviceGeneration);
 
     public int MaxConcurrency { get; }
 
@@ -321,17 +336,39 @@ public sealed class DysonFileImageLoader : IDisposable
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
 
-            bitmap = CanvasBitmap.CreateFromSoftwareBitmap(Device, softwareBitmap);
-            cancellationToken.ThrowIfCancellationRequested();
-            var estimatedBytes = Math.Max(1L, (long)targetWidth * targetHeight * 4);
-            var cacheLease = _gpuCache.AddOrAcquire(effectiveKey, bitmap, estimatedBytes);
-            bitmap = null;
-            if (cacheLease is null)
+            CanvasDevice uploadDevice;
+            long uploadGeneration;
+            lock (_deviceGate)
             {
-                return false;
+                cancellationToken.ThrowIfCancellationRequested();
+                uploadDevice = _device;
+                uploadGeneration = _deviceGeneration;
             }
 
-            cacheLease.Dispose();
+            bitmap = CanvasBitmap.CreateFromSoftwareBitmap(uploadDevice, softwareBitmap);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // DeviceLost may invalidate a texture between decode and upload. Do not put
+            // a bitmap from the old generation into the new device cache.
+            lock (_deviceGate)
+            {
+                if (uploadGeneration != _deviceGeneration
+                    || !ReferenceEquals(uploadDevice, _device))
+                {
+                    return false;
+                }
+
+                var estimatedBytes = Math.Max(1L, (long)targetWidth * targetHeight * 4);
+                var cacheLease = _gpuCache.AddOrAcquire(effectiveKey, bitmap, estimatedBytes);
+                bitmap = null;
+                if (cacheLease is null)
+                {
+                    return false;
+                }
+
+                cacheLease.Dispose();
+            }
+
             return true;
         }
         finally
@@ -386,11 +423,14 @@ public sealed class DysonFileImageLoader : IDisposable
             : CloudFileUrlHelper.DriveFileUrl(key);
         var client = _httpClientFactory.CreateClient(SolarApiClient.HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var token = await _tokenStorage.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(token))
+        if (TrustedMediaOrigin.IsTrusted(url))
         {
-            request.Headers.Authorization =
-                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            var token = await _tokenStorage.GetAccessTokenAsync(cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                request.Headers.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+            }
         }
 
         using var response = await client
@@ -748,7 +788,10 @@ public sealed class DysonFileImageLoader : IDisposable
             return;
         }
 
-        Device.DeviceLost -= OnDeviceLost;
+        lock (_deviceGate)
+        {
+            _device.DeviceLost -= OnDeviceLost;
+        }
         foreach (var operation in _gpuInflight.Values)
         {
             operation.Cancel();
@@ -760,8 +803,119 @@ public sealed class DysonFileImageLoader : IDisposable
 
     private void OnDeviceLost(CanvasDevice sender, object args)
     {
-        _gpuCache.Clear();
-        GpuCacheInvalidated?.Invoke(this, EventArgs.Empty);
+        CanvasDevice lostDevice;
+        lock (_deviceGate)
+        {
+            if (Volatile.Read(ref _disposed) != 0 || !ReferenceEquals(sender, _device))
+            {
+                return;
+            }
+
+            Interlocked.Increment(ref _deviceGeneration);
+            _gpuCache.Clear();
+            lostDevice = _device;
+        }
+
+        if (Interlocked.Exchange(ref _deviceRecoveryInProgress, 1) == 0)
+        {
+            _ = RecoverDeviceAsync(lostDevice);
+        }
+    }
+
+    private async Task RecoverDeviceAsync(CanvasDevice lostDevice)
+    {
+        CanvasDevice? recovered = null;
+        var rebound = false;
+        try
+        {
+            recovered = CanvasDevice.GetSharedDevice();
+            if (ReferenceEquals(recovered, lostDevice) || IsDeviceLost(recovered))
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+                recovered = CanvasDevice.GetSharedDevice();
+            }
+        }
+        catch
+        {
+            // Win2D normally replaces the weak shared device during the first
+            // GetSharedDevice call. Retry once if native recovery is still busy.
+            try
+            {
+                await Task.Delay(50).ConfigureAwait(false);
+                recovered = CanvasDevice.GetSharedDevice();
+            }
+            catch
+            {
+                recovered = null;
+            }
+        }
+
+        if (recovered is null || ReferenceEquals(recovered, lostDevice) || IsDeviceLost(recovered))
+        {
+            try
+            {
+                // The bool overload is the supported Win2D fallback. It returns a
+                // shared software device, so it is not owned or disposed here.
+                recovered = CanvasDevice.GetSharedDevice(forceSoftwareRenderer: true);
+            }
+            catch
+            {
+                recovered = null;
+            }
+        }
+
+        try
+        {
+            if (recovered is not null && !ReferenceEquals(recovered, lostDevice))
+            {
+                lock (_deviceGate)
+                {
+                    if (Volatile.Read(ref _disposed) == 0
+                        && ReferenceEquals(_device, lostDevice))
+                    {
+                        lostDevice.DeviceLost -= OnDeviceLost;
+                        _device = recovered;
+                        _device.DeviceLost += OnDeviceLost;
+                        rebound = true;
+                    }
+                }
+            }
+
+            if (!rebound)
+            {
+                return;
+            }
+
+            try
+            {
+                GpuCacheInvalidated?.Invoke(this, EventArgs.Empty);
+            }
+            catch
+            {
+                // A subscriber must not turn Win2D's DeviceLost callback into a UI crash.
+            }
+        }
+        catch
+        {
+            // DeviceLost is raised from Win2D's native callback. Recovery failure
+            // must remain contained; the next native loss can retry acquisition.
+        }
+        finally
+        {
+            Volatile.Write(ref _deviceRecoveryInProgress, 0);
+        }
+    }
+
+    private static bool IsDeviceLost(CanvasDevice device)
+    {
+        try
+        {
+            return device.IsDeviceLost();
+        }
+        catch
+        {
+            return true;
+        }
     }
 
     private static string EffectiveKey(string key, int decodeWidth)

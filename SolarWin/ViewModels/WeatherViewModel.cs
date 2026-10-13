@@ -1,11 +1,10 @@
-using System.Collections.ObjectModel;
+using SolarWin.Collections;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
 using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
-using Windows.UI;
 
 namespace SolarWin.ViewModels;
 
@@ -16,10 +15,17 @@ public partial class WeatherViewModel : ObservableObject
     private static readonly TimeSpan CacheDuration = TimeSpan.FromDays(1);
 
     private readonly IWeatherService _weather;
+    private readonly string _dashboardCacheKey;
 
     private double _latitude = 31.2304;
     private double _longitude = 121.4737;
     private CancellationTokenSource? _suggestCts;
+    private CancellationTokenSource? _loadCts;
+    private int _loadVersion;
+    private bool _cacheRestored;
+    private string? _suggestedQuery;
+    private readonly SemaphoreSlim _cacheWriteGate = new(1, 1);
+    private DateTime _forecastNow;
     private DateTimeOffset? _lastUpdatedUtc;
     private GeoResult _currentLocation = new()
     {
@@ -31,22 +37,30 @@ public partial class WeatherViewModel : ObservableObject
     };
 
     public WeatherViewModel(IWeatherService weather)
+        : this(weather, DashboardCacheKey)
     {
-        _weather = weather;
-        RestoreCachedDashboard();
     }
 
-    public ObservableCollection<GeoResult> CitySuggestions { get; } = [];
+    internal WeatherViewModel(IWeatherService weather, string cacheKey)
+    {
+        _weather = weather;
+        _dashboardCacheKey = cacheKey;
+    }
 
-    public ObservableCollection<HourlyForecastItem> HourlyForecast { get; } = [];
+    public ObservableRangeCollection<GeoResult> CitySuggestions { get; } = [];
 
-    public ObservableCollection<DailyForecastItem> DailyForecast { get; } = [];
+    public ObservableRangeCollection<HourlyForecastItem> HourlyForecast { get; } = [];
+
+    public ObservableRangeCollection<DailyForecastItem> DailyForecast { get; } = [];
 
     [ObservableProperty]
     public partial string SearchText { get; set; } = string.Empty;
 
     [ObservableProperty]
-    public partial string LocationTitle { get; set; } = "定位中…";
+    public partial string LocationTitle { get; set; } = "天气";
+
+    [ObservableProperty]
+    public partial string UpdateText { get; set; } = "正在准备天气";
 
     [ObservableProperty]
     public partial string LocationSubtitle { get; set; } = string.Empty;
@@ -127,12 +141,6 @@ public partial class WeatherViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(EmptyVisibility))]
     public partial bool HasData { get; set; }
 
-    [ObservableProperty]
-    public partial Color GradientTop { get; set; } = Color.FromArgb(255, 12, 24, 56);
-
-    [ObservableProperty]
-    public partial Color GradientBottom { get; set; } = Color.FromArgb(255, 30, 72, 140);
-
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorMessage);
 
     public Visibility ErrorVisibility => HasError ? Visibility.Visible : Visibility.Collapsed;
@@ -142,77 +150,108 @@ public partial class WeatherViewModel : ObservableObject
     public Visibility EmptyVisibility => !HasData && !IsLoading && !HasError ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Load by public IP (fallback Shanghai) then forecast.</summary>
-    [RelayCommand]
-    private async Task LoadAsync()
-    {
-        try
-        {
-            IsLoading = true;
-            ErrorMessage = null;
-            NotifyVisibilities();
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task LoadAsync() => LoadDashboardAsync(resolveLocation: true);
 
-            var location = await _weather.ResolveLocationFromIpAsync().ConfigureAwait(true);
-            ApplyLocation(location);
-            await LoadForecastInternalAsync().ConfigureAwait(true);
-        }
-        catch (WeatherServiceException ex)
-        {
-            ErrorMessage = ex.Message;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"加载失败：{ex.Message}";
-        }
-        finally
-        {
-            IsLoading = false;
-            NotifyVisibilities();
-        }
-    }
-
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private Task RefreshAsync()
-        => RefreshCoreAsync();
+        => LoadDashboardAsync(resolveLocation: false);
 
-    public Task RefreshIfStaleAsync()
+    public async Task RefreshIfStaleAsync()
     {
-        if (!HasData
-            || IsLoading
+        if (IsLoading) return;
+        if (!_cacheRestored)
+        {
+            _cacheRestored = true;
+            var version = _loadVersion;
+            var cached = await Task.Run(() =>
+                OfflineCache.TryGetJson<CachedWeatherDashboard>(_dashboardCacheKey, out var value) ? value : null);
+            if (version != _loadVersion) return;
+            RestoreCachedDashboard(cached);
+        }
+
+        if (IsLoading
             || (_lastUpdatedUtc is { } updated
                 && DateTimeOffset.UtcNow - updated < FreshDuration))
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return RefreshCoreAsync();
+        await LoadDashboardAsync(resolveLocation: !HasData);
     }
 
-    private async Task RefreshCoreAsync()
+    private async Task LoadDashboardAsync(bool resolveLocation, GeoResult? selected = null)
     {
+        var version = ++_loadVersion;
+        _loadCts?.Cancel();
+        using var cts = new CancellationTokenSource();
+        _loadCts = cts;
+        var token = cts.Token;
         try
         {
             IsLoading = true;
             ErrorMessage = null;
-            await LoadForecastInternalAsync().ConfigureAwait(true);
+            UpdateText = HasData ? "正在更新" : "正在获取天气";
+            var location = selected ?? (resolveLocation
+                ? await _weather.ResolveLocationFromIpAsync(token)
+                : _currentLocation);
+            if (version != _loadVersion || token.IsCancellationRequested) return;
+
+            // Optional air quality never holds the primary forecast behind its timeout.
+            var airTask = LoadAirQualitySafelyAsync(location, token);
+            var forecast = await _weather.GetForecastAsync(location.Latitude, location.Longitude, token);
+            if (version != _loadVersion || token.IsCancellationRequested) return;
+            if (forecast.Current is null) throw new WeatherServiceException("暂时没有实时天气数据。");
+
+            ApplyLocation(location);
+            ApplyForecast(forecast);
+            ResetAirQuality();
+            AirQualityDetail = "正在更新空气质量";
+            HasData = true;
+            IsLoading = false;
+            _lastUpdatedUtc = DateTimeOffset.UtcNow;
+            UpdateText = $"更新于 {DateTime.Now:HH:mm}";
+            await SaveCachedDashboardAsync(location, forecast, null, version);
+
+            var air = await airTask;
+            if (version != _loadVersion || token.IsCancellationRequested) return;
+            ApplyAirQuality(air);
+            await SaveCachedDashboardAsync(location, forecast, air, version);
         }
-        catch (WeatherServiceException ex)
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            ErrorMessage = ex.Message;
         }
         catch (Exception ex)
         {
-            ErrorMessage = $"刷新失败：{ex.Message}";
+            if (version == _loadVersion)
+            {
+                ErrorMessage = ex.Message;
+                UpdateText = HasData ? "更新失败，保留上次天气" : "暂时无法获取天气";
+            }
         }
         finally
         {
-            IsLoading = false;
-            NotifyVisibilities();
+            cts.Cancel();
+            if (version == _loadVersion)
+            {
+                _loadCts = null;
+                IsLoading = false;
+                NotifyVisibilities();
+            }
         }
     }
 
-    [RelayCommand]
+    private async Task<AirQualityResponse?> LoadAirQualitySafelyAsync(GeoResult location, CancellationToken token)
+    {
+        try { return await _weather.GetAirQualityAsync(location.Latitude, location.Longitude, token); }
+        catch { return null; }
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task SuggestCitiesAsync(string? query)
     {
+        _suggestCts?.Cancel();
+        _suggestedQuery = null;
         var q = (query ?? SearchText)?.Trim() ?? string.Empty;
         if (q.Length < 1)
         {
@@ -220,9 +259,9 @@ public partial class WeatherViewModel : ObservableObject
             return;
         }
 
-        _suggestCts?.Cancel();
-        _suggestCts = new CancellationTokenSource();
-        var token = _suggestCts.Token;
+        using var cts = new CancellationTokenSource();
+        _suggestCts = cts;
+        var token = cts.Token;
 
         try
         {
@@ -233,11 +272,8 @@ public partial class WeatherViewModel : ObservableObject
                 return;
             }
 
-            CitySuggestions.Clear();
-            foreach (var r in results)
-            {
-                CitySuggestions.Add(r);
-            }
+            CitySuggestions.ReplaceWith(results);
+            _suggestedQuery = q;
         }
         catch (OperationCanceledException)
         {
@@ -245,39 +281,52 @@ public partial class WeatherViewModel : ObservableObject
         }
         catch (WeatherServiceException)
         {
-            CitySuggestions.Clear();
+            if (!token.IsCancellationRequested) CitySuggestions.Clear();
         }
-    }
-
-    [RelayCommand]
-    private async Task SelectCityAsync(GeoResult? city)
-    {
-        if (city is null)
+        catch (Exception)
         {
-            return;
-        }
-
-        try
-        {
-            IsLoading = true;
-            ErrorMessage = null;
-            ApplyLocation(city);
-            SearchText = city.DisplayName;
-            await LoadForecastInternalAsync().ConfigureAwait(true);
-        }
-        catch (WeatherServiceException ex)
-        {
-            ErrorMessage = ex.Message;
-        }
-        catch (Exception ex)
-        {
-            ErrorMessage = $"加载失败：{ex.Message}";
+            if (!token.IsCancellationRequested) CitySuggestions.Clear();
         }
         finally
         {
-            IsLoading = false;
-            NotifyVisibilities();
+            if (ReferenceEquals(_suggestCts, cts)) _suggestCts = null;
         }
+    }
+
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task SelectCityAsync(GeoResult? city)
+    {
+        if (city is null) return Task.CompletedTask;
+        _suggestCts?.Cancel();
+        CitySuggestions.Clear();
+        SearchText = city.DisplayName;
+        return LoadDashboardAsync(resolveLocation: false, selected: city);
+    }
+
+    public async Task SearchAndSelectAsync(string query)
+    {
+        await SuggestCitiesAsync(query);
+        if (!string.Equals(query.Trim(), SearchText.Trim(), StringComparison.Ordinal)
+            || !string.Equals(query.Trim(), _suggestedQuery, StringComparison.Ordinal)) return;
+        if (CitySuggestions.FirstOrDefault() is { } city)
+        {
+            await SelectCityAsync(city);
+        }
+        else if (!string.IsNullOrWhiteSpace(query))
+        {
+            ErrorMessage = "没有找到匹配的城市，请尝试完整城市名称。";
+        }
+    }
+
+    public void CancelPendingRequests()
+    {
+        _loadVersion++;
+        _loadCts?.Cancel();
+        _loadCts = null;
+        _suggestCts?.Cancel();
+        _suggestedQuery = null;
+        if (AirQualityDetail == "正在更新空气质量") ResetAirQuality();
+        IsLoading = false;
     }
 
     private void NotifyVisibilities()
@@ -308,35 +357,10 @@ public partial class WeatherViewModel : ObservableObject
         LocationSubtitle = sub.Count > 0 ? string.Join(" · ", sub) : $"{_latitude:F2}, {_longitude:F2}";
     }
 
-    private async Task LoadForecastInternalAsync()
+    private void RestoreCachedDashboard(CachedWeatherDashboard? cached)
     {
-        var forecastTask = _weather.GetForecastAsync(_latitude, _longitude);
-        var airQualityTask = _weather.GetAirQualityAsync(_latitude, _longitude);
-        var forecast = await forecastTask.ConfigureAwait(true);
-        ApplyForecast(forecast);
-
-        // Air quality is best-effort; never fail the whole dashboard.
-        AirQualityResponse? airQuality = null;
-        try
-        {
-            airQuality = await airQualityTask.ConfigureAwait(true);
-            ApplyAirQuality(airQuality);
-        }
-        catch
-        {
-            ResetAirQuality();
-        }
-
-        HasData = true;
-        _lastUpdatedUtc = DateTimeOffset.UtcNow;
-        SaveCachedDashboard(forecast, airQuality);
-    }
-
-    private void RestoreCachedDashboard()
-    {
-        if (!OfflineCache.TryGetJson<CachedWeatherDashboard>(DashboardCacheKey, out var cached)
-            || cached?.Location is null
-            || cached.Forecast is null)
+        if (cached?.Location is null
+            || cached.Forecast?.Current is null)
         {
             return;
         }
@@ -356,27 +380,35 @@ public partial class WeatherViewModel : ObservableObject
 
             _lastUpdatedUtc = cached.SavedAtUtc;
             HasData = true;
+            UpdateText = $"上次更新 {cached.SavedAtUtc.ToLocalTime():MM-dd HH:mm}";
         }
         catch
         {
-            OfflineCache.Remove(DashboardCacheKey);
+            HasData = false;
         }
     }
 
-    private void SaveCachedDashboard(ForecastResponse forecast, AirQualityResponse? airQuality)
+    private async Task SaveCachedDashboardAsync(GeoResult location, ForecastResponse forecast, AirQualityResponse? airQuality, int version)
     {
+        var snapshot = new CachedWeatherDashboard
+        {
+            SavedAtUtc = _lastUpdatedUtc ?? DateTimeOffset.UtcNow,
+            Location = location,
+            Forecast = forecast,
+            AirQuality = airQuality,
+        };
         try
         {
-            OfflineCache.SetJson(
-                DashboardCacheKey,
-                new CachedWeatherDashboard
+            await Task.Run(async () =>
+            {
+                await _cacheWriteGate.WaitAsync();
+                try
                 {
-                    SavedAtUtc = _lastUpdatedUtc ?? DateTimeOffset.UtcNow,
-                    Location = _currentLocation,
-                    Forecast = forecast,
-                    AirQuality = airQuality,
-                },
-                CacheDuration);
+                    if (version == Volatile.Read(ref _loadVersion))
+                        OfflineCache.SetJson(_dashboardCacheKey, snapshot, CacheDuration);
+                }
+                finally { _cacheWriteGate.Release(); }
+            });
         }
         catch
         {
@@ -386,6 +418,7 @@ public partial class WeatherViewModel : ObservableObject
 
     private void ApplyForecast(ForecastResponse forecast)
     {
+        _forecastNow = WeatherTime.LocalNow(forecast, DateTimeOffset.UtcNow);
         var current = forecast.Current;
         if (current is not null)
         {
@@ -396,11 +429,11 @@ public partial class WeatherViewModel : ObservableObject
             FeelsLikeText = $"体感 {current.ApparentTemperature:0.#}°";
             HumidityText = $"湿度 {current.RelativeHumidity2m}%";
             WindText = $"风速 {current.WindSpeed10m:0.#} km/h";
-            ApplyGradient(WeatherCodeMapper.Mood(code));
         }
 
         // Daily first day → high/low, sun, precip, UV
         var daily = forecast.Daily;
+        HighLowText = "最高 — · 最低 —";
         if (daily?.Time is { Count: > 0 })
         {
             if (daily.Temperature2mMax is { Count: > 0 } && daily.Temperature2mMin is { Count: > 0 })
@@ -433,22 +466,23 @@ public partial class WeatherViewModel : ObservableObject
 
     private void ApplyHourly(ForecastResponse forecast)
     {
-        HourlyForecast.Clear();
+        var items = new List<HourlyForecastItem>(24);
         var hourly = forecast.Hourly;
         if (hourly?.Time is not { Count: > 0 } times ||
             hourly.Temperature2m is not { } temps ||
             hourly.WeatherCode is not { } codes)
         {
+            HourlyForecast.Clear();
             return;
         }
 
-        var now = DateTimeOffset.Now;
+        var now = _forecastNow;
         var count = Math.Min(times.Count, Math.Min(temps.Count, codes.Count));
         var pops = hourly.PrecipitationProbability;
         var added = 0;
         for (var i = 0; i < count && added < 24; i++)
         {
-            if (!DateTimeOffset.TryParse(times[i], out var t))
+            if (!DateTime.TryParse(times[i], out var t))
             {
                 continue;
             }
@@ -459,25 +493,27 @@ public partial class WeatherViewModel : ObservableObject
             }
 
             var pop = pops is not null && i < pops.Count ? pops[i] : (int?)null;
-            HourlyForecast.Add(new HourlyForecastItem
+            items.Add(new HourlyForecastItem
             {
-                TimeLabel = added == 0 ? "现在" : t.ToLocalTime().ToString("HH"),
+                TimeLabel = t.ToString("HH:mm"),
                 Emoji = WeatherCodeMapper.Emoji(codes[i]),
                 TemperatureText = $"{temps[i]:0}°",
                 PrecipitationChanceText = pop is null ? string.Empty : (pop > 0 ? $"{pop}%" : string.Empty),
             });
             added++;
         }
+        HourlyForecast.ReplaceWith(items);
     }
 
     private void ApplyDailyList(DailyWeatherBlock daily)
     {
-        DailyForecast.Clear();
+        var items = new List<DailyForecastItem>(10);
         if (daily.Time is not { Count: > 0 } days ||
             daily.WeatherCode is not { } dCodes ||
             daily.Temperature2mMax is not { } maxs ||
             daily.Temperature2mMin is not { } mins)
         {
+            DailyForecast.Clear();
             return;
         }
 
@@ -488,19 +524,16 @@ public partial class WeatherViewModel : ObservableObject
             var dateLabel = days[i];
             if (DateTime.TryParse(days[i], out var d))
             {
-                dateLabel = i switch
-                {
-                    0 => "今天",
-                    1 => "明天",
-                    _ => d.ToString("M月d日 ddd"),
-                };
+                dateLabel = d.Date == _forecastNow.Date ? "今天"
+                    : d.Date == _forecastNow.Date.AddDays(1) ? "明天"
+                    : d.ToString("M月d日 ddd");
             }
 
             var popText = pops is not null && i < pops.Count && pops[i] > 0
                 ? $"{pops[i]}%"
                 : string.Empty;
 
-            DailyForecast.Add(new DailyForecastItem
+            items.Add(new DailyForecastItem
             {
                 DateLabel = dateLabel,
                 Emoji = WeatherCodeMapper.Emoji(dCodes[i]),
@@ -511,6 +544,7 @@ public partial class WeatherViewModel : ObservableObject
                 PrecipitationChanceText = popText,
             });
         }
+        DailyForecast.ReplaceWith(items);
     }
 
     private void ApplySun(DailyWeatherBlock daily)
@@ -518,11 +552,11 @@ public partial class WeatherViewModel : ObservableObject
         string? sunriseRaw = daily.Sunrise is { Count: > 0 } ? daily.Sunrise[0] : null;
         string? sunsetRaw = daily.Sunset is { Count: > 0 } ? daily.Sunset[0] : null;
 
-        DateTimeOffset? rise = null;
-        DateTimeOffset? set = null;
-        if (DateTimeOffset.TryParse(sunriseRaw, out var r))
+        DateTime? rise = null;
+        DateTime? set = null;
+        if (DateTime.TryParse(sunriseRaw, out var r))
         {
-            rise = r.ToLocalTime();
+            rise = r;
             SunriseText = rise.Value.ToString("HH:mm");
         }
         else
@@ -530,9 +564,9 @@ public partial class WeatherViewModel : ObservableObject
             SunriseText = "—";
         }
 
-        if (DateTimeOffset.TryParse(sunsetRaw, out var s))
+        if (DateTime.TryParse(sunsetRaw, out var s))
         {
-            set = s.ToLocalTime();
+            set = s;
             SunsetText = set.Value.ToString("HH:mm");
         }
         else
@@ -578,10 +612,10 @@ public partial class WeatherViewModel : ObservableObject
         var hourly = forecast.Hourly;
         if (hourly?.Time is { Count: > 0 } && hourly.PrecipitationProbability is { } pops)
         {
-            var now = DateTimeOffset.Now;
+            var now = _forecastNow;
             for (var i = 0; i < Math.Min(hourly.Time.Count, pops.Count); i++)
             {
-                if (DateTimeOffset.TryParse(hourly.Time[i], out var t) && t >= now.AddMinutes(-30))
+                if (DateTime.TryParse(hourly.Time[i], out var t) && t >= now.AddMinutes(-30))
                 {
                     nextPop = pops[i];
                     break;
@@ -629,10 +663,10 @@ public partial class WeatherViewModel : ObservableObject
         var hourly = forecast.Hourly;
         if (hourly?.Time is { Count: > 0 } && hourly.UvIndex is { } uvs)
         {
-            var now = DateTimeOffset.Now;
+            var now = _forecastNow;
             for (var i = 0; i < Math.Min(hourly.Time.Count, uvs.Count); i++)
             {
-                if (DateTimeOffset.TryParse(hourly.Time[i], out var t) && t >= now.AddMinutes(-30))
+                if (DateTime.TryParse(hourly.Time[i], out var t) && t >= now.AddMinutes(-30))
                 {
                     uv = uvs[i];
                     break;
@@ -663,7 +697,8 @@ public partial class WeatherViewModel : ObservableObject
             return;
         }
 
-        var index = cur.UsAqi ?? cur.EuropeanAqi;
+        // The page and level thresholds explicitly use the US AQI scale.
+        var index = cur.UsAqi;
         if (index is null)
         {
             ResetAirQuality();
@@ -692,35 +727,6 @@ public partial class WeatherViewModel : ObservableObject
         AirQualityValue = "—";
         AirQualityLevel = "—";
         AirQualityDetail = "暂无空气质量数据";
-    }
-
-    private void ApplyGradient(WeatherMood mood)
-    {
-        // Premium navy→blue base, softly tinted by weather mood.
-        (GradientTop, GradientBottom) = mood switch
-        {
-            WeatherMood.Clear => (
-                Color.FromArgb(255, 10, 28, 72),
-                Color.FromArgb(255, 48, 110, 210)),
-            WeatherMood.Cloudy => (
-                Color.FromArgb(255, 28, 40, 68),
-                Color.FromArgb(255, 70, 95, 130)),
-            WeatherMood.Rain => (
-                Color.FromArgb(255, 16, 28, 52),
-                Color.FromArgb(255, 40, 70, 110)),
-            WeatherMood.Snow => (
-                Color.FromArgb(255, 36, 52, 80),
-                Color.FromArgb(255, 110, 150, 200)),
-            WeatherMood.Storm => (
-                Color.FromArgb(255, 12, 14, 36),
-                Color.FromArgb(255, 36, 40, 70)),
-            WeatherMood.Fog => (
-                Color.FromArgb(255, 40, 48, 64),
-                Color.FromArgb(255, 90, 105, 120)),
-            _ => (
-                Color.FromArgb(255, 12, 24, 56),
-                Color.FromArgb(255, 30, 72, 140)),
-        };
     }
 
     private sealed class CachedWeatherDashboard

@@ -65,6 +65,7 @@ public partial class ChatDetailViewModel : ObservableObject
     private bool _isRehydratingTail;
     private long _lastSyncTimestamp;
     private Guid? _lastSyncMessageId;
+    private long _loadMoreOperation;
     private bool _markedRead;
     private bool _wsHooked;
     private JoinCallResponse? _activeCall;
@@ -410,6 +411,13 @@ public partial class ChatDetailViewModel : ObservableObject
     public event EventHandler? OlderMessagesLoaded;
     public event EventHandler<MessageAttachmentViewModel>? OpenImageRequested;
 
+    /// <summary>
+    /// Fired after <see cref="LoadAroundMessageAsync"/> has painted a window around a target
+    /// message. The handler (typically the chat detail page) scrolls the bubble into view
+    /// and briefly toggles <see cref="MessageItemViewModel.IsHighlighted"/>.
+    /// </summary>
+    public event EventHandler<Guid>? JumpToMessageRequested;
+
     /// <summary>Phase 5: UI dropped newer bubbles; scroll-to-bottom should rehydrate from L2.</summary>
     public bool HasDetachedNewer => _hasDetachedNewer;
 
@@ -427,6 +435,7 @@ public partial class ChatDetailViewModel : ObservableObject
 
         // Abort any in-flight load for the previous room before swapping identity.
         CancelMessageLoad();
+        _room = null;
         _roomEncryptionStateKnown = false;
         _requiresUnavailableMlsState = false;
         RoomId = roomId;
@@ -471,6 +480,7 @@ public partial class ChatDetailViewModel : ObservableObject
         ErrorMessage = null;
         _markedRead = false;
         _voiceLimitStopRequested = 0;
+        IsLoadingMore = false;
         RecordingElapsedText = "0:00";
         E2eeStatusText = "加密状态：正在确认（确认前已禁用发送）";
         UpdateCanSend();
@@ -482,7 +492,6 @@ public partial class ChatDetailViewModel : ObservableObject
     public void Initialize(SnChatRoom room)
     {
         ArgumentNullException.ThrowIfNull(room);
-        _room = room;
         Initialize(room.Id, room.Name);
         ApplyRoomEncryptionState(room);
     }
@@ -490,6 +499,8 @@ public partial class ChatDetailViewModel : ObservableObject
     private void CancelMessageLoad()
     {
         _loadGeneration++;
+        Interlocked.Increment(ref _loadMoreOperation);
+        IsLoadingMore = false;
         if (_loadCts is null)
         {
             return;
@@ -660,6 +671,240 @@ public partial class ChatDetailViewModel : ObservableObject
         Update();
     }
 
+    /// <summary>
+    /// Open the room with a window of messages centred on <paramref name="messageId"/>, then
+    /// fire <see cref="JumpToMessageRequested"/> so the page can scroll + highlight.
+    /// Used by the global full-text search results and the reply-quote tap handler.
+    /// </summary>
+    public async Task LoadAroundMessageAsync(Guid messageId, CancellationToken ct = default)
+    {
+        try
+        {
+            await LoadAroundMessageCoreAsync(messageId, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // Page navigation intentionally fire-and-forgets this operation.
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ChatDetail] centered message load failed: {ex.Message}");
+        }
+    }
+
+    private async Task LoadAroundMessageCoreAsync(Guid messageId, CancellationToken ct)
+    {
+        if (RoomId == Guid.Empty || messageId == Guid.Empty)
+        {
+            return;
+        }
+
+        // New generation invalidates any in-flight paint from a previous Initial / LoadAround.
+        CancelMessageLoad();
+        // A centered navigation supersedes any in-flight older-page request. Reset this
+        // independently of the old request's generation so its spinner cannot survive the jump.
+        IsLoadingMore = false;
+        _loadCts = ct.CanBeCanceled
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
+            : new CancellationTokenSource();
+        var localCt = _loadCts.Token;
+        var generation = _loadGeneration;
+        var roomId = RoomId;
+        var currentAccountId = _authService.CurrentAccount?.Id;
+
+        SnChatMessage? target;
+        try
+        {
+            IsBusy = true;
+            ErrorMessage = null;
+            target = await _localStore
+                .FindMessageAsync(roomId, messageId, localCt)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[ChatDetail] LoadAround local lookup failed: {ex.Message}");
+            target = null;
+        }
+
+        // Fall back to the server if the message is not in the local SQLite cache. Covers
+        // older messages that were never loaded into the per-account DB (no sync yet,
+        // evicted, or belong to a different bound account).
+        if (target is null)
+        {
+            try
+            {
+                var fetched = await _api
+                    .GetMessageAsync(roomId, messageId, localCt)
+                    .ConfigureAwait(false);
+                if (fetched is not null)
+                {
+                    try
+                    {
+                        _cache.UpsertRoomMessage(roomId, fetched);
+                    }
+                    catch
+                    {
+                        // dual-write must never break the jump path
+                    }
+
+                    target = fetched;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine($"[ChatDetail] LoadAround server fallback failed: {ex.Message}");
+            }
+        }
+
+        if (IsStaleLoad(generation, roomId, localCt))
+        {
+            // A newer jump/room load owns the VM now. Never supersede it with a fallback
+            // newest-page load from this obsolete request.
+            return;
+        }
+
+        if (target is null)
+        {
+            // Give up on the jump: open at newest so the room is still usable, surface a hint.
+            await LoadNewestAfterJumpFailureAsync(
+                generation, roomId, localCt, "目标消息不在本地缓存中，已打开到最新一页。").ConfigureAwait(false);
+            return;
+        }
+
+        if (IsStaleLoad(generation, roomId, localCt))
+        {
+            return;
+        }
+
+        // Centered navigation bypasses LoadInitialAsync. Start shared room work only after
+        // this request has a valid target and is still authoritative.
+        StartRoomSession(generation, roomId, localCt);
+
+        const int halfWindow = 30;
+        var targetCursor = new MessageKeysetCursor(target.RoomSequence, target.Id);
+        Task<IReadOnlyList<SnChatMessage>> olderTask;
+        Task<IReadOnlyList<SnChatMessage>> newerTask;
+        try
+        {
+            olderTask = _localStore.GetOlderMessagesAsync(roomId, targetCursor, halfWindow, localCt);
+            newerTask = _localStore.GetNewerMessagesAsync(roomId, targetCursor, halfWindow, localCt);
+            await Task.WhenAll(olderTask, newerTask).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (IsStaleLoad(generation, roomId, localCt))
+            {
+                return;
+            }
+
+            System.Diagnostics.Debug.WriteLine($"[ChatDetail] LoadAround context window failed: {ex.Message}");
+            await LoadNewestAfterJumpFailureAsync(
+                generation, roomId, localCt, "加载目标消息上下文失败，已打开到最新一页。").ConfigureAwait(false);
+            return;
+        }
+
+        if (IsStaleLoad(generation, roomId, localCt))
+        {
+            return;
+        }
+
+        // The local-store contract returns ascending pages, but normalize here as a boundary
+        // defense so older[0] is always the oldest painted message.
+        var older = NormalizeOrder(olderTask.Result.ToList());
+        var newer = NormalizeOrder(newerTask.Result.ToList());
+        var page = new List<SnChatMessage>(older.Count + 1 + newer.Count);
+        page.AddRange(older);
+        page.Add(target);
+        page.AddRange(newer);
+
+        var items = BuildMessageItems(page, currentAccountId);
+        var localHitFullPage = older.Count >= halfWindow;
+
+        await RunOnUiAsync(() =>
+        {
+            if (IsStaleLoad(generation, roomId, localCt))
+            {
+                return;
+            }
+
+            Messages.ReplaceAll(items);
+            _knownMessageIds.Clear();
+            foreach (var entry in items)
+            {
+                if (entry.Message.Id != Guid.Empty)
+                {
+                    _knownMessageIds.Add(entry.Message.Id);
+                }
+            }
+
+            _offset = page.Count;
+            _hasMoreOlder = localHitFullPage;
+            _hasMore = _hasMoreOlder;
+            _oldestLoaded = older.Count > 0
+                ? new MessageKeysetCursor(older[0].RoomSequence, older[0].Id)
+                : targetCursor;
+            // A centered load fetches only halfWindow newer rows. Keep a tail cursor when that
+            // page is full so scrolling back to the bottom can rehydrate the remaining tail.
+            _hasDetachedNewer = newer.Count >= halfWindow;
+            _detachedAfter = _hasDetachedNewer
+                ? new MessageKeysetCursor(page[^1].RoomSequence, page[^1].Id)
+                : null;
+            JumpToMessageHintText = null;
+            IsBusy = false;
+        }).ConfigureAwait(false);
+
+        _ = LoadMediaAsync(localCt, generation, roomId);
+
+        await RunOnUiAsync(() =>
+        {
+            if (!IsStaleLoad(generation, roomId, localCt))
+            {
+                JumpToMessageRequested?.Invoke(this, messageId);
+            }
+        }).ConfigureAwait(false);
+    }
+
+    private async Task LoadNewestAfterJumpFailureAsync(
+        int generation, Guid roomId, CancellationToken cancellationToken, string hint)
+    {
+        Task? fallback = null;
+        var fallbackGeneration = generation;
+        await RunOnUiAsync(() =>
+        {
+            if (!IsStaleLoad(generation, roomId, cancellationToken))
+            {
+                fallback = LoadInitialAsync();
+                fallbackGeneration = _loadGeneration;
+            }
+        }).ConfigureAwait(false);
+
+        if (fallback is null) return;
+        await fallback.ConfigureAwait(false);
+        await RunOnUiAsync(() =>
+        {
+            if (fallbackGeneration == _loadGeneration && roomId == RoomId)
+            {
+                JumpToMessageHintText = hint;
+            }
+        }).ConfigureAwait(false);
+    }
+
+    /// <summary>Public alias used by the page-level reply-quote tap handler.</summary>
+    public Task JumpToMessageAsync(Guid messageId)
+        => LoadAroundMessageAsync(messageId);
+
+    [ObservableProperty]
+    public partial string? JumpToMessageHintText { get; set; }
+
     [RelayCommand]
     private async Task LoadInitialAsync()
     {
@@ -794,19 +1039,7 @@ public partial class ChatDetailViewModel : ObservableObject
             }
 
             // Media / meta / bots must not block window chrome; cancel with this room load.
-            _ = LoadMediaAsync(ct, generation, roomId);
-            _ = MarkRoomReadIfNeededAsync();
-            _ = LoadRoomMetaAsync(ct, generation, roomId);
-            _ = LoadBotCommandsAsync(ct, generation, roomId);
-            // Full member list only when the panel is opened (large groups are expensive).
-            await RunOnUiAsync(() =>
-            {
-                if (!IsStaleLoad(generation, roomId, ct))
-                {
-                    HookWebSocket();
-                }
-            }).ConfigureAwait(false);
-            _ = EstablishRealtimeAsync(roomId, generation, ct);
+            StartRoomSession(generation, roomId, ct);
         }
         catch (OperationCanceledException)
         {
@@ -1077,6 +1310,37 @@ public partial class ChatDetailViewModel : ObservableObject
                 }
             }).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Starts room-wide work shared by newest-page and centered-message navigation.
+    /// Message navigation must not skip this just because it does not call LoadInitialAsync.
+    /// </summary>
+    private void StartRoomSession(int generation, Guid roomId, CancellationToken cancellationToken)
+    {
+        _ = LoadMediaAsync(cancellationToken, generation, roomId);
+        _ = MarkRoomReadIfNeededAsync();
+        _ = LoadRoomMetaAsync(cancellationToken, generation, roomId);
+        _ = LoadBotCommandsAsync(cancellationToken, generation, roomId);
+
+        // Hooking is idempotent and must happen on the UI thread because packet handlers update
+        // bindable state directly before dispatching when necessary.
+        if (App.DispatcherQueue is { } dispatcher && !dispatcher.HasThreadAccess)
+        {
+            dispatcher.TryEnqueue(() =>
+            {
+                if (!IsStaleLoad(generation, roomId, cancellationToken))
+                {
+                    HookWebSocket();
+                }
+            });
+        }
+        else if (!IsStaleLoad(generation, roomId, cancellationToken))
+        {
+            HookWebSocket();
+        }
+
+        _ = EstablishRealtimeAsync(roomId, generation, cancellationToken);
     }
 
     private Task LoadRoomMetaAsync()
@@ -2483,16 +2747,6 @@ public partial class ChatDetailViewModel : ObservableObject
                     ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
                     _ = LoadMediaAsync();
                 }
-                else
-                {
-                    // update existing bubble if same id
-                    var existing = Messages.FirstOrDefault(m => m.Message.Id == msg.Id && msg.Id != Guid.Empty);
-                    if (existing is not null && !string.IsNullOrWhiteSpace(msg.Content))
-                    {
-                        existing.ApplyEditedContent(msg.Content!);
-                        existing.RefreshReactionText();
-                    }
-                }
             }
             catch
             {
@@ -2535,10 +2789,8 @@ public partial class ChatDetailViewModel : ObservableObject
             }
             if (type.Contains("update", StringComparison.OrdinalIgnoreCase))
             {
-                var updated = Messages.FirstOrDefault(x => x.Message.Id == message.Id);
-                if (updated is not null && !string.IsNullOrEmpty(message.Content))
+                if (ApplyFullMessageUpdate(message))
                 {
-                    updated.ApplyEditedContent(message.Content);
                     return;
                 }
             }
@@ -2807,11 +3059,13 @@ public partial class ChatDetailViewModel : ObservableObject
         }
 
         // Sticker mode: send as message content immediately
+        var clientMessageId = string.Empty;
         try
         {
             IsSending = true;
             ErrorMessage = null;
-            var clientMessageId = Guid.NewGuid().ToString("N");
+            clientMessageId = Guid.NewGuid().ToString("N");
+            var replied = ReplyTarget;
             var request = new SendMessageRequest
             {
                 Content = placeholder,
@@ -2820,8 +3074,8 @@ public partial class ChatDetailViewModel : ObservableObject
                 RepliedMessageId = ReplyTarget?.Message.Id is { } rid && rid != Guid.Empty ? rid : null,
             };
 
+            AddLocalEcho(placeholder, null, null, null, clientMessageId, replied);
             await _api.SendMessageAsync(RoomId.ToString(), request).ConfigureAwait(true);
-            var replied = ReplyTarget;
             ReplyTarget = null;
 
             // Cache file id so history reloads can paint without another lookup.
@@ -2830,16 +3084,12 @@ public partial class ChatDetailViewModel : ObservableObject
                 RememberStickerFileId(placeholder, item.ImageFileId!);
             }
 
-            AddLocalEcho(placeholder, null, null, null, clientMessageId, replied);
-
             // Seed FileId so FastWin2DImage can paint without waiting for sticker lookup.
-            if (Messages.Count > 0 && !string.IsNullOrWhiteSpace(item.ImageFileId))
+            var echoVm = Messages.FirstOrDefault(x =>
+                string.Equals(x.Message.ClientMessageId, clientMessageId, StringComparison.Ordinal));
+            if (echoVm is not null && !string.IsNullOrWhiteSpace(item.ImageFileId))
             {
-                var echoVm = Messages[^1];
-                if (string.Equals(echoVm.Message.ClientMessageId, clientMessageId, StringComparison.Ordinal))
-                {
-                    echoVm.SeedStickerFromFileId(placeholder, item.ImageFileId!);
-                }
+                echoVm.SeedStickerFromFileId(placeholder, item.ImageFileId!);
             }
 
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
@@ -2848,6 +3098,7 @@ public partial class ChatDetailViewModel : ObservableObject
         }
         catch (SolarApiException ex)
         {
+            RemovePendingEcho(clientMessageId);
             ErrorMessage = ex.Message;
             _toast.Error("贴纸发送失败：" + (ex.ApiMessage ?? ex.Message));
         }
@@ -3333,6 +3584,7 @@ public partial class ChatDetailViewModel : ObservableObject
         var currentAccountId = _authService.CurrentAccount?.Id;
         var offset = _offset;
         var olderThan = _oldestLoaded;
+        var operation = Interlocked.Increment(ref _loadMoreOperation);
 
         try
         {
@@ -3549,11 +3801,11 @@ public partial class ChatDetailViewModel : ObservableObject
         }
         finally
         {
-            if (generation == _loadGeneration)
+            if (operation == Volatile.Read(ref _loadMoreOperation))
             {
                 await RunOnUiAsync(() =>
                 {
-                    if (generation == _loadGeneration)
+                    if (operation == Volatile.Read(ref _loadMoreOperation))
                     {
                         IsLoadingMore = false;
                     }
@@ -3822,6 +4074,7 @@ public partial class ChatDetailViewModel : ObservableObject
             return;
         }
 
+        var clientMessageId = string.Empty;
         try
         {
             IsSending = true;
@@ -3835,7 +4088,6 @@ public partial class ChatDetailViewModel : ObservableObject
 
             var attachmentIds = string.IsNullOrWhiteSpace(attachmentId) ? Array.Empty<string>() : new[] { attachmentId! };
             SendMessageRequest request;
-            string clientMessageId;
             if (_requiresUnavailableMlsState)
             {
                 var room = _room ?? throw new MlsClientException("当前房间 MLS 元数据不可用。", recoverable: true);
@@ -3856,13 +4108,7 @@ public partial class ChatDetailViewModel : ObservableObject
                 };
             }
 
-            await _api.SendMessageAsync(RoomId.ToString(), request).ConfigureAwait(true);
-            Draft = string.Empty;
             var repliedSnapshot = ReplyTarget;
-            ReplyTarget = null;
-            ClearPendingImage();
-
-            // Show immediately; the sync copy replaces the echo in place (matched by client_message_id).
             AddLocalEcho(
                 text,
                 attachmentId,
@@ -3870,12 +4116,20 @@ public partial class ChatDetailViewModel : ObservableObject
                 attachmentMimeType,
                 clientMessageId,
                 repliedSnapshot);
+
+            await _api.SendMessageAsync(RoomId.ToString(), request).ConfigureAwait(true);
+            Draft = string.Empty;
+            ReplyTarget = null;
+            ClearPendingImage();
+
+            // The echo was registered before HTTP so either packet order converges by client ID.
             ScrollToBottomRequested?.Invoke(this, EventArgs.Empty);
             _ = LoadMediaAsync();
             _ = ReconcileAfterSendAsync();
         }
         catch (Exception ex) when (ex is SolarApiException or MlsClientException or MlsNativeException)
         {
+            RemovePendingEcho(clientMessageId);
             ErrorMessage = ex.Message;
         }
         finally
@@ -3930,6 +4184,34 @@ public partial class ChatDetailViewModel : ObservableObject
         };
 
         AddMessageInternal(echo, append: true, playSendAnimation: true);
+    }
+
+    private void RemovePendingEcho(string clientMessageId)
+    {
+        if (string.IsNullOrWhiteSpace(clientMessageId))
+        {
+            return;
+        }
+
+        for (var i = Messages.Count - 1; i >= 0; i--)
+        {
+            var message = Messages[i].Message;
+            if (message.Id != Guid.Empty
+                || !string.Equals(message.ClientMessageId, clientMessageId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            Messages.RemoveAt(i);
+            try
+            {
+                _cache.RemoveRoomMessage(RoomId, Guid.Empty, clientMessageId);
+            }
+            catch
+            {
+                // best-effort local cleanup
+            }
+        }
     }
 
     private static string TruncatePreview(string? text)
@@ -4262,7 +4544,7 @@ public partial class ChatDetailViewModel : ObservableObject
             {
                 var existing = Messages[i].Message;
                 if (existing.Id == Guid.Empty
-                    && string.Equals(existing.ClientMessageId, message.ClientMessageId, StringComparison.Ordinal))
+                    && ChatMessageReconciliation.HasSameClientMessageId(existing, message))
                 {
                     // RFC 9420 senders cannot decrypt their own application message. Preserve the
                     // locally-held plaintext when replacing the optimistic echo with the server row.
@@ -4275,16 +4557,28 @@ public partial class ChatDetailViewModel : ObservableObject
                         _knownMessageIds.Add(message.Id);
                     }
 
-                    Messages[i] = new MessageItemViewModel(message, currentId, _imageLoader);
+                    var replacement = new MessageItemViewModel(
+                        message,
+                        currentId,
+                        _imageLoader,
+                        Messages[i].TakePendingSendAnimation());
+                    replacement.CopyResolvedStickersFrom(Messages[i]);
+                    Messages[i] = replacement;
                     _cache.UpsertRoomMessage(RoomId, message);
                     return true;
                 }
             }
         }
 
-        if (message.Id != Guid.Empty && !_knownMessageIds.Add(message.Id))
+        if (message.Id != Guid.Empty && _knownMessageIds.Contains(message.Id))
         {
+            ApplyFullMessageUpdate(message);
             return false;
+        }
+
+        if (message.Id != Guid.Empty)
+        {
+            _knownMessageIds.Add(message.Id);
         }
 
         var item = new MessageItemViewModel(
@@ -4430,6 +4724,40 @@ public partial class ChatDetailViewModel : ObservableObject
     {
         var message = item.Message;
 
+        if (!string.IsNullOrEmpty(message.ClientMessageId))
+        {
+            for (var i = 0; i < Messages.Count; i++)
+            {
+                var existing = Messages[i].Message;
+                if (existing.Id == Guid.Empty
+                    && ChatMessageReconciliation.HasSameClientMessageId(existing, message))
+                {
+                    if (message.Id != Guid.Empty)
+                    {
+                        _knownMessageIds.Add(message.Id);
+                    }
+
+                    var existingVm = Messages[i];
+                    var replacement = new MessageItemViewModel(
+                        message,
+                        _authService.CurrentAccount?.Id,
+                        _imageLoader,
+                        existingVm.TakePendingSendAnimation());
+                    replacement.CopyResolvedStickersFrom(existingVm);
+                    item = replacement;
+                    Messages[i] = item;
+                    _cache.UpsertRoomMessage(RoomId, message);
+                    return true;
+                }
+            }
+        }
+
+        if (message.Id != Guid.Empty && _knownMessageIds.Contains(message.Id))
+        {
+            ApplyFullMessageUpdate(message);
+            return false;
+        }
+
         // Phase 5: UI tail was trimmed — keep L2 warm but do not append into a gap.
         // Scroll-to-bottom rehydrate will paint this message with the rest of the tail.
         if (append && _hasDetachedNewer)
@@ -4438,29 +4766,9 @@ public partial class ChatDetailViewModel : ObservableObject
             return true;
         }
 
-        if (!string.IsNullOrEmpty(message.ClientMessageId))
+        if (message.Id != Guid.Empty)
         {
-            for (var i = 0; i < Messages.Count; i++)
-            {
-                var existing = Messages[i].Message;
-                if (existing.Id == Guid.Empty
-                    && string.Equals(existing.ClientMessageId, message.ClientMessageId, StringComparison.Ordinal))
-                {
-                    if (message.Id != Guid.Empty)
-                    {
-                        _knownMessageIds.Add(message.Id);
-                    }
-
-                    Messages[i] = item;
-                    _cache.UpsertRoomMessage(RoomId, message);
-                    return true;
-                }
-            }
-        }
-
-        if (message.Id != Guid.Empty && !_knownMessageIds.Add(message.Id))
-        {
-            return false;
+            _knownMessageIds.Add(message.Id);
         }
 
         if (append)
@@ -4490,6 +4798,45 @@ public partial class ChatDetailViewModel : ObservableObject
         }
 
         _cache.UpsertRoomMessage(RoomId, message);
+        return true;
+    }
+
+    private bool ApplyFullMessageUpdate(SnChatMessage message)
+    {
+        if (message.Id == Guid.Empty)
+        {
+            return false;
+        }
+
+        var index = Messages.ToList().FindIndex(item => item.Message.Id == message.Id);
+        if (index < 0)
+        {
+            // The UI may have trimmed this row, but its L1/L2 payload must still converge.
+            _cache.UpsertRoomMessage(RoomId, message);
+            return false;
+        }
+
+        var existing = Messages[index];
+        // The sender may receive an encrypted server envelope without a decryptable Content;
+        // retain only the local plaintext in that specific case, while replacing every other
+        // field from the server payload.
+        if (message.GetEncryptionMeta() is not null && string.IsNullOrEmpty(message.Content))
+        {
+            message.Content = existing.Message.Content;
+        }
+
+        var replacement = new MessageItemViewModel(
+            message,
+            _authService.CurrentAccount?.Id,
+            _imageLoader,
+            existing.TakePendingSendAnimation());
+        replacement.CopyResolvedStickersFrom(existing);
+        Messages[index] = replacement;
+        _knownMessageIds.Add(message.Id);
+        _cache.UpsertRoomMessage(RoomId, message);
+        // Full payload replacement can introduce attachments or unresolved sticker placeholders.
+        // Refresh media without treating the update as a new message or scrolling the list.
+        _ = LoadMediaAsync();
         return true;
     }
 

@@ -99,3 +99,21 @@ public sealed class PostFeedNavArgs
     /// <summary>Required for collection feeds.</summary>
     public string? PublisherName { get; }
 }
+
+/// <summary>
+/// Open <see cref="Views.ChatDetailPage"/> and jump to a specific message, scrolling it into
+/// view with a brief highlight. Used by the global full-text search results panel and by the
+/// reply-quote tap handler.
+/// </summary>
+public sealed class ChatMessageNavArgs
+{
+    public ChatMessageNavArgs(Guid roomId, Guid messageId)
+    {
+        RoomId = roomId;
+        MessageId = messageId;
+    }
+
+    public Guid RoomId { get; }
+
+    public Guid MessageId { get; }
+}

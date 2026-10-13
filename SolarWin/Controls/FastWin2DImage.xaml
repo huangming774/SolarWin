@@ -16,7 +16,6 @@
         <canvas:CanvasControl
             x:Name="ImageCanvas"
             ClearColor="Transparent"
-            Draw="ImageCanvas_OnDraw"
             Opacity="0" />
     </Grid>
 </UserControl>

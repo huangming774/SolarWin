@@ -251,7 +251,8 @@
                                         Tag="{x:Bind}" />
                                 </MenuFlyout>
                             </Border.ContextFlyout>
-                            <StackPanel Spacing="6">
+                            <Grid>
+                                <StackPanel Spacing="6">
                                 <TextBlock
                                     Opacity="{x:Bind SenderNameOpacity}"
                                     Style="{StaticResource CaptionTextBlockStyle}"
@@ -265,7 +266,9 @@
                                     BorderBrush="{ThemeResource AccentFillColorDefaultBrush}"
                                     BorderThickness="3,0,0,0"
                                     CornerRadius="6"
-                                    Opacity="{x:Bind ReplyPreviewOpacity}">
+                                    Opacity="{x:Bind ReplyPreviewOpacity}"
+                                    Tag="{x:Bind}"
+                                    Tapped="ReplyPreview_OnTapped">
                                     <TextBlock
                                         FontSize="12"
                                         Opacity="0.85"
@@ -563,6 +566,14 @@
                                     </StackPanel>
                                 </Border>
                             </StackPanel>
+                                <Border
+                                    Background="{x:Bind HighlightOverlay}"
+                                    CornerRadius="{x:Bind BubbleCornerRadius}"
+                                    HorizontalAlignment="Stretch"
+                                    IsHitTestVisible="False"
+                                    VerticalAlignment="Stretch"
+                                    Visibility="{x:Bind HighlightOverlayVisibility}" />
+                            </Grid>
                         </Border>
                     </Grid>
                 </DataTemplate>

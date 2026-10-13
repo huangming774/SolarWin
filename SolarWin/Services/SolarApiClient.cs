@@ -3608,11 +3608,11 @@ public sealed class SolarApiClient : ISolarApiClient
             DeviceName = DeviceInfoHelper.GetDeviceName(),
             Platform = ClientPlatform.Windows,
         };
-        return PostAsync<QrGenerateRequest, QrGenerateResponse>("/stargate/auth/qr/generate", body, cancellationToken);
+        return PostAsync<QrGenerateRequest, QrGenerateResponse>(QrLoginRoutes.Generate, body, cancellationToken);
     }
 
     public Task<QrStatusResponse> GetQrLoginStatusAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
-        => GetAsync<QrStatusResponse>($"/stargate/auth/qr/{qrChallengeId:D}", cancellationToken);
+        => GetAsync<QrStatusResponse>(QrLoginRoutes.Status(qrChallengeId), cancellationToken);
 
     public Task ScanQrLoginAsync(Guid qrChallengeId, CancellationToken cancellationToken = default)
         => PostAsync($"/stargate/auth/qr/{qrChallengeId:D}/scan", cancellationToken);

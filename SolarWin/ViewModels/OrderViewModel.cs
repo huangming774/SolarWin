@@ -62,6 +62,9 @@ public partial class OrderViewModel : ObservableObject
     private double _previewPrivilegeMoney;
     private double _previewDiscountPrice;
     private long _previewAboutTime;
+    private string _previewShopNameWithAddress = "";
+    private int _draftGeneration;
+    private int _orderSessionGeneration;
     private CancellationTokenSource? _opCts;
     private int _shopGeneration;
     private CancellationTokenSource? _menuCts;
@@ -102,9 +105,22 @@ public partial class OrderViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasOrderId))]
+    [NotifyPropertyChangedFor(nameof(DisplayPaymentSummary))]
     public partial string OrderId { get; set; } = "";
     public bool HasOrderId => OrderId.Trim().Length > 0;
-    [ObservableProperty] public partial string PaymentSummary { get; set; } = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayPaymentSummary))]
+    public partial string PaymentSummary { get; set; } = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayPaymentSummary))]
+    public partial string DraftPaymentSummary { get; set; } = "";
+
+    public string DisplayPaymentSummary => HasOrderId
+        ? PaymentSummary
+        : string.IsNullOrWhiteSpace(DraftPaymentSummary) ? PaymentSummary : DraftPaymentSummary;
+
+    public string? CurrentDraftSignature => BuildOrderSignature();
 
     public Visibility PayVisibility => PayImageSource is null ? Visibility.Collapsed : Visibility.Visible;
     public BitmapImage? PaySource
@@ -116,9 +132,10 @@ public partial class OrderViewModel : ObservableObject
     public bool CanOpenPayInBrowser => PaySource is not null;
     public double CartTotal => Cart.Sum(x => x.Price * x.Amount);
     public string CartTotalText => $"商品估价 ¥{CartTotal:0.00}";
-    public bool HasValidPreview => _previewSignature == BuildOrderSignature();
+    public bool HasValidPreview => _previewSignature is not null
+        && _previewSignature == BuildOrderSignature();
     public string ConfirmationText =>
-        $"自提门店：{SelectedShop?.NameWithAddress}\n商品：{Cart.Count} 项\n原价：¥{_previewInitialPrice:0.00}\n优惠：¥{_previewPrivilegeMoney:0.00}\n应付：¥{_previewDiscountPrice:0.00}\n确认后将创建真实订单（到店自取，无配送），并生成支付二维码。";
+        $"自提门店：{_previewShopNameWithAddress}\n商品：{Cart.Count} 项\n原价：¥{_previewInitialPrice:0.00}\n优惠：¥{_previewPrivilegeMoney:0.00}\n应付：¥{_previewDiscountPrice:0.00}\n确认后将创建真实订单（到店自取，无配送），并生成支付二维码。";
 
     partial void OnSelectedShopChanged(OrderShop? value)
     {
@@ -136,6 +153,9 @@ public partial class OrderViewModel : ObservableObject
     {
         try
         {
+            _orderSessionGeneration++;
+            _opCts?.Cancel();
+            _menuCts?.Cancel();
             // 先清 SelectedShop 触发 OnSelectedShopChanged（CancelMenuLoad + 清 Products/Cart + 失效预览签名）
             SelectedShop = null;
             Shops.Clear();
@@ -146,6 +166,12 @@ public partial class OrderViewModel : ObservableObject
             LocationText = "";
             ShopKeyword = "";
             StatusText = "请输入密钥后开始点餐";
+            PayUrl = null;
+            PayQrImage = null;
+            OrderId = "";
+            PaymentSummary = "";
+            DraftPaymentSummary = "";
+            OnPropertyChanged(nameof(DisplayPaymentSummary));
         }
         catch
         {
@@ -409,9 +435,11 @@ public partial class OrderViewModel : ObservableObject
 
     private void OnCartChanged()
     {
+        _draftGeneration++;
         InvalidatePreviewAndPayment();
         OnPropertyChanged(nameof(CartTotal));
         OnPropertyChanged(nameof(CartTotalText));
+        OnPropertyChanged(nameof(DisplayPaymentSummary));
     }
 
     [RelayCommand]
@@ -425,12 +453,36 @@ public partial class OrderViewModel : ObservableObject
 
         await RunAsync(async ct =>
         {
-            InvalidatePreviewAndPayment();
+            var previewGeneration = _draftGeneration;
+            var previewSessionGeneration = _orderSessionGeneration;
+            var previewSignature = BuildOrderSignature();
+            var previewShop = shop;
+            var productList = BuildProductList();
+            if (previewSignature is null)
+            {
+                StatusText = "订单内容已变化，请重新预览";
+                return;
+            }
+
+            InvalidatePreviewOnly();
             var response = await _mcp.CallAsync("previewOrder", new Dictionary<string, object?>
             {
-                ["deptId"] = shop.DeptId,
-                ["productList"] = BuildProductList()
+                ["deptId"] = previewShop.DeptId,
+                ["productList"] = productList
             }, ct);
+
+            // The cart/shop can change while the server is calculating. Never attach
+            // an old response to the newer draft or mark it valid for creation.
+            if (previewSessionGeneration != _orderSessionGeneration
+                || !ViewModelRaceOwnership.OwnsOrderDraft(
+                    previewGeneration,
+                    _draftGeneration,
+                    previewSignature,
+                    BuildOrderSignature()))
+            {
+                StatusText = "订单内容已变化，预览结果已过期，请重新预览";
+                return;
+            }
 
             if (!LuckinJson.TryNumber(response, out _previewDiscountPrice, "discountPrice"))
             {
@@ -443,11 +495,13 @@ public partial class OrderViewModel : ObservableObject
             _previewCouponCodeList = LuckinJson.TryFindProperty(response, out var coupons, "couponCodeList") && coupons.ValueKind == JsonValueKind.Array
                 ? coupons.Clone()
                 : null;
-            _previewSignature = BuildOrderSignature();
-            PaymentSummary = BuildPaymentSummary();
+            _previewSignature = previewSignature;
+            _previewShopNameWithAddress = previewShop.NameWithAddress;
+            DraftPaymentSummary = BuildPaymentSummary(_previewShopNameWithAddress);
             StatusText = $"订单预览完成，应付 ¥{_previewDiscountPrice:0.00}";
             OnPropertyChanged(nameof(HasValidPreview));
             OnPropertyChanged(nameof(ConfirmationText));
+            OnPropertyChanged(nameof(DisplayPaymentSummary));
         });
     }
 
@@ -467,48 +521,96 @@ public partial class OrderViewModel : ObservableObject
 
         await RunAsync(async ct =>
         {
+            var createGeneration = _draftGeneration;
+            var createSessionGeneration = _orderSessionGeneration;
+            var createSignature = BuildOrderSignature();
+            var createShop = shop;
+            var createProductList = BuildProductList();
+            var createCouponCodeList = _previewCouponCodeList?.Clone();
+            var createInitialPrice = _previewInitialPrice;
+            var createPrivilegeMoney = _previewPrivilegeMoney;
+            var createDiscountPrice = _previewDiscountPrice;
+            var createAboutTime = _previewAboutTime;
+            var createShopNameWithAddress = _previewShopNameWithAddress;
+            if (createSessionGeneration != _orderSessionGeneration
+                || !HasValidPreview
+                || !ViewModelRaceOwnership.OwnsOrderDraft(
+                    createGeneration,
+                    _draftGeneration,
+                    createSignature,
+                    _previewSignature))
+            {
+                StatusText = "订单内容已变化，请重新预览后再创建";
+                return;
+            }
+
             var args = new Dictionary<string, object?>
             {
-                ["deptId"] = shop.DeptId,
-                ["productList"] = BuildProductList(),
-                ["longitude"] = shop.Longitude,
-                ["latitude"] = shop.Latitude
+                ["deptId"] = createShop.DeptId,
+                ["productList"] = createProductList,
+                ["longitude"] = createShop.Longitude,
+                ["latitude"] = createShop.Latitude
             };
-            if (_previewCouponCodeList is { ValueKind: JsonValueKind.Array } coupons && coupons.GetArrayLength() > 0)
+            if (createCouponCodeList is { ValueKind: JsonValueKind.Array } coupons && coupons.GetArrayLength() > 0)
             {
                 args["couponCodeList"] = coupons;
             }
 
             var response = await _mcp.CallAsync("createOrder", args, ct);
+            if (createSessionGeneration != _orderSessionGeneration)
+            {
+                return;
+            }
             // createOrder 成功响应格式此前未实测过（2026-09-08 店铺打烊），落盘留现场便于排查
             LogOrderResponse(response);
 
             // 先存订单号：二维码异常时订单已在瑞幸后台创建，必须保住查询/取消入口
-            OrderId = LuckinJson.String(response, "orderIdStr", "orderId");
-            if (LuckinJson.TryNumber(response, out var createdDiscountPrice, "discountPrice"))
-            {
-                _previewDiscountPrice = createdDiscountPrice;
-            }
-            PaymentSummary = BuildPaymentSummary();
+            var createdOrderId = LuckinJson.String(response, "orderIdStr", "orderId");
+            var createdDiscount = LuckinJson.TryNumber(response, out var serverDiscountPrice, "discountPrice")
+                ? serverDiscountPrice
+                : createDiscountPrice;
+            var createdSummary = BuildPaymentSummary(
+                createInitialPrice,
+                createPrivilegeMoney,
+                createdDiscount,
+                createAboutTime,
+                createShopNameWithAddress);
+            OrderId = createdOrderId;
+            PaymentSummary = createdSummary;
 
             var paymentPayload = LuckinJson.String(response, PaymentPayloadFields);
-            var paymentShown = await TryShowPaymentAsync(paymentPayload, ct);
-            StatusText = (paymentShown, OrderId.Length > 0) switch
+            var paymentShown = await TryShowPaymentAsync(paymentPayload, ct, createSessionGeneration);
+            if (createSessionGeneration != _orderSessionGeneration)
             {
-                (true, true) => $"真实订单 {OrderId} 已创建，请使用下方二维码完成支付",
+                return;
+            }
+            StatusText = (paymentShown, createdOrderId.Length > 0) switch
+            {
+                (true, true) => $"真实订单 {createdOrderId} 已创建，请使用下方二维码完成支付",
                 (true, false) => "真实订单已创建，请使用下方二维码完成支付",
-                (false, true) => $"真实订单 {OrderId} 已创建，但瑞幸未返回支付二维码；点「查询支付状态」重试，或到瑞幸 App 完成支付",
+                (false, true) => $"真实订单 {createdOrderId} 已创建，但瑞幸未返回支付二维码；点「查询支付状态」重试，或到瑞幸 App 完成支付",
                 _ => "订单已创建但未返回订单号和支付二维码；请到瑞幸 App 查看待支付订单，请勿重复下单"
             };
 
-            // 下单成功后清空购物车并使预览签名失效，避免重复点击创建多笔订单
-            Cart.Clear();
-            _previewSignature = null;
-            _previewCouponCodeList = null;
-            OnPropertyChanged(nameof(CartTotal));
-            OnPropertyChanged(nameof(CartTotalText));
-            OnPropertyChanged(nameof(HasValidPreview));
-            OnPropertyChanged(nameof(ConfirmationText));
+            // Do not remove a newer draft created while the server/QR was pending.
+            if (createGeneration == _draftGeneration
+                && string.Equals(createSignature, BuildOrderSignature(), StringComparison.Ordinal))
+            {
+                Cart.Clear();
+                _draftGeneration++;
+                _previewSignature = null;
+                _previewCouponCodeList = null;
+                DraftPaymentSummary = "";
+                OnPropertyChanged(nameof(CartTotal));
+                OnPropertyChanged(nameof(CartTotalText));
+                OnPropertyChanged(nameof(HasValidPreview));
+                OnPropertyChanged(nameof(ConfirmationText));
+                OnPropertyChanged(nameof(DisplayPaymentSummary));
+            }
+            else
+            {
+                OnPropertyChanged(nameof(DisplayPaymentSummary));
+            }
         });
     }
 
@@ -689,10 +791,24 @@ public partial class OrderViewModel : ObservableObject
         ["payOrderQrCodeUrl", "payQrCodeUrl", "payQrcodeUrl", "payUrl", "qrCodeUrl", "paymentUrl", "cashierUrl", "mwebUrl"];
 
     /// <summary>把支付载体显示出来：http(s) 直接按图片展示（浏览器打开兜底），其它字符串（如 weixin:// 支付串）本地生成二维码。返回是否成功显示。</summary>
-    private async Task<bool> TryShowPaymentAsync(string paymentPayload, CancellationToken cancellationToken)
+    private async Task<bool> TryShowPaymentAsync(
+        string paymentPayload,
+        CancellationToken cancellationToken,
+        int? orderSessionGeneration = null)
     {
+        if (orderSessionGeneration is { } initialGeneration
+            && initialGeneration != _orderSessionGeneration)
+        {
+            return false;
+        }
+
         if (Uri.TryCreate(paymentPayload, UriKind.Absolute, out var paymentUri) && paymentUri.Scheme is ("https" or "http"))
         {
+            if (orderSessionGeneration is { } urlGeneration
+                && urlGeneration != _orderSessionGeneration)
+            {
+                return false;
+            }
             PayQrImage = null;
             PayUrl = paymentUri.AbsoluteUri;
             return true;
@@ -702,7 +818,13 @@ public partial class OrderViewModel : ObservableObject
         try
         {
             PayUrl = null;
-            PayQrImage = await QrCodeImageHelper.CreateBitmapAsync(paymentPayload, cancellationToken);
+            var qrImage = await QrCodeImageHelper.CreateBitmapAsync(paymentPayload, cancellationToken);
+            if (orderSessionGeneration is { } qrGeneration
+                && qrGeneration != _orderSessionGeneration)
+            {
+                return false;
+            }
+            PayQrImage = qrImage;
             return true;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -747,10 +869,15 @@ public partial class OrderViewModel : ObservableObject
 
         await RunAsync(async ct =>
         {
+            var querySessionGeneration = _orderSessionGeneration;
             var response = await _mcp.CallAsync("queryOrderDetailInfo", new Dictionary<string, object?>
             {
                 ["orderId"] = OrderId
             }, ct);
+            if (querySessionGeneration != _orderSessionGeneration)
+            {
+                return;
+            }
 
             var payStatus = LuckinJson.String(response, "payStatusDesc", "payStatusText", "payStatus");
             var orderStatus = LuckinJson.String(response, "orderStatusDesc", "statusDesc", "orderStatus", "status");
@@ -761,9 +888,16 @@ public partial class OrderViewModel : ObservableObject
             if (!string.IsNullOrWhiteSpace(pickCode)) parts.Add($"取餐码：{pickCode}");
             // 找回路径：创建时没显示出二维码的订单，详情里若带回支付载体则补显示
             if (PayImageSource is null
-                && await TryShowPaymentAsync(LuckinJson.String(response, PaymentPayloadFields), ct))
+                && await TryShowPaymentAsync(
+                    LuckinJson.String(response, PaymentPayloadFields),
+                    ct,
+                    querySessionGeneration))
             {
                 parts.Add("已找回支付二维码");
+            }
+            if (querySessionGeneration != _orderSessionGeneration)
+            {
+                return;
             }
             StatusText = parts.Count > 0
                 ? string.Join("；", parts)
@@ -794,33 +928,49 @@ public partial class OrderViewModel : ObservableObject
         });
     }
 
-    private string BuildPaymentSummary()
+    private string BuildPaymentSummary(string? shopNameWithAddress = null)
+        => BuildPaymentSummary(
+            _previewInitialPrice,
+            _previewPrivilegeMoney,
+            _previewDiscountPrice,
+            _previewAboutTime,
+            shopNameWithAddress);
+
+    private static string BuildPaymentSummary(
+        double initialPrice,
+        double privilegeMoney,
+        double discountPrice,
+        long aboutTime,
+        string? shopNameWithAddress)
     {
-        var summary = $"原价 ¥{_previewInitialPrice:0.00} · 优惠 ¥{_previewPrivilegeMoney:0.00} · 应付 ¥{_previewDiscountPrice:0.00}";
-        if (_previewAboutTime > 0)
+        var summary = $"原价 ¥{initialPrice:0.00} · 优惠 ¥{privilegeMoney:0.00} · 应付 ¥{discountPrice:0.00}";
+        if (aboutTime > 0)
         {
-            var pickup = DateTimeOffset.FromUnixTimeMilliseconds(_previewAboutTime).ToLocalTime();
+            var pickup = DateTimeOffset.FromUnixTimeMilliseconds(aboutTime).ToLocalTime();
             summary += $" · 预计 {pickup:HH:mm} 可取";
         }
         // MCP 只支持到店自提，摘要里始终点明订单下到哪家门店、去哪取
-        if (SelectedShop is { } shop)
+        if (!string.IsNullOrWhiteSpace(shopNameWithAddress))
         {
-            summary += $"\n到店自取：{shop.NameWithAddress}";
+            summary += $"\n到店自取：{shopNameWithAddress}";
         }
         return summary;
     }
 
     private void InvalidatePreviewAndPayment()
     {
+        InvalidatePreviewOnly();
+        OnPropertyChanged(nameof(HasValidPreview));
+        OnPropertyChanged(nameof(ConfirmationText));
+    }
+
+    private void InvalidatePreviewOnly()
+    {
         _previewSignature = null;
         _previewCouponCodeList = null;
         _previewAboutTime = 0;
-        PayUrl = null;
-        PayQrImage = null;
-        OrderId = "";
-        PaymentSummary = "";
-        OnPropertyChanged(nameof(HasValidPreview));
-        OnPropertyChanged(nameof(ConfirmationText));
+        _previewShopNameWithAddress = "";
+        DraftPaymentSummary = "";
     }
 
     private async Task RunAsync(Func<CancellationToken, Task> action)
@@ -842,6 +992,7 @@ public partial class OrderViewModel : ObservableObject
         _opCts?.Dispose();
         var cts = new CancellationTokenSource(timeout);
         _opCts = cts;
+        var sessionGeneration = _orderSessionGeneration;
         try
         {
             IsBusy = true;
@@ -849,13 +1000,21 @@ public partial class OrderViewModel : ObservableObject
         }
         catch (OperationCanceledException)
         {
-            // 统一视为“操作被打断”：无论是本 CTS 超时、还是菜单 CTS（与本 CTS 通过 CreateLinkedTokenSource
-            // 或裸关联取消）触发的下游 OCE，都向用户提示可重试，避免 TaskCanceledException 原文落进 StatusText。
-            StatusText = "操作已取消或超时，可重试";
+            // Logout/reset owns the newer session and its status must not be overwritten
+            // by the canceled operation from the previous account.
+            if (sessionGeneration == _orderSessionGeneration)
+            {
+                // 统一视为“操作被打断”：无论是本 CTS 超时、还是菜单 CTS（与本 CTS 通过 CreateLinkedTokenSource
+                // 或裸关联取消）触发的下游 OCE，都向用户提示可重试，避免 TaskCanceledException 原文落进 StatusText。
+                StatusText = "操作已取消或超时，可重试";
+            }
         }
         catch (Exception ex)
         {
-            StatusText = ex.Message;
+            if (sessionGeneration == _orderSessionGeneration)
+            {
+                StatusText = ex.Message;
+            }
         }
         finally
         {
@@ -870,4 +1029,3 @@ public partial class OrderViewModel : ObservableObject
 
     private sealed record ProductSearchBatch(IReadOnlyList<OrderProduct> Products, string? Error);
 }
-

@@ -73,6 +73,9 @@ public sealed class GeoResult
 
 public sealed class ForecastResponse
 {
+    [JsonPropertyName("utc_offset_seconds")]
+    public int UtcOffsetSeconds { get; set; }
+
     [JsonPropertyName("latitude")]
     public double Latitude { get; set; }
 

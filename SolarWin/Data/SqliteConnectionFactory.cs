@@ -40,7 +40,10 @@ public sealed class SqliteConnectionFactory : IDbConnectionFactory
         {
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
             await using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA busy_timeout=5000;";
+            // mmap_size is the dominant factor for search latency; see SqliteWalConnectionInterceptor
+            // for the measurements. The requests that come through here are the search queries, so
+            // the read-only path needs it at least as much as the write path does.
+            command.CommandText = "PRAGMA busy_timeout=5000; PRAGMA mmap_size=268435456;";
             await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
             return connection;
         }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Threading.Channels;
 using Microsoft.EntityFrameworkCore;
 using SolarWin.Data.Entities;
@@ -311,10 +312,10 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
 
         var keep = new bool[batch.Count];
         Array.Fill(keep, true);
-        var messageUpdates = new HashSet<(Guid RoomId, string Key)>();
+        var messageUpdates = new HashSet<(Guid RoomId, string Key, int Barrier)>();
+        var messageBarriers = new Dictionary<(Guid RoomId, string Key), int>();
         var roomReads = new Dictionary<Guid, int>();
         var roomDeletes = new HashSet<Guid>();
-        var messageDeletes = new HashSet<(Guid RoomId, Guid MessageId, string ClientId)>();
 
         for (var i = batch.Count - 1; i >= 0; i--)
         {
@@ -328,8 +329,12 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                         : !string.IsNullOrWhiteSpace(upsert.Message.ClientMessageId)
                             ? "c:" + upsert.Message.ClientMessageId
                             : null;
+                    var identity = (roomId, key!);
+                    var barrier = key is not null && messageBarriers.TryGetValue(identity, out var value)
+                        ? value
+                        : 0;
                     if (roomId != Guid.Empty && key is not null
-                        && !messageUpdates.Add((roomId, key)))
+                        && !messageUpdates.Add((roomId, key, barrier)))
                     {
                         keep[i] = false;
                     }
@@ -358,11 +363,24 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                     break;
                 case DeleteMessageOp deleteMessage when deleteMessage.RoomId != Guid.Empty:
                 {
-                    var key = (
-                        deleteMessage.RoomId,
-                        deleteMessage.MessageId,
-                        deleteMessage.ClientMessageId ?? string.Empty);
-                    if (!messageDeletes.Add(key)) keep[i] = false;
+                    // A delete is an ordering barrier. In reverse, incrementing the generation
+                    // makes an upsert before the delete distinct from an upsert after it.
+                    if (deleteMessage.MessageId != Guid.Empty)
+                    {
+                        IncrementMessageBarrier(
+                            messageBarriers,
+                            deleteMessage.RoomId,
+                            "m:" + deleteMessage.MessageId.ToString("N"));
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(deleteMessage.ClientMessageId))
+                    {
+                        IncrementMessageBarrier(
+                            messageBarriers,
+                            deleteMessage.RoomId,
+                            "c:" + deleteMessage.ClientMessageId);
+                    }
+
                     break;
                 }
             }
@@ -375,6 +393,17 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         }
 
         return result;
+    }
+
+    private static void IncrementMessageBarrier(
+        Dictionary<(Guid RoomId, string Key), int> barriers,
+        Guid roomId,
+        string key)
+    {
+        var identity = (roomId, key);
+        barriers[identity] = barriers.TryGetValue(identity, out var current)
+            ? current + 1
+            : 1;
     }
 
     private async Task ProcessBatchAsync(List<ChatWriteOp> batch, CancellationToken cancellationToken)
@@ -432,6 +461,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                         break;
 
                     case DeleteRoomMessagesOp delRoom:
+                        DetachTrackedRoomMessages(db, delRoom.RoomId);
                         await db.Messages
                             .Where(m => m.RoomId == delRoom.RoomId)
                             .ExecuteDeleteAsync(cancellationToken)
@@ -455,6 +485,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                         break;
 
                     case DeleteRoomListOp delList:
+                        DetachTrackedRoom(db, delList.RoomId);
                         await db.Rooms
                             .Where(r => r.RoomId == delList.RoomId)
                             .ExecuteDeleteAsync(cancellationToken)
@@ -503,6 +534,23 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                     break;
                 case UpsertMessagesBatchOp many:
                     foreach (var message in many.Messages) AddMessage(many.RoomId, message);
+                    break;
+                case DeleteMessageOp delete:
+                    if (delete.RoomId != Guid.Empty)
+                    {
+                        roomIds.Add(delete.RoomId);
+                    }
+
+                    if (delete.MessageId != Guid.Empty)
+                    {
+                        messageIds.Add(delete.MessageId);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(delete.ClientMessageId))
+                    {
+                        clientIds.Add(delete.ClientMessageId);
+                    }
+
                     break;
                 case UpsertRoomOp room when room.Room.Id != Guid.Empty:
                     roomIds.Add(room.Room.Id);
@@ -598,6 +646,14 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         }
 
         // Hard-delete missing list rows (message history untouched).
+        foreach (var entry in db.ChangeTracker.Entries<ChatRoomEntity>().ToList())
+        {
+            if (!serverIds.Contains(entry.Entity.RoomId))
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+
         await db.Rooms
             .Where(r => !serverIds.Contains(r.RoomId))
             .ExecuteDeleteAsync(cancellationToken)
@@ -779,6 +835,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
 
         if (del.MessageId != Guid.Empty)
         {
+            DetachTrackedMessages(db, del.RoomId, del.MessageId, clientMessageId: null);
             await db.Messages
                 .Where(m => m.RoomId == del.RoomId && m.MessageId == del.MessageId)
                 .ExecuteDeleteAsync(cancellationToken)
@@ -789,10 +846,75 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         if (!string.IsNullOrWhiteSpace(del.ClientMessageId))
         {
             var clientId = del.ClientMessageId;
+            DetachTrackedMessages(db, del.RoomId, messageId: null, clientId);
             await db.Messages
                 .Where(m => m.RoomId == del.RoomId && m.ClientMessageId == clientId)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
+        }
+    }
+
+    private static void DetachTrackedMessages(
+        SolarWinDbContext db,
+        Guid roomId,
+        Guid? messageId,
+        string? clientMessageId)
+    {
+        foreach (var entry in db.ChangeTracker.Entries<ChatMessageEntity>().ToList())
+        {
+            var entity = entry.Entity;
+            var matches = entity.RoomId == roomId
+                          && ((messageId is { } id && id != Guid.Empty && entity.MessageId == id)
+                              || (!string.IsNullOrWhiteSpace(clientMessageId)
+                                  && string.Equals(
+                                      entity.ClientMessageId,
+                                      clientMessageId,
+                                      StringComparison.Ordinal)));
+            if (matches)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+    }
+
+    private static void DetachTrackedMessages(
+        SolarWinDbContext db,
+        IReadOnlyCollection<Guid> rowIds)
+    {
+        if (rowIds.Count == 0)
+        {
+            return;
+        }
+
+        var ids = rowIds.ToHashSet();
+        foreach (var entry in db.ChangeTracker.Entries<ChatMessageEntity>().ToList())
+        {
+            if (ids.Contains(entry.Entity.RowId))
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+    }
+
+    private static void DetachTrackedRoomMessages(SolarWinDbContext db, Guid roomId)
+    {
+        foreach (var entry in db.ChangeTracker.Entries<ChatMessageEntity>().ToList())
+        {
+            if (entry.Entity.RoomId == roomId)
+            {
+                entry.State = EntityState.Detached;
+            }
+        }
+    }
+
+    private static void DetachTrackedRoom(SolarWinDbContext db, Guid roomId)
+    {
+        foreach (var entry in db.ChangeTracker.Entries<ChatRoomEntity>().ToList())
+        {
+            if (entry.Entity.RoomId == roomId)
+            {
+                entry.State = EntityState.Detached;
+            }
         }
     }
 
@@ -807,15 +929,18 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         }
 
         var cutoff = DateTimeOffset.UtcNow - MaxMessageAge;
+        var cutoffText = cutoff.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
 
         // Age: delete oldest-by-sequence in batches.
         while (true)
         {
             var oldIds = await db.Messages
+                .FromSqlInterpolated($"""
+                    SELECT * FROM chat_messages
+                    WHERE RoomId = {roomId.ToString("D").ToUpperInvariant()}
+                      AND julianday(COALESCE(CreatedAt, SyncedAt)) < julianday({cutoffText})
+                    """)
                 .AsNoTracking()
-                .Where(m => m.RoomId == roomId
-                            && ((m.CreatedAt != null && m.CreatedAt < cutoff)
-                                || (m.CreatedAt == null && m.SyncedAt < cutoff)))
                 .OrderBy(m => m.RoomSequence)
                 .ThenBy(m => m.MessageId)
                 .Select(m => m.RowId)
@@ -828,6 +953,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                 break;
             }
 
+            DetachTrackedMessages(db, oldIds);
             await db.Messages
                 .Where(m => oldIds.Contains(m.RowId))
                 .ExecuteDeleteAsync(cancellationToken)
@@ -861,6 +987,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                 break;
             }
 
+            DetachTrackedMessages(db, oldest);
             await db.Messages
                 .Where(m => oldest.Contains(m.RowId))
                 .ExecuteDeleteAsync(cancellationToken)
@@ -911,12 +1038,15 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
         // Another full pass (already ran room rules); if still huge, drop oldest globally in batches.
         Debug.WriteLine($"[ChatWritePump] DB size {length} > {SoftDbMaxBytes}; extra global trim.");
         var cutoff = DateTimeOffset.UtcNow - MaxMessageAge;
+        var cutoffText = cutoff.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture);
         while (true)
         {
             var oldIds = await db.Messages
+                .FromSqlInterpolated($"""
+                    SELECT * FROM chat_messages
+                    WHERE julianday(COALESCE(CreatedAt, SyncedAt)) < julianday({cutoffText})
+                    """)
                 .AsNoTracking()
-                .Where(m => (m.CreatedAt != null && m.CreatedAt < cutoff)
-                            || (m.CreatedAt == null && m.SyncedAt < cutoff))
                 .OrderBy(m => m.RoomSequence)
                 .Select(m => m.RowId)
                 .Take(EvictionDeleteBatch)
@@ -928,6 +1058,7 @@ public sealed class ChatWritePump : IChatWritePump, IAsyncDisposable
                 break;
             }
 
+            DetachTrackedMessages(db, oldIds);
             await db.Messages
                 .Where(m => oldIds.Contains(m.RowId))
                 .ExecuteDeleteAsync(cancellationToken)

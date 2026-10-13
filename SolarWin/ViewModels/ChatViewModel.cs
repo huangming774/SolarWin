@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.UI.Xaml;
 using SolarWin.Data;
 using SolarWin.Helpers;
@@ -105,6 +106,102 @@ public partial class ChatViewModel : ObservableObject
     partial void OnUserSearchQueryChanged(string value)
     {
         _ = DebouncedSearchUsersAsync(value);
+        _ = DebouncedSearchMessagesAsync(value);
+    }
+
+    // ---- Full-text message search (shares the search box with user search) ----
+
+    [ObservableProperty]
+    public partial bool IsSearchingMessages { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(MessageSearchPanelVisibility))]
+    public partial bool HasMessageSearchResults { get; set; }
+
+    [ObservableProperty]
+    public partial string MessageSearchHintText { get; set; } = string.Empty;
+
+    public Microsoft.UI.Xaml.Visibility MessageSearchPanelVisibility =>
+        HasMessageSearchResults || IsSearchingMessages
+            ? Microsoft.UI.Xaml.Visibility.Visible
+            : Microsoft.UI.Xaml.Visibility.Collapsed;
+
+    public ObservableCollection<ChatSearchResultItem> MessageSearchResults { get; } = [];
+
+    private CancellationTokenSource? _messageSearchCts;
+
+    private async Task DebouncedSearchMessagesAsync(string? query)
+    {
+        _messageSearchCts?.Cancel();
+        _messageSearchCts = new CancellationTokenSource();
+        var token = _messageSearchCts.Token;
+        var q = query?.Trim() ?? string.Empty;
+
+        if (q.Length == 0)
+        {
+            MessageSearchResults.Clear();
+            HasMessageSearchResults = false;
+            IsSearchingMessages = false;
+            MessageSearchHintText = string.Empty;
+            return;
+        }
+
+        if (q.Length < 2)
+        {
+            // 1-character queries hit the LIKE path but yield noisy results in CJK — encourage
+            // a second character before paying the scan cost.
+            MessageSearchHintText = "再输入一个字符开始搜索…";
+            return;
+        }
+
+        try
+        {
+            IsSearchingMessages = true;
+            MessageSearchHintText = "正在搜索本地聊天记录…";
+
+            await Task.Delay(280, token).ConfigureAwait(true);
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            var searchService = App.Services.GetRequiredService<IChatSearchService>();
+            var page = await searchService
+                .SearchAsync(new Models.ChatSearchRequest(q, new Models.ChatSearchFilter(RoomId: null, Take: 60)),
+                    token)
+                .ConfigureAwait(true);
+
+            if (token.IsCancellationRequested)
+            {
+                return;
+            }
+
+            MessageSearchResults.Clear();
+            foreach (var row in page.Rows)
+            {
+                MessageSearchResults.Add(new ChatSearchResultItem(row));
+            }
+
+            HasMessageSearchResults = MessageSearchResults.Count > 0;
+            MessageSearchHintText = page.Rows.Count > 0
+                ? $"找到 {page.Rows.Count} 条消息 · 来源 {(page.Source == Models.ChatSearchSource.Like ? "LIKE 兜底（≤2 字）" : "FTS5")} · 点击跳转"
+                : "没有匹配消息";
+        }
+        catch (OperationCanceledException)
+        {
+            // debounce / superseded query
+        }
+        catch (Exception ex)
+        {
+            MessageSearchHintText = $"搜索失败：{ex.Message}";
+            HasMessageSearchResults = false;
+            MessageSearchResults.Clear();
+            System.Diagnostics.Debug.WriteLine($"[ChatView] message search failed: {ex}");
+        }
+        finally
+        {
+            IsSearchingMessages = false;
+        }
     }
 
     private async Task DebouncedSearchUsersAsync(string? query)

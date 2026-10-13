@@ -308,6 +308,66 @@
                 </ListView>
             </Border>
 
+            <Border
+                Grid.Row="2"
+                MaxHeight="320"
+                Margin="0,8,0,0"
+                Padding="8"
+                Style="{StaticResource ChatCardStyle}"
+                Visibility="{x:Bind ViewModel.MessageSearchPanelVisibility, Mode=OneWay}">
+                <Grid RowSpacing="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <TextBlock
+                        Margin="6,2,6,0"
+                        Opacity="0.65"
+                        Text="{x:Bind ViewModel.MessageSearchHintText, Mode=OneWay}" />
+                    <ProgressRing
+                        Grid.Row="1"
+                        Width="16"
+                        Height="16"
+                        Margin="0,0,0,4"
+                        HorizontalAlignment="Left"
+                        IsActive="{x:Bind ViewModel.IsSearchingMessages, Mode=OneWay}" />
+                    <ListView
+                        Grid.Row="2"
+                        IsItemClickEnabled="True"
+                        ItemClick="MessageSearchResults_OnItemClick"
+                        ItemsSource="{x:Bind ViewModel.MessageSearchResults, Mode=OneWay}"
+                        SelectionMode="None">
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChatSearchResultItem">
+                                <Grid Padding="6" RowSpacing="3">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock FontWeight="SemiBold" Text="{x:Bind RoomName}" />
+                                        <TextBlock Opacity="0.6" Text="{x:Bind SenderName}" />
+                                        <TextBlock
+                                            Opacity="0.45"
+                                            HorizontalAlignment="Right"
+                                            Text="{x:Bind TimeText}" />
+                                    </StackPanel>
+                                    <TextBlock
+                                        Grid.Row="1"
+                                        IsTextSelectionEnabled="True"
+                                        MaxLines="3"
+                                        Opacity="0.85"
+                                        Text="{x:Bind SnippetText}"
+                                        TextWrapping="Wrap" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+
             <Expander
                 Grid.Row="2"
                 Header="待处理邀请"

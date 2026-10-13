@@ -55,7 +55,6 @@ public sealed partial class GpuImage : UserControl
     {
         InitializeComponent();
         _loader = App.Services.GetRequiredService<DysonFileImageLoader>();
-        ImageCanvas.CustomDevice = _loader.Device;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
         EffectiveViewportChanged += OnEffectiveViewportChanged;
@@ -89,7 +88,13 @@ public sealed partial class GpuImage : UserControl
         => ((GpuImage)sender).RestartLoad();
 
     private static void OnVisualPropertyChanged(DependencyObject sender, DependencyPropertyChangedEventArgs args)
-        => ((GpuImage)sender).ImageCanvas.Invalidate();
+    {
+        var control = (GpuImage)sender;
+        if (control._isLoaded)
+        {
+            control.ImageCanvas.Invalidate();
+        }
+    }
 
     private void OnLoaded(object sender, RoutedEventArgs args)
     {
@@ -99,6 +104,9 @@ public sealed partial class GpuImage : UserControl
         }
 
         _isLoaded = true;
+        ImageCanvas.Draw -= ImageCanvas_OnDraw;
+        ImageCanvas.Draw += ImageCanvas_OnDraw;
+        ImageCanvas.CustomDevice = _loader.Device;
         _loader.GpuCacheInvalidated += OnGpuCacheInvalidated;
         RestartLoad();
     }
@@ -107,6 +115,7 @@ public sealed partial class GpuImage : UserControl
     {
         _isLoaded = false;
         _loader.GpuCacheInvalidated -= OnGpuCacheInvalidated;
+        ImageCanvas.Draw -= ImageCanvas_OnDraw;
         ReleaseImage();
     }
 
@@ -132,13 +141,25 @@ public sealed partial class GpuImage : UserControl
 
     private void OnGpuCacheInvalidated(object? sender, EventArgs args)
     {
+        void RebindAndRestart()
+        {
+            if (!_isLoaded)
+            {
+                return;
+            }
+
+            ImageCanvas.CustomDevice = _loader.Device;
+            ImageCanvas.Invalidate();
+            RestartLoad();
+        }
+
         if (DispatcherQueue.HasThreadAccess)
         {
-            RestartLoad();
+            RebindAndRestart();
         }
         else
         {
-            DispatcherQueue.TryEnqueue(RestartLoad);
+            DispatcherQueue.TryEnqueue(RebindAndRestart);
         }
     }
 
@@ -170,7 +191,9 @@ public sealed partial class GpuImage : UserControl
             if (request.IsCancellationRequested
                 || !ReferenceEquals(_loadCancellation, request)
                 || !string.Equals(Source, source, StringComparison.Ordinal)
-                || DecodePixelWidth != decodeWidth)
+                || DecodePixelWidth != decodeWidth
+                || !_isLoaded
+                || !_isInEffectiveViewport)
             {
                 lease.Dispose();
                 return;
@@ -184,7 +207,10 @@ public sealed partial class GpuImage : UserControl
                 InvalidateMeasure();
             }
 
-            ImageCanvas.Invalidate();
+            if (_isLoaded)
+            {
+                ImageCanvas.Invalidate();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -212,7 +238,10 @@ public sealed partial class GpuImage : UserControl
         _naturalWidth = 0;
         _naturalHeight = 0;
         InvalidateMeasure();
-        ImageCanvas.Invalidate();
+        if (_isLoaded)
+        {
+            ImageCanvas.Invalidate();
+        }
     }
 
     protected override Size MeasureOverride(Size availableSize)

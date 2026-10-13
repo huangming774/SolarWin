@@ -36,6 +36,12 @@ public interface IAccountDbContextFactory
     /// <exception cref="InvalidOperationException">No account bound.</exception>
     SolarWinDbContext CreateDbContext();
 
+    /// <summary>
+    /// Create a context only when <paramref name="accountId"/> is still the bound account.
+    /// This prevents an operation that waited through a bind from writing to a newly bound account.
+    /// </summary>
+    SolarWinDbContext CreateDbContext(Guid accountId);
+
     /// <summary>Run migrations for the bound account (awaits readiness on success).</summary>
     Task EnsureMigratedAsync(CancellationToken cancellationToken = default);
 

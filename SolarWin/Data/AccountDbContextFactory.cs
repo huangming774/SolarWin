@@ -61,6 +61,7 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
                 // Faulted/canceled: fall through and retry migrate.
             }
 
+            CompleteSupersededReadyGate_NoLock(accountId);
             _boundAccountId = accountId;
             generation = ++_bindGeneration;
             _ready = CreateReadyTcs(alreadyFailed: false);
@@ -93,6 +94,7 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
                 }
             }
 
+            CompleteSupersededReadyGate_NoLock(accountId);
             _boundAccountId = accountId;
             generation = ++_bindGeneration;
             _ready = CreateReadyTcs(alreadyFailed: false);
@@ -112,6 +114,7 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
         {
             if (_boundAccountId == accountId)
             {
+                CompleteSupersededReadyGate_NoLock(accountId);
                 _boundAccountId = null;
                 _bindGeneration++;
                 _ready = CreateReadyTcs(alreadyFailed: true);
@@ -132,6 +135,7 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
             }
 
             accountId = id;
+            CompleteSupersededReadyGate_NoLock(accountId);
             _boundAccountId = null;
             _bindGeneration++;
             _ready = CreateReadyTcs(alreadyFailed: true);
@@ -158,10 +162,29 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
         return new SolarWinDbContext(BuildOptions(accountId));
     }
 
+    public SolarWinDbContext CreateDbContext(Guid accountId)
+    {
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("accountId must be non-empty.", nameof(accountId));
+        }
+
+        lock (_gate)
+        {
+            if (_boundAccountId != accountId)
+            {
+                throw new InvalidOperationException("The requested account is no longer bound.");
+            }
+
+            return new SolarWinDbContext(BuildOptions(accountId));
+        }
+    }
+
     public async Task EnsureMigratedAsync(CancellationToken cancellationToken = default)
     {
         Guid accountId;
         int generation;
+        Task ready;
         lock (_gate)
         {
             if (_boundAccountId is not { } id || id == Guid.Empty)
@@ -171,11 +194,20 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
 
             accountId = id;
             generation = _bindGeneration;
+            ready = _ready.Task;
         }
 
         await EnsureMigratedCoreAsync(accountId, generation, cancellationToken).ConfigureAwait(false);
-        // Propagate migrate success/failure via the ready gate.
-        await WaitUntilReadyAsync(cancellationToken).ConfigureAwait(false);
+        // Await the gate captured for this generation. If Bind/Switch superseded it, that
+        // gate is completed with an exception instead of accidentally waiting on the new account.
+        if (cancellationToken.CanBeCanceled)
+        {
+            await ready.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            await ready.ConfigureAwait(false);
+        }
     }
 
     public Task WaitUntilReadyAsync(CancellationToken cancellationToken = default)
@@ -320,5 +352,17 @@ public sealed class AccountDbContextFactory : IAccountDbContextFactory
         }
 
         return tcs;
+    }
+
+    private void CompleteSupersededReadyGate_NoLock(Guid nextAccountId)
+    {
+        if (_ready.Task.IsCompleted)
+        {
+            return;
+        }
+
+        _ready.TrySetException(
+            new InvalidOperationException(
+                $"Local database migration was superseded by binding account {nextAccountId:N}."));
     }
 }

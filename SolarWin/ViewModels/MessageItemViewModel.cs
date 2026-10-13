@@ -42,6 +42,9 @@ public partial class MessageItemViewModel : ObservableObject
         Microsoft.UI.ColorHelper.FromArgb(24, 128, 128, 128));
     private static readonly Brush OtherBubbleStroke = new SolidColorBrush(
         Microsoft.UI.ColorHelper.FromArgb(40, 128, 128, 128));
+    /// <summary>Translucent gold tint flashed over the bubble for ~2.5s after a search-jump.</summary>
+    private static readonly Brush HighlightOverlayBrush = new SolidColorBrush(
+        Microsoft.UI.ColorHelper.FromArgb(72, 255, 193, 7));
 
     private bool _playSendAnimation;
 
@@ -235,6 +238,17 @@ public partial class MessageItemViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>
+    /// Transfers an unconsumed local-send animation to a replacement VM during server
+    /// reconciliation. If the old bubble already rendered, no animation is replayed.
+    /// </summary>
+    public bool TakePendingSendAnimation()
+    {
+        var pending = _playSendAnimation;
+        _playSendAnimation = false;
+        return pending;
+    }
+
     public Guid MessageId => Message.Id;
 
     public bool IsMine { get; }
@@ -248,6 +262,19 @@ public partial class MessageItemViewModel : ObservableObject
     public Visibility OtherChromeVisibility => IsMine ? Visibility.Collapsed : Visibility.Visible;
 
     public Visibility PendingVisibility => IsPending ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Set to <c>true</c> by <c>ChatDetailPage</c> right after a search-jump scroll, cleared
+    /// after a short delay. Drives <see cref="HighlightOverlayVisibility"/> so the bubble
+    /// flashes briefly to draw the eye.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsHighlighted { get; set; }
+
+    public Visibility HighlightOverlayVisibility =>
+        IsHighlighted ? Visibility.Visible : Visibility.Collapsed;
+
+    public Brush HighlightOverlay => HighlightOverlayBrush;
 
     public Visibility SentVisibility => IsMine && !IsPending ? Visibility.Visible : Visibility.Collapsed;
 
@@ -505,6 +532,21 @@ public partial class MessageItemViewModel : ObservableObject
             string.IsNullOrWhiteSpace(placeholder) ? $":sticker:" : placeholder,
             fileId,
             large: IsStickerOnly || StickerPlaceholders.Count <= 1);
+    }
+
+    /// <summary>Retains locally resolved sticker file ids when a server payload replaces a bubble.</summary>
+    public void CopyResolvedStickersFrom(MessageItemViewModel source)
+    {
+        foreach (var sticker in source.Stickers)
+        {
+            if (!string.IsNullOrWhiteSpace(sticker.FileId))
+            {
+                EnsureStickerSlot(
+                    sticker.Placeholder,
+                    sticker.FileId,
+                    IsStickerOnly || StickerPlaceholders.Count <= 1);
+            }
+        }
     }
 
     private void RefreshStickerFlags()

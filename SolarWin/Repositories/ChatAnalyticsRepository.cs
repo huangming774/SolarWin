@@ -312,7 +312,14 @@ public sealed class ChatAnalyticsRepository : IChatAnalyticsRepository
         });
         if (NormalizeGuid(filter.ConversationId) is { } room)
         {
-            command.Parameters.Add(new SqliteParameter("@conversationId", SqliteType.Text) { Value = room });
+            // EF Core's SQLite provider persists Guid as UPPER-case TEXT and RoomId has no
+            // COLLATE NOCASE, so this comparison is case-sensitive. NormalizeGuid returns the
+            // canonical lower-case form; upper-case it here to match what is actually stored.
+            // (The current-user predicate below lower-cases both sides in SQL instead.)
+            command.Parameters.Add(new SqliteParameter("@conversationId", SqliteType.Text)
+            {
+                Value = room.ToUpperInvariant(),
+            });
         }
 
         if (filter.OnlyCurrentUser)

@@ -15,6 +15,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAccountDbContextFactory, AccountDbContextFactory>();
         services.AddSingleton<IChatWritePump, ChatWritePump>();
         services.AddSingleton<IChatLocalStore, ChatLocalStore>();
+        services.AddSingleton<IChatSearchRepository, ChatSearchRepository>();
+        services.AddSingleton<IChatSearchService, ChatSearchService>();
         services.AddSingleton<IRoomLocalStore, RoomLocalStore>();
         services.AddSingleton<IDbConnectionFactory, SqliteConnectionFactory>();
         services.AddSingleton<IChatAnalyticsRepository, ChatAnalyticsRepository>();

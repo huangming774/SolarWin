@@ -15,6 +15,9 @@
     <PackageReference Include="coverlet.collector" Version="6.0.4" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.10" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.10" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.4" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
@@ -28,6 +31,18 @@
   <ItemGroup>
     <Compile Include="..\SolarWin\Collections\ObservableRangeCollection.cs" Link="Collections\ObservableRangeCollection.cs" />
     <Compile Include="..\SolarWin\Helpers\ApiErrorParser.cs" Link="Helpers\ApiErrorParser.cs" />
+    <Compile Include="..\SolarWin\Helpers\ImagePreviewLayout.cs" Link="Helpers\ImagePreviewLayout.cs" />
+    <Compile Include="..\SolarWin\Helpers\WeatherTime.cs" Link="Helpers\WeatherTime.cs" />
+    <Compile Include="..\SolarWin\Services\WeatherService.cs" Link="Services\WeatherService.cs" />
+    <Compile Include="..\SolarWin\Services\IWeatherService.cs" Link="Services\IWeatherService.cs" />
+    <Compile Include="..\SolarWin\Services\QrLoginRoutes.cs" Link="Services\QrLoginRoutes.cs" />
+    <Compile Include="..\SolarWin\Models\PadlockSecurityModels.cs" Link="Models\PadlockSecurityModels.cs" />
+    <Compile Include="..\SolarWin\Models\SnAuthChallenge.cs" Link="Models\SnAuthChallenge.cs" />
+    <Compile Include="..\SolarWin\ViewModels\WeatherViewModel.cs" Link="ViewModels\WeatherViewModel.cs" />
+    <Compile Include="..\SolarWin\Helpers\VideoPreviewLayout.cs" Link="Helpers\VideoPreviewLayout.cs" />
+    <Compile Include="..\SolarWin\Helpers\ChatMessageReconciliation.cs" Link="Helpers\ChatMessageReconciliation.cs" />
+    <Compile Include="..\SolarWin\Helpers\TrustedMediaOrigin.cs" Link="Helpers\TrustedMediaOrigin.cs" />
+    <Compile Include="..\SolarWin\Helpers\ViewModelRaceOwnership.cs" Link="Helpers\ViewModelRaceOwnership.cs" />
     <Compile Include="..\SolarWin\Helpers\DeepLinkParser.cs" Link="Helpers\DeepLinkParser.cs" />
     <Compile Include="..\SolarWin\Helpers\JsonListParser.cs" Link="Helpers\JsonListParser.cs" />
     <Compile Include="..\SolarWin\Helpers\JsonDefaults.cs" Link="Helpers\JsonDefaults.cs" />
@@ -44,6 +59,17 @@
     <Compile Include="..\SolarWin\Models\WeatherModels.cs" Link="Models\WeatherModels.cs" />
     <Compile Include="..\SolarWin\ViewModels\PostItemHandleRules.cs" Link="ViewModels\PostItemHandleRules.cs" />
     <Compile Include="..\SolarWin\Data\ChatMessageMapper.cs" Link="Data\ChatMessageMapper.cs" />
+    <Compile Include="..\SolarWin\Data\ChatRoomMapper.cs" Link="Data\ChatRoomMapper.cs" />
+    <Compile Include="..\SolarWin\Data\ChatWritePump.cs" Link="Data\ChatWritePump.cs" />
+    <Compile Include="..\SolarWin\Data\ChatWriteOp.cs" Link="Data\ChatWriteOp.cs" />
+    <Compile Include="..\SolarWin\Data\IChatWritePump.cs" Link="Data\IChatWritePump.cs" />
+    <Compile Include="..\SolarWin\Data\RoomLocalStore.cs" Link="Data\RoomLocalStore.cs" />
+    <Compile Include="..\SolarWin\Data\IRoomLocalStore.cs" Link="Data\IRoomLocalStore.cs" />
+    <Compile Include="..\SolarWin\Data\IAccountDbContextFactory.cs" Link="Data\IAccountDbContextFactory.cs" />
+    <Compile Include="..\SolarWin\Data\SolarWinDbContext.cs" Link="Data\SolarWinDbContext.cs" />
+    <Compile Include="..\SolarWin\Data\Entities\ChatRoomEntity.cs" Link="Data\Entities\ChatRoomEntity.cs" />
+    <Compile Include="..\SolarWin\Models\ChatSummaryResponse.cs" Link="Models\ChatSummaryResponse.cs" />
+    <Compile Include="..\SolarWin\Helpers\CloudFileUrlHelper.cs" Link="Helpers\CloudFileUrlHelper.cs" />
     <Compile Include="..\SolarWin\Data\Entities\ChatMessageEntity.cs" Link="Data\Entities\ChatMessageEntity.cs" />
     <Compile Include="..\SolarWin\Data\Entities\ChatMessageSource.cs" Link="Data\Entities\ChatMessageSource.cs" />
     <Compile Include="..\SolarWin\Models\Enums.cs" Link="Models\Enums.cs" />
@@ -81,6 +107,12 @@
     <Compile Include="..\SolarWin\Services\IWordCloudLayoutService.cs" Link="Services\IWordCloudLayoutService.cs" />
     <Compile Include="..\SolarWin\Services\IChatAnalyticsService.cs" Link="Services\IChatAnalyticsService.cs" />
     <Compile Include="..\SolarWin\Services\ChatAnalyticsService.cs" Link="Services\ChatAnalyticsService.cs" />
+    <Compile Include="..\SolarWin\Models\ChatSearchResult.cs" Link="Models\ChatSearchResult.cs" />
+    <Compile Include="..\SolarWin\Services\IChatSearchService.cs" Link="Services\IChatSearchService.cs" />
+    <Compile Include="..\SolarWin\Services\ChatSearchService.cs" Link="Services\ChatSearchService.cs" />
+    <Compile Include="..\SolarWin\Data\ChatMessagesFtsDdl.cs" Link="Data\ChatMessagesFtsDdl.cs" />
+    <Compile Include="..\SolarWin\Repositories\IChatSearchRepository.cs" Link="Repositories\IChatSearchRepository.cs" />
+    <Compile Include="..\SolarWin\Repositories\ChatSearchRepository.cs" Link="Repositories\ChatSearchRepository.cs" />
   </ItemGroup>
 
   <ItemGroup Condition="Exists('..\SolarWin.Mls.Native\runtimes\win-x64\native\SolarWin.Mls.Native.dll')">

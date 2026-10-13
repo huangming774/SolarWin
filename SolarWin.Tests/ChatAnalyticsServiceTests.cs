@@ -306,14 +306,16 @@ public sealed class ChatAnalyticsServiceTests
                 VALUES
                     (@row, @message, @room, 1, @created, @deleted, @type, @content, @sender, 0, @payload, @synced, 0);
                 """;
-            command.Parameters.AddWithValue("@row", Guid.NewGuid().ToString("D"));
-            command.Parameters.AddWithValue("@message", messageId.ToString("D"));
-            command.Parameters.AddWithValue("@room", roomId.ToString("D"));
+            // EF Core's SQLite provider stores Guid as UPPER-case "D" text; mirroring that here
+            // is what makes the case-sensitive RoomId comparisons in the repositories testable.
+            command.Parameters.AddWithValue("@row", Guid.NewGuid().ToString("D").ToUpperInvariant());
+            command.Parameters.AddWithValue("@message", messageId.ToString("D").ToUpperInvariant());
+            command.Parameters.AddWithValue("@room", roomId.ToString("D").ToUpperInvariant());
             command.Parameters.AddWithValue("@created", Format(createdAt));
             command.Parameters.AddWithValue("@deleted", deletedAt is null ? DBNull.Value : Format(deletedAt.Value));
             command.Parameters.AddWithValue("@type", type);
             command.Parameters.AddWithValue("@content", content is null ? DBNull.Value : content);
-            command.Parameters.AddWithValue("@sender", Guid.NewGuid().ToString("D"));
+            command.Parameters.AddWithValue("@sender", Guid.NewGuid().ToString("D").ToUpperInvariant());
             var payload = new Dictionary<string, object>();
             if (deletedTarget is { } target)
             {

@@ -8,6 +8,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.UI.Xaml.Navigation;
 using SolarWin.Helpers;
+using SolarWin.Models;
 using SolarWin.Services;
 using SolarWin.ViewModels;
 using Windows.Storage.Pickers;
@@ -34,6 +35,7 @@ public sealed partial class ChatDetailPage : Page
         InitializeComponent();
         ViewModel.ScrollToBottomRequested += OnScrollToBottomRequested;
         ViewModel.OpenImageRequested += OnOpenImageRequested;
+        ViewModel.JumpToMessageRequested += OnJumpToMessageRequested;
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -43,18 +45,28 @@ public sealed partial class ChatDetailPage : Page
         base.OnNavigatedTo(e);
         ResetThumbnailLoads();
 
-        if (e.Parameter is ChatRoomListItem item)
+        if (e.Parameter is ChatMessageNavArgs msgNav)
         {
-            ViewModel.Initialize(item.Room);
+            // Jump-to-message path: skip LoadInitial (which would paint the newest page and
+            // cover our work) and load a window centred on the target instead.
+            ViewModel.Initialize(msgNav.RoomId, null);
+            _ = ViewModel.LoadAroundMessageAsync(msgNav.MessageId);
         }
-        else if (e.Parameter is Guid roomId)
+        else
         {
-            ViewModel.Initialize(roomId, null);
-        }
+            if (e.Parameter is ChatRoomListItem item)
+            {
+                ViewModel.Initialize(item.Room);
+            }
+            else if (e.Parameter is Guid roomId)
+            {
+                ViewModel.Initialize(roomId, null);
+            }
 
-        if (ViewModel.LoadInitialCommand.CanExecute(null))
-        {
-            ViewModel.LoadInitialCommand.Execute(null);
+            if (ViewModel.LoadInitialCommand.CanExecute(null))
+            {
+                ViewModel.LoadInitialCommand.Execute(null);
+            }
         }
 
         ViewModel.StartPolling();
@@ -120,6 +132,51 @@ public sealed partial class ChatDetailPage : Page
 
         Loaded -= OnLoaded;
         Unloaded -= OnUnloaded;
+        ViewModel.JumpToMessageRequested -= OnJumpToMessageRequested;
+    }
+
+    private async void OnJumpToMessageRequested(object? sender, Guid messageId)
+    {
+        var item = ViewModel.Messages.FirstOrDefault(m => m.MessageId == messageId);
+        if (item is null)
+        {
+            return;
+        }
+
+        item.IsHighlighted = true;
+
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            TryHookScrollViewer();
+            MessageList.ScrollIntoView(item);
+        });
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(2.5));
+        }
+        catch
+        {
+            // ignore — page may have unloaded while we were waiting
+        }
+
+        item.IsHighlighted = false;
+    }
+
+    private void ReplyPreview_OnTapped(object sender, TappedRoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: MessageItemViewModel item })
+        {
+            return;
+        }
+
+        var repliedId = item.Message.RepliedMessageId;
+        if (repliedId is { } rid && rid != Guid.Empty)
+        {
+            _ = ViewModel.JumpToMessageAsync(rid);
+        }
+
+        e.Handled = true;
     }
 
     private void BackButton_OnClick(object sender, RoutedEventArgs e)

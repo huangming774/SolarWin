@@ -116,9 +116,14 @@ public sealed class VideoMediaCache
             {
                 var client = _httpClientFactory.CreateClient(SolarApiClient.HttpClientName);
                 using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                var token = await _tokenStorage.GetAccessTokenAsync(sharedToken).ConfigureAwait(false);
-                if (!string.IsNullOrWhiteSpace(token))
-                    request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                if (TrustedMediaOrigin.IsTrusted(url))
+                {
+                    var token = await _tokenStorage.GetAccessTokenAsync(sharedToken).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(token))
+                    {
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+                    }
+                }
 
                 using var response = await client.SendAsync(
                     request, HttpCompletionOption.ResponseHeadersRead, sharedToken).ConfigureAwait(false);

@@ -385,9 +385,6 @@ public partial class ThinkingViewModel : ObservableObject
             }
 
             var latest = list.OrderByDescending(c => c.UpdatedAt ?? c.CreatedAt).First();
-            _conversationId = latest.Id;
-            ConversationTitle = latest.DisplayTitle;
-
             if (!string.IsNullOrWhiteSpace(latest.AgentId))
             {
                 var idx = _agents.FindIndex(a =>
@@ -398,6 +395,10 @@ public partial class ThinkingViewModel : ObservableObject
                 }
             }
 
+            // Selecting the history conversation's agent can clear a draft conversation.
+            // Restore the loaded ID after that callback so the next send stays in history.
+            _conversationId = latest.Id;
+            ConversationTitle = latest.DisplayTitle;
             var msgs = await _api.GetThoughtMessagesAsync(latest.Id).ConfigureAwait(true);
             Messages.Clear();
             foreach (var m in msgs)

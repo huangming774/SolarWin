@@ -50,6 +50,10 @@ public sealed class WeatherService : IWeatherService
                 .ConfigureAwait(false);
             return payload?.Results ?? [];
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             throw new WeatherServiceException("城市搜索失败，请稍后重试。", ex);
@@ -124,6 +128,10 @@ public sealed class WeatherService : IWeatherService
         {
             throw;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException)
         {
             throw new WeatherServiceException("获取天气预报失败，请检查网络后重试。", ex);
@@ -135,6 +143,8 @@ public sealed class WeatherService : IWeatherService
         double longitude,
         CancellationToken cancellationToken = default)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(8));
         var client = _httpClientFactory.CreateClient(HttpClientName);
         var lat = latitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
         var lon = longitude.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -146,14 +156,14 @@ public sealed class WeatherService : IWeatherService
 
         try
         {
-            using var response = await client.GetAsync(url, cancellationToken).ConfigureAwait(false);
+            using var response = await client.GetAsync(url, timeout.Token).ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
                 return null;
             }
 
             return await response.Content
-                .ReadFromJsonAsync<AirQualityResponse>(JsonDefaults.Options, cancellationToken)
+                .ReadFromJsonAsync<AirQualityResponse>(JsonDefaults.Options, timeout.Token)
                 .ConfigureAwait(false);
         }
         catch
@@ -164,11 +174,13 @@ public sealed class WeatherService : IWeatherService
 
     public async Task<GeoResult> ResolveLocationFromIpAsync(CancellationToken cancellationToken = default)
     {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(4));
         var client = _httpClientFactory.CreateClient(HttpClientName);
         try
         {
             using var response = await client
-                .GetAsync("https://ipwho.is/", cancellationToken)
+                .GetAsync("https://ipwho.is/", timeout.Token)
                 .ConfigureAwait(false);
             if (!response.IsSuccessStatusCode)
             {
@@ -176,7 +188,7 @@ public sealed class WeatherService : IWeatherService
             }
 
             var payload = await response.Content
-                .ReadFromJsonAsync<IpWhoResponse>(JsonDefaults.Options, cancellationToken)
+                .ReadFromJsonAsync<IpWhoResponse>(JsonDefaults.Options, timeout.Token)
                 .ConfigureAwait(false);
 
             if (payload is not { Success: true } ||
@@ -194,6 +206,10 @@ public sealed class WeatherService : IWeatherService
                 Country = payload.Country,
                 Admin1 = payload.Region,
             };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {

@@ -84,7 +84,7 @@ public partial class SettingsViewModel : ObservableObject
     public ObservableCollection<SavedAccountProfile> SavedAccounts { get; } = [];
 
     [ObservableProperty]
-    public partial string VersionText { get; set; } = "1.1.6";
+    public partial string VersionText { get; set; } = "2.0.0";
 
     [ObservableProperty]
     public partial string ThemeLabel { get; set; } = "跟随系统";
@@ -787,7 +787,7 @@ public partial class SettingsViewModel : ObservableObject
             var av = Assembly.GetExecutingAssembly().GetName().Version;
             if (av is null)
             {
-                return "1.1.6";
+                return "2.0.0";
             }
 
             return av.Revision == 0

@@ -1,4 +1,3 @@
-using System.Numerics;
 using Microsoft.Graphics.Canvas;
 using Microsoft.Graphics.Canvas.UI.Xaml;
 using Microsoft.UI.Xaml;
@@ -26,9 +25,12 @@ public static class ImagePreviewHelper
     private const double MaxDisplayWidth = 1200;
     private const double MaxDisplayHeight = 900;
     private const double WheelZoomStep = 1.15;
+    private const double OverlayMargin = 24;
+    private const double PreviewPadding = 24;
+    private const double PreviewChromeHeight = 160;
 
     /// <summary>
-    /// WinUI allows only one <see cref="ContentDialog"/> per window at a time.
+    /// Keep a single image preview open, including the ContentDialog fallback.
     /// </summary>
     private static readonly SemaphoreSlim DialogGate = new(1, 1);
 
@@ -199,8 +201,7 @@ public static class ImagePreviewHelper
                 VerticalAlignment = VerticalAlignment.Center,
             };
 
-            var dialog = CreateZoomDialog(xamlRoot, title, preview);
-            await dialog.ShowAsync();
+            await ShowZoomPreviewAsync(xamlRoot, title, preview);
 
             return true;
         }
@@ -302,13 +303,12 @@ public static class ImagePreviewHelper
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        var dialog = CreateZoomDialog(xamlRoot, title, preview);
         if (!string.IsNullOrWhiteSpace(fullResUrl))
         {
             _ = UpgradeLegacyAsync(preview, fullResUrl, imageLoader);
         }
 
-        await dialog.ShowAsync();
+        await ShowZoomPreviewAsync(xamlRoot, title, preview);
     }
 
     private static Task ShowImageDialogAsync(XamlRoot xamlRoot, ImageSource image, string title)
@@ -323,14 +323,16 @@ public static class ImagePreviewHelper
             VerticalAlignment = VerticalAlignment.Center,
         };
 
-        return CreateZoomDialog(xamlRoot, title, preview).ShowAsync().AsTask();
+        return ShowZoomPreviewAsync(xamlRoot, title, preview);
     }
 
-    private static ContentDialog CreateZoomDialog(XamlRoot xamlRoot, string title, UIElement content)
+    private static async Task ShowZoomPreviewAsync(XamlRoot xamlRoot, string title, Image preview)
     {
         var viewer = new ScrollViewer
         {
-            Content = content,
+            Content = preview,
+            HorizontalContentAlignment = HorizontalAlignment.Center,
+            VerticalContentAlignment = VerticalAlignment.Center,
             HorizontalScrollMode = ScrollMode.Auto,
             VerticalScrollMode = ScrollMode.Auto,
             ZoomMode = ZoomMode.Enabled,
@@ -340,18 +342,152 @@ public static class ImagePreviewHelper
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
         };
         // ScrollViewer handles wheel input internally, so opt into already-handled events.
-        viewer.AddHandler(
-            UIElement.PointerWheelChangedEvent,
-            new PointerEventHandler(ZoomViewer_OnPointerWheelChanged),
-            handledEventsToo: true);
+        var wheelHandler = new PointerEventHandler(ZoomViewer_OnPointerWheelChanged);
+        viewer.AddHandler(UIElement.PointerWheelChangedEvent, wheelHandler, handledEventsToo: true);
 
-        return new ContentDialog
+        void UpdateLayout()
         {
-            Title = title,
-            Content = viewer,
-            CloseButtonText = "关闭",
-            XamlRoot = xamlRoot,
+            var availableWidth = Math.Max(1, Math.Min(MaxDisplayWidth,
+                xamlRoot.Size.Width - 2 * (OverlayMargin + PreviewPadding)));
+            var availableHeight = Math.Max(1, Math.Min(MaxDisplayHeight,
+                xamlRoot.Size.Height - 2 * OverlayMargin - PreviewChromeHeight));
+            var (width, height) = preview.Source switch
+            {
+                CanvasImageSource canvas => (canvas.Size.Width, canvas.Size.Height),
+                BitmapSource bitmap => ((double)bitmap.PixelWidth, (double)bitmap.PixelHeight),
+                _ => (0d, 0d),
+            };
+            var size = ImagePreviewLayout.Fit(width, height, availableWidth, availableHeight);
+            preview.MinWidth = 0;
+            preview.MinHeight = 0;
+            preview.Width = size.Width;
+            preview.Height = size.Height;
+            viewer.Width = Math.Min(availableWidth, Math.Max(200, size.Width));
+            viewer.Height = Math.Min(availableHeight, Math.Max(160, size.Height));
+        }
+
+        void OnRootChanged(XamlRoot sender, XamlRootChangedEventArgs args) => UpdateLayout();
+        void OnImageOpened(object sender, RoutedEventArgs args) => UpdateLayout();
+
+        var sourceToken = preview.RegisterPropertyChangedCallback(Image.SourceProperty, (_, _) => UpdateLayout());
+        xamlRoot.Changed += OnRootChanged;
+        preview.ImageOpened += OnImageOpened;
+        try
+        {
+            UpdateLayout();
+            // Use the window client area, not the NavigationView's popup placement bounds.
+            if (xamlRoot.Content is Grid windowRoot)
+            {
+                await ShowWindowOverlayAsync(windowRoot, viewer, title);
+            }
+            else
+            {
+                var dialog = new ContentDialog
+                {
+                    Title = title,
+                    Content = viewer,
+                    CloseButtonText = "关闭",
+                    XamlRoot = xamlRoot,
+                };
+                dialog.Resources["ContentDialogMaxWidth"] = MaxDisplayWidth + 2 * PreviewPadding;
+                await dialog.ShowAsync();
+            }
+        }
+        finally
+        {
+            xamlRoot.Changed -= OnRootChanged;
+            preview.ImageOpened -= OnImageOpened;
+            preview.UnregisterPropertyChangedCallback(Image.SourceProperty, sourceToken);
+            viewer.RemoveHandler(UIElement.PointerWheelChangedEvent, wheelHandler);
+        }
+    }
+
+    private static async Task ShowWindowOverlayAsync(Grid windowRoot, ScrollViewer viewer, string title)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var previousFocus = FocusManager.GetFocusedElement(windowRoot.XamlRoot) as Control;
+        var closeButton = new Button
+        {
+            Content = "关闭",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            MinHeight = 40,
         };
+        var content = new Grid { RowSpacing = 16 };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.Children.Add(new TextBlock
+        {
+            Text = title,
+            FontSize = 20,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxLines = 1,
+        });
+        Grid.SetRow(viewer, 1);
+        content.Children.Add(viewer);
+        Grid.SetRow(closeButton, 2);
+        content.Children.Add(closeButton);
+
+        var card = new Border
+        {
+            Padding = new Thickness(PreviewPadding),
+            CornerRadius = new CornerRadius(8),
+            Child = content,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        var overlay = new Grid
+        {
+            Background = new SolidColorBrush(Color.FromArgb(112, 0, 0, 0)),
+            TabFocusNavigation = KeyboardNavigationMode.Cycle,
+        };
+        overlay.Children.Add(card);
+        Grid.SetRowSpan(overlay, Math.Max(1, windowRoot.RowDefinitions.Count));
+        Grid.SetColumnSpan(overlay, Math.Max(1, windowRoot.ColumnDefinitions.Count));
+
+        void UpdateCard()
+        {
+            card.Width = viewer.Width + 2 * PreviewPadding;
+            card.Background = new SolidColorBrush(windowRoot.ActualTheme == ElementTheme.Dark
+                ? Color.FromArgb(255, 32, 32, 32)
+                : Color.FromArgb(255, 250, 250, 250));
+        }
+        void OnViewerSizeChanged(object sender, SizeChangedEventArgs args) => UpdateCard();
+        void OnThemeChanged(FrameworkElement sender, object args) => UpdateCard();
+        void OnUnloaded(object sender, RoutedEventArgs args) => completion.TrySetResult();
+        void OnKeyDown(object sender, KeyRoutedEventArgs args)
+        {
+            if (args.Key == Windows.System.VirtualKey.Escape)
+            {
+                args.Handled = true;
+                completion.TrySetResult();
+            }
+        }
+        void OnClose(object sender, RoutedEventArgs args) => completion.TrySetResult();
+
+        viewer.SizeChanged += OnViewerSizeChanged;
+        windowRoot.ActualThemeChanged += OnThemeChanged;
+        overlay.Unloaded += OnUnloaded;
+        overlay.KeyDown += OnKeyDown;
+        closeButton.Click += OnClose;
+        try
+        {
+            UpdateCard();
+            windowRoot.Children.Add(overlay);
+            closeButton.Focus(FocusState.Programmatic);
+            await completion.Task;
+        }
+        finally
+        {
+            viewer.SizeChanged -= OnViewerSizeChanged;
+            windowRoot.ActualThemeChanged -= OnThemeChanged;
+            overlay.Unloaded -= OnUnloaded;
+            overlay.KeyDown -= OnKeyDown;
+            closeButton.Click -= OnClose;
+            windowRoot.Children.Remove(overlay);
+            previousFocus?.Focus(FocusState.Programmatic);
+        }
     }
 
     private static void ZoomViewer_OnPointerWheelChanged(object sender, PointerRoutedEventArgs args)
@@ -381,9 +517,15 @@ public static class ImagePreviewHelper
         }
 
         var pointer = args.GetCurrentPoint(viewer).Position;
-        var ratio = newZoom / oldZoom;
-        var horizontalOffset = Math.Max(0, ((viewer.HorizontalOffset + pointer.X) * ratio) - pointer.X);
-        var verticalOffset = Math.Max(0, ((viewer.VerticalOffset + pointer.Y) * ratio) - pointer.Y);
+        if (viewer.Content is not FrameworkElement content)
+        {
+            return;
+        }
+
+        var horizontalOffset = ImagePreviewLayout.ZoomOffset(
+            viewer.HorizontalOffset, pointer.X, viewer.ViewportWidth, content.ActualWidth, oldZoom, newZoom);
+        var verticalOffset = ImagePreviewLayout.ZoomOffset(
+            viewer.VerticalOffset, pointer.Y, viewer.ViewportHeight, content.ActualHeight, oldZoom, newZoom);
 
         viewer.ChangeView(horizontalOffset, verticalOffset, newZoom, disableAnimation: true);
         args.Handled = true;

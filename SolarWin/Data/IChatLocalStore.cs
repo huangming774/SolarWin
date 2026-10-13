@@ -38,4 +38,15 @@ public interface IChatLocalStore
         MessageKeysetCursor? newerThan,
         int take,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Look up a single message by its server <paramref name="messageId"/> within a room.
+    /// Returns <c>null</c> if not present in the local SQLite cache (e.g. it was never
+    /// loaded, was evicted, or belongs to a different account). Used by the jump-to-message
+    /// path so the detail page can decide between local context loading and a server fetch.
+    /// </summary>
+    Task<SnChatMessage?> FindMessageAsync(
+        Guid roomId,
+        Guid messageId,
+        CancellationToken cancellationToken = default);
 }

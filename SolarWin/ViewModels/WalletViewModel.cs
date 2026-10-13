@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.UI.Xaml;
+using SolarWin.Helpers;
 using SolarWin.Models;
 using SolarWin.Services;
 
@@ -192,16 +193,33 @@ public partial class WalletViewModel : ObservableObject
             return;
         }
 
+        var version = _loadVersion;
+        var walletId = _walletId.Value;
+        var offset = _offset;
+        var direction = _direction;
         try
         {
             IsLoadingMore = true;
             ErrorMessage = null;
             var page = await _api.GetTransactionsAsync(
-                _walletId.Value,
-                _offset,
+                walletId,
+                offset,
                 PageSize,
-                _direction);
-            AddTransactions(page, _walletId.Value);
+                direction);
+            if (!ViewModelRaceOwnership.OwnsWalletPage(
+                    version,
+                    _loadVersion,
+                    walletId,
+                    _walletId,
+                    offset,
+                    _offset,
+                    direction,
+                    _direction))
+            {
+                return;
+            }
+
+            AddTransactions(page, walletId);
 
             _offset += page.Count;
             _hasMore = page.Count >= PageSize && Transactions.Count < MaxTransactions;
@@ -209,7 +227,18 @@ public partial class WalletViewModel : ObservableObject
         }
         catch (Exception ex)
         {
-            SetError(ex, "无法加载更多交易记录。");
+            if (ViewModelRaceOwnership.OwnsWalletPage(
+                    version,
+                    _loadVersion,
+                    walletId,
+                    _walletId,
+                    offset,
+                    _offset,
+                    direction,
+                    _direction))
+            {
+                SetError(ex, "无法加载更多交易记录。");
+            }
         }
         finally
         {

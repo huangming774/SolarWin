@@ -37,10 +37,15 @@ public sealed class RoomLocalStore : IRoomLocalStore
         try
         {
             await using var db = _dbFactory.CreateDbContext();
-            return await db.Rooms.AsNoTracking()
-                .Where(r => r.DeletedAt == null)
-                .OrderByDescending(r => r.Pinned)
-                .ThenByDescending(r => r.LastActivity)
+            // DateTimeOffset is stored as SQLite TEXT. Raw string ordering is wrong when
+            // equivalent instants have different offsets, so normalize through julianday.
+            return await db.Rooms.FromSqlRaw("""
+                    SELECT *
+                    FROM chat_rooms
+                    WHERE DeletedAt IS NULL
+                    ORDER BY Pinned DESC, julianday(LastActivity) DESC, RoomId
+                    """)
+                .AsNoTracking()
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -82,16 +87,10 @@ public sealed class RoomLocalStore : IRoomLocalStore
 
         try
         {
+            // Wait and acquire the context against the same account. A switch during the wait
+            // therefore aborts the import instead of redirecting it to the new account's DB.
             await _dbFactory.WaitUntilReadyAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            return false;
-        }
-
-        try
-        {
-            await using var db = _dbFactory.CreateDbContext();
+            await using var db = _dbFactory.CreateDbContext(accountId);
             if (await db.Rooms.AnyAsync(cancellationToken).ConfigureAwait(false))
             {
                 // Already has rows — drop legacy file if present.

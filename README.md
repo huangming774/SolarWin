@@ -4,7 +4,7 @@
 
 | 项 | 说明 |
 |----|------|
-| 当前版本 | **1.1.9** |
+| 当前版本 | **2.0.0** |
 | 产品显示名 | Solar Network |
 | 解决方案 | `SolarWin.slnx` |
 | 目标平台 | Windows 10 1809+（最低 10.0.17763）；MLS 加密仅 x64 |
@@ -13,7 +13,15 @@
 
 ---
 
-## 版本 1.1.9 亮点
+## 版本 2.0.0 亮点
+
+- **本地消息全文搜索**：FTS5 子串搜索、短关键词兜底，支持搜索结果与回复引用跳转定位。
+- **天气页重写**：自适应原生布局、后台缓存读写、主天气与空气质量分阶段显示，快速切换城市不会被旧响应覆盖。
+- **图片与视频预览**：窗口居中、滚轮缩放、窗口尺寸适配；完善下载失败处理与 GPU 控件生命周期。
+- **扫码登录修复**：生成与轮询统一使用 Stargate 路由，保留匿名请求。
+- **安全与稳定性**：限制媒体认证头发送来源，修复跨账号缓存导入、聊天分页/更新、SQLite 清理、订单与钱包竞态，以及 AI 会话隔离。
+
+### 保留的主要能力
 
 - **聊天 MLS 端到端加密（RFC 9420）**：Rust OpenMLS 原生桥接，密码套件 `MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519`；每账号独立 SQLCipher 加密数据库，密钥由 Windows DPAPI 保护；明文永不进入 HTTP 请求体，解密失败不回退明文
 - **瑞幸咖啡点餐**：集成 MCP 协议驱动瑞幸 API，菜单浏览、规格定制、加购下单全流程；Token 安全存储于 PasswordVault
@@ -36,8 +44,8 @@
 | 登录 | Padlock 挑战应答、多因素、设备码 / 扫码、WebAuthn、验证码、注册 / 找回、社交登录 |
 | 会话 | PasswordVault 存 Token；多账号切换；启动恢复；401 刷新；登出清理 |
 | 首页 | 签到、状态、趣味 API（运势 / IP / 回顾等） |
-| 聊天 | 房间列表缓存、消息同步、回复 / 反应、图片与语音、贴纸、WebSocket 实时、SQLite 离线记录 |
-| 加密 | 房间内开启 MLS 加密、查看成员设备、重置 / 重新引导群组（见 `docs/mls-integration.md`） |
+| 聊天 | 房间列表缓存、消息同步、回复 / 反应、图片与语音、贴纸、WebSocket 实时、SQLite 离线记录；**全局消息全文搜索**（FTS5 trigram + 1–2 字 LIKE 兜底）；**回复引用可点击跳原消息** |
+| 加密 | 房间内开启 MLS 加密、查看成员设备、重置 / 重新引导群组（见 `docs/mls-integration.md`）。**解密消息可纳入全文搜索**（Content 明文回填后即参与索引） |
 | 通话 | LiveKit 语音通话、屏幕共享、来电通知（接听 / 拒绝） |
 | 数据中心 | 聊天活动热力图、词云、消息趋势、成员贡献、链接预览卡片 |
 | 帖子 | 公共流与时间线、发帖（含图片附件）、详情 / 回复 / 反应 / 转发、领域（Realm） |
@@ -252,7 +260,7 @@ msbuild SolarWin/SolarWin.csproj /t:Publish /p:Configuration=Release /p:Platform
 | 位置 | 字段 |
 |------|------|
 | `SolarWin/SolarWin.csproj` | `Version` / `AssemblyVersion` / `FileVersion` / `InformationalVersion` |
-| `SolarWin/Package.appxmanifest` | `Identity@Version`（四段，如 `1.1.9.0`） |
+| `SolarWin/Package.appxmanifest` | `Identity@Version`（四段，如 `2.0.0.0`） |
 | 设置页 | 读取 InformationalVersion / 程序集版本 |
 | HTTP | `User-Agent: SolarWin/1.1` |
 

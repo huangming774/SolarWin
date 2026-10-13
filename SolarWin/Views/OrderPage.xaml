@@ -72,7 +72,7 @@
                     </ListView>
                     <StackPanel Grid.Row="2" Spacing="10">
                         <TextBlock FontWeight="SemiBold" Text="{x:Bind ViewModel.CartTotalText, Mode=OneWay}" />
-                        <TextBlock Text="{x:Bind ViewModel.PaymentSummary, Mode=OneWay}" TextWrapping="Wrap" />
+                        <TextBlock Text="{x:Bind ViewModel.DisplayPaymentSummary, Mode=OneWay}" TextWrapping="Wrap" />
                         <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}" TextWrapping="Wrap"/>
                         <Button Content="预览最终价格" Command="{x:Bind ViewModel.PreviewCommand}"/>
                         <Button Style="{StaticResource AccentButtonStyle}" Content="确认并创建真实订单" Click="CreateOrder_OnClick"/>
